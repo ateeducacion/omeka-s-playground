@@ -267,9 +267,11 @@ async function main() {
   activeBlueprint = await resolveBlueprintForShell(scopeId, config);
   const previous = loadSessionState(scopeId);
   const defaultRuntime = getDefaultRuntime(config);
+  const preferredPath = activeBlueprint?.landingPage || config.landingPath || "/";
+  const shouldBypassSavedLogin = config.autologin && previous?.path === "/login";
 
   currentRuntimeId = previous?.runtimeId || defaultRuntime.id;
-  currentPath = previous?.path || activeBlueprint?.landingPage || config.landingPath || "/";
+  currentPath = shouldBypassSavedLogin ? preferredPath : (previous?.path || preferredPath);
   els.address.value = currentPath;
 
   for (const runtime of config.runtimes) {

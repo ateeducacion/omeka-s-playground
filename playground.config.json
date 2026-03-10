@@ -2,10 +2,10 @@
   "bundleVersion": "0.1.0",
   "defaultBlueprintUrl": "./assets/blueprints/default.blueprint.json",
   "siteTitle": "Omeka S Playground",
-  "landingPath": "/login",
+  "landingPath": "/admin",
   "locale": "en_US",
   "timezone": "UTC",
-  "autologin": false,
+  "autologin": true,
   "resetOnVersionMismatch": true,
   "admin": {
     "username": "admin",

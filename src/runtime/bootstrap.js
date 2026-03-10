@@ -484,6 +484,89 @@ echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 `;
 }
 
+function extractCsrfField(html) {
+  const match = html.match(/<input[^>]+type=["']hidden["'][^>]+name=["']([^"']+_csrf|csrf)["'][^>]+value=["']([^"']*)["'][^>]*>/iu);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    name: match[1],
+    value: match[2],
+  };
+}
+
+function buildFormUrlEncoded(payload) {
+  const body = new URLSearchParams();
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    body.set(key, value);
+  }
+  return body.toString();
+}
+
+function isLoginPage(html) {
+  return /<body[^>]*class=["'][^"']*\blogin\b[^"']*["']/iu.test(html)
+    || /<h1>\s*Log in\s*<\/h1>/iu.test(html);
+}
+
+async function performAutologin(php, config, publish) {
+  publish("Signing in admin user automatically.", 0.9);
+
+  const loginUrl = "https://playground.internal/login";
+  const adminUrl = "https://playground.internal/admin";
+
+  const loginPage = await php.request(new Request(loginUrl));
+  const loginHtml = await loginPage.text();
+  const csrfField = extractCsrfField(loginHtml);
+
+  const formPayload = {
+    email: config.admin.email,
+    password: config.admin.password,
+    submit: "Log in",
+  };
+
+  if (csrfField) {
+    formPayload[csrfField.name] = csrfField.value;
+  }
+
+  const loginResponse = await php.request(new Request(loginUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: buildFormUrlEncoded(formPayload),
+  }));
+
+  const location = loginResponse.headers.get("location") || "";
+  if (location && /\/admin(?:\/|$)?/u.test(location)) {
+    return {
+      ok: true,
+      path: "/admin",
+    };
+  }
+
+  const adminResponse = await php.request(new Request(adminUrl));
+  const adminHtml = await adminResponse.text();
+  const adminLocation = adminResponse.headers.get("location") || "";
+  const landedOnLogin = /\/login(?:\/|$)?/u.test(adminLocation) || isLoginPage(adminHtml);
+
+  if (landedOnLogin) {
+    return {
+      ok: false,
+      path: "/login",
+      warning: "Automatic admin login did not establish a browser session.",
+    };
+  }
+
+  return {
+    ok: true,
+    path: "/admin",
+  };
+}
+
 function buildPhpIni(config) {
   return [
     "display_errors=1",
@@ -671,10 +754,21 @@ export async function bootstrapOmeka({ blueprint, config, php, publish, runtimeI
     throw new Error(`Unexpected Omeka bootstrap output: ${outputText}`);
   }
 
+  let readyPath = normalizedBlueprint.landingPage || effectiveConfig.landingPath || "/admin";
+
+  if (effectiveConfig.autologin) {
+    const autologin = await performAutologin(php, effectiveConfig, publish);
+    readyPath = autologin.ok ? autologin.path : (autologin.path || readyPath);
+    if (autologin.warning) {
+      publish(`[warning] ${autologin.warning}`, 0.92);
+    }
+  }
+
   publish("Bootstrap complete. Omeka is ready.", 0.96);
 
   return {
     manifest,
     manifestState,
+    readyPath,
   };
 }

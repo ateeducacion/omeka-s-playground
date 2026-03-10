@@ -72,7 +72,7 @@ async function getRuntimeState() {
       });
     };
 
-    await bootstrapOmeka({
+    const bootstrapState = await bootstrapOmeka({
       config,
       blueprint: activeBlueprint,
       php,
@@ -83,7 +83,7 @@ async function getRuntimeState() {
     postShell({
       kind: "ready",
       detail: `Omeka bootstrapped for ${runtime.label}.`,
-      path: activeBlueprint?.landingPage || config.landingPath,
+      path: bootstrapState.readyPath || activeBlueprint?.landingPage || config.landingPath,
     });
 
     return { php };
