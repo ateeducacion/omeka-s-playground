@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Omeka S Playground</title>
+    <link rel="stylesheet" href="./src/styles/app.css">
+  </head>
+  <body data-app="shell">
+    <div class="shell">
+      <header class="toolbar">
+        <div class="toolbar__brand">
+          <div class="toolbar__dot"></div>
+          <div>
+            <strong>Omeka S Playground</strong>
+            <span>Static, in-browser, SQLite-backed</span>
+          </div>
+        </div>
+        <div class="toolbar__controls">
+          <button type="button" id="refresh-button">Refresh</button>
+          <button type="button" id="reset-button" class="danger">Reset</button>
+          <button type="button" id="export-button">Export</button>
+          <label class="import-button" for="import-input">Import</label>
+          <input id="import-input" type="file" accept="application/json" hidden>
+        </div>
+      </header>
+
+      <section class="chrome">
+        <label class="chrome__field">
+          <span>Address</span>
+          <input id="address-input" type="text" spellcheck="false" value="/">
+        </label>
+        <label class="chrome__field chrome__field--select">
+          <span>Runtime</span>
+          <select id="runtime-select"></select>
+        </label>
+        <div class="chrome__status">
+          <strong id="status-title">Booting runtime</strong>
+          <span id="status-detail">Preparing static shell.</span>
+        </div>
+      </section>
+
+      <section class="panel panel--progress">
+        <div class="panel__row">
+          <span>Bootstrap progress</span>
+          <span id="progress-label">0%</span>
+        </div>
+        <progress id="progress-bar" max="1" value="0"></progress>
+      </section>
+
+      <section class="viewport">
+        <iframe id="site-frame" title="Omeka S Playground" loading="eager"></iframe>
+      </section>
+
+      <section class="panel panel--logs">
+        <div class="panel__row">
+          <span>Runtime log</span>
+          <button type="button" id="clear-logs-button">Clear</button>
+        </div>
+        <pre id="log-panel" class="log-panel"></pre>
+      </section>
+    </div>
+
+    <script type="module" src="./src/shell/main.js"></script>
+  </body>
+</html>
+

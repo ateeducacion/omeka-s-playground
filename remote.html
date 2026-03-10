@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Omeka S Playground Runtime Host</title>
+    <link rel="stylesheet" href="./src/styles/app.css">
+  </head>
+  <body data-app="remote">
+    <div class="remote-boot">
+      <div class="remote-boot__card">
+        <strong>Preparing Omeka runtime</strong>
+        <p id="remote-status">Registering service worker and mounting the playground filesystem.</p>
+      </div>
+      <iframe id="remote-frame" title="Omeka Site Host"></iframe>
+    </div>
+    <script type="module" src="./src/remote/main.js"></script>
+  </body>
+</html>
