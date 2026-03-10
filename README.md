@@ -2,7 +2,7 @@
 
 > [Omeka S](https://omeka.org/s/) in the browser, powered by WebAssembly. No server required.
 
-Inspired by [WordPress Playground](https://github.com/WordPress/wordpress-playground), this project runs a full [Omeka S](https://omeka.org/s/) instance entirely in the browser using [php-wasm](https://github.com/nicordev/nicordev-php-wasm). The readonly Omeka core is loaded from a pre-built bundle while a writable overlay persisted in the browser handles the database, uploads, and configuration.
+This project runs a full [Omeka S](https://omeka.org/s/) instance entirely in the browser using [php-wasm](https://github.com/nicordev/nicordev-php-wasm). The readonly Omeka core is loaded from a pre-built bundle while a writable overlay persisted in the browser handles the database, uploads, and configuration.
 
 [Live demo](https://ateeducacion.github.io/omeka-s-playground/) | [Report a bug](https://github.com/ateeducacion/omeka-s-playground/issues)
 
@@ -155,7 +155,6 @@ The Omeka source is built from the [`feature/experimental-sqlite-support`](https
 ## Prior Art
 
 - [WordPress Playground](https://github.com/WordPress/wordpress-playground) — the original inspiration for running a PHP CMS entirely in the browser.
-- [Moodle Playground](https://github.com/nicordev/nicordev-moodle-playground) — reference for the VFS bundle and build pipeline.
 
 ---
 
