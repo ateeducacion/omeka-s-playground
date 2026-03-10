@@ -56,8 +56,13 @@ function appendLog(message, isError = false) {
 }
 
 function setStatus(title, detail, progress = null) {
-  els.statusTitle.textContent = title;
-  els.statusDetail.textContent = detail;
+  if (els.statusTitle) {
+    els.statusTitle.textContent = title;
+  }
+
+  if (els.statusDetail) {
+    els.statusDetail.textContent = detail;
+  }
 }
 
 function setUiLocked(locked) {
