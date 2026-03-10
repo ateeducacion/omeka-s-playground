@@ -208,6 +208,43 @@ function rewriteScopedLocation(response, { origin, scopeId, runtimeId }) {
   });
 }
 
+function getScopedBasePath(scopeId, runtimeId) {
+  return withAppBasePath(`/playground/${scopeId}/${runtimeId}`);
+}
+
+function rewriteHtmlDocument(html, { origin, scopeId, runtimeId }) {
+  const scopedBasePath = getScopedBasePath(scopeId, runtimeId);
+  const scopedOrigin = `${origin}${scopedBasePath}`;
+
+  return html
+    .replaceAll(`${origin}/`, `${scopedOrigin}/`)
+    .replace(
+      /((?:href|src|action|data-[\w-]*url|data-url|value)=["'])\/(?!\/)/giu,
+      `$1${scopedBasePath}/`,
+    )
+    .replace(
+      /((?:href|src|action|data-[\w-]*url|data-url|value)=["'])https?:\/\/[^/]+\/(?!\/)/giu,
+      `$1${scopedOrigin}/`,
+    );
+}
+
+async function rewriteScopedHtmlResponse(response, scope) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!/text\/html|application\/xhtml\+xml/iu.test(contentType)) {
+    return response;
+  }
+
+  const html = await response.text();
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+
+  return new Response(rewriteHtmlDocument(html, scope), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 function buildScopedUrl(url, { scopeId, runtimeId, requestPath }) {
   const scopedPath = withAppBasePath(
     `/playground/${scopeId}/${runtimeId}${requestPath.startsWith("/") ? requestPath : `/${requestPath}`}`
@@ -292,7 +329,12 @@ self.addEventListener("fetch", (event) => {
       scopeId,
     }).catch((error) => buildErrorResponse(String(error?.stack || error?.message || error)));
 
-    return rewriteScopedLocation(response, {
+    const locationScopedResponse = rewriteScopedLocation(response, {
+      origin: url.origin,
+      scopeId,
+      runtimeId,
+    });
+    return rewriteScopedHtmlResponse(locationScopedResponse, {
       origin: url.origin,
       scopeId,
       runtimeId,
