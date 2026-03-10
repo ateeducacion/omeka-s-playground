@@ -8,11 +8,15 @@
   </head>
   <body data-app="remote">
     <div class="remote-boot">
-      <div class="remote-boot__card">
-        <strong>Preparing Omeka runtime</strong>
-        <p id="remote-status">Registering service worker and mounting the playground filesystem.</p>
-      </div>
       <iframe id="remote-frame" title="Omeka Site Host"></iframe>
+      <div class="remote-boot__card">
+        <strong>Configuring Omeka-S Playground</strong>
+        <p id="remote-status">Loading playground runtime.</p>
+        <div class="remote-boot__progress">
+          <progress id="remote-progress" max="1" value="0.04"></progress>
+          <span id="remote-progress-label">Loading...</span>
+        </div>
+      </div>
     </div>
     <script type="module" src="./src/remote/main.js"></script>
   </body>

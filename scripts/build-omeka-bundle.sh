@@ -23,6 +23,15 @@ rm -rf "$OMEKA_STAGE/.git" "$OMEKA_STAGE/node_modules" "$OMEKA_STAGE/.github" "$
 perl -0pi -e "s/const PHP_REQUIRED_EXTENSIONS = \\['fileinfo', 'mbstring', 'PDO', 'xml'\\];/const PHP_REQUIRED_EXTENSIONS = ['mbstring', 'PDO'];/" \
   "$OMEKA_STAGE/application/src/Stdlib/Environment.php"
 
+# Keep the browser bundle self-contained. Remote fonts and external CDN assets
+# are brittle under SW-scoped static hosting, so force local assets only.
+perl -0pi -e "s/'use_externals' => true/'use_externals' => false/" \
+  "$OMEKA_STAGE/application/config/module.config.php"
+perl -0pi -e "s/\\n\\\$this->headLink\\(\\)->prependStylesheet\\('\\/\\/fonts\\.googleapis\\.com[^\\n]+;//g" \
+  "$OMEKA_STAGE/application/view/layout/layout-admin.phtml" \
+  "$OMEKA_STAGE/application/view/layout/layout.phtml" \
+  "$OMEKA_STAGE/application/view/common/user-bar.phtml"
+
 if command -v composer >/dev/null 2>&1; then
   composer install --working-dir="$OMEKA_STAGE" --no-dev --prefer-dist --no-progress --no-interaction >&2
 else

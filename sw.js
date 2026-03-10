@@ -7,6 +7,7 @@ const STATIC_PREFIXES = [
   "/assets/",
   "/src/",
   "/vendor/",
+  "/php-worker.js",
   "/sw.js",
   "/remote.html",
   "/index.html",
@@ -211,8 +212,24 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   event.respondWith((async () => {
     const url = new URL(event.request.url);
+    if (url.origin !== self.location.origin) {
+      return fetch(event.request);
+    }
+
     const scopedRequest = await resolveScopedRequest(event, url);
     if (!scopedRequest) {
+      if (url.pathname === "/jquery-3.7.1.min.js") {
+        return fetch(new URL("/application/asset/vendor/jquery/jquery.min.js", self.location.origin));
+      }
+      if (url.pathname === "/css" && url.searchParams.has("family")) {
+        return new Response("", {
+          status: 200,
+          headers: {
+            "content-type": "text/css; charset=utf-8",
+            "cache-control": "public, max-age=86400",
+          },
+        });
+      }
       return fetch(event.request);
     }
 

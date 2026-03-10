@@ -1,22 +1,38 @@
+import {
+  exportBlueprintPayload,
+  parseImportedBlueprintPayload,
+  resolveBlueprintForShell,
+  saveActiveBlueprint,
+} from "../shared/blueprint.js";
 import { getDefaultRuntime, loadPlaygroundConfig } from "../shared/config.js";
 import { resolveRemoteUrl } from "../shared/paths.js";
-import { createShellChannel, SNAPSHOT_VERSION } from "../shared/protocol.js";
+import { createShellChannel } from "../shared/protocol.js";
 import { clearScopeSession, getOrCreateScopeId, loadSessionState, saveSessionState } from "../shared/storage.js";
 
 const els = {
+  addressForm: document.querySelector("#address-form"),
   address: document.querySelector("#address-input"),
+  adminButton: document.querySelector("#admin-button"),
   clearLogs: document.querySelector("#clear-logs-button"),
   exportButton: document.querySelector("#export-button"),
   importInput: document.querySelector("#import-input"),
   frame: document.querySelector("#site-frame"),
+  homeButton: document.querySelector("#home-button"),
   logPanel: document.querySelector("#log-panel"),
+  logsPanel: document.querySelector("#logs-panel"),
+  logsTab: document.querySelector("#logs-tab"),
+  panelToggle: document.querySelector("#panel-toggle-button"),
   progressBar: document.querySelector("#progress-bar"),
   progressLabel: document.querySelector("#progress-label"),
   refresh: document.querySelector("#refresh-button"),
   reset: document.querySelector("#reset-button"),
   runtime: document.querySelector("#runtime-select"),
+  settingsPanel: document.querySelector("#settings-panel"),
+  settingsTab: document.querySelector("#settings-tab"),
+  sidePanel: document.querySelector("#side-panel"),
   statusDetail: document.querySelector("#status-detail"),
   statusTitle: document.querySelector("#status-title"),
+  workspace: document.querySelector("#workspace"),
 };
 
 const scopeId = getOrCreateScopeId();
@@ -25,6 +41,9 @@ let currentRuntimeId;
 let currentPath = "/";
 let channel;
 let serviceWorkerReady = null;
+let activeBlueprint;
+let remoteFrameBooted = false;
+let uiLocked = true;
 const CONTROL_RELOAD_KEY = `omeka-playground:${scopeId}:sw-controlled`;
 
 function appendLog(message, isError = false) {
@@ -46,6 +65,18 @@ function setStatus(title, detail, progress = null) {
     els.progressBar.value = progress;
     els.progressLabel.textContent = `${Math.round(progress * 100)}%`;
   }
+}
+
+function setUiLocked(locked) {
+  uiLocked = locked;
+  els.address.disabled = locked;
+  els.homeButton.disabled = locked;
+  els.adminButton.disabled = locked;
+  els.runtime.disabled = locked;
+  els.reset.disabled = locked;
+  els.exportButton.disabled = locked;
+  els.importInput.disabled = locked;
+  els.addressForm.classList.toggle("is-disabled", locked);
 }
 
 async function ensureRuntimeServiceWorker() {
@@ -84,7 +115,67 @@ async function updateFrame() {
 
   await serviceWorkerReady;
   const url = resolveRemoteUrl(scopeId, currentRuntimeId, currentPath);
+  remoteFrameBooted = false;
   els.frame.src = url.toString();
+}
+
+function postToRemote(message) {
+  if (!els.frame.contentWindow) {
+    return false;
+  }
+
+  els.frame.contentWindow.postMessage(message, window.location.origin);
+  return true;
+}
+
+function navigateWithinRuntime(path) {
+  if (uiLocked) {
+    return;
+  }
+
+  currentPath = path || "/";
+  els.address.value = currentPath;
+  saveState();
+
+  if (remoteFrameBooted && postToRemote({ kind: "navigate-site", path: currentPath })) {
+    appendLog(`Navigating site to ${currentPath}`);
+    return;
+  }
+
+  void updateFrame();
+}
+
+function refreshWithinRuntime() {
+  if (remoteFrameBooted && postToRemote({ kind: "refresh-site" })) {
+    appendLog(`Refreshing ${currentPath}`);
+    return;
+  }
+
+  void updateFrame();
+}
+
+function navigateHome() {
+  navigateWithinRuntime("/s/playground");
+}
+
+function navigateAdmin() {
+  navigateWithinRuntime("/admin");
+}
+
+function setActivePanel(panel) {
+  const isLogs = panel === "logs";
+  els.settingsPanel.classList.toggle("is-hidden", isLogs);
+  els.logsPanel.classList.toggle("is-hidden", !isLogs);
+  els.settingsTab.classList.toggle("is-active", !isLogs);
+  els.logsTab.classList.toggle("is-active", isLogs);
+  els.settingsTab.setAttribute("aria-selected", String(!isLogs));
+  els.logsTab.setAttribute("aria-selected", String(isLogs));
+}
+
+function toggleSidePanel() {
+  const collapsed = els.sidePanel.classList.toggle("is-collapsed");
+  els.workspace.classList.toggle("is-panel-collapsed", collapsed);
+  els.panelToggle.setAttribute("aria-expanded", String(!collapsed));
 }
 
 function saveState(extra = {}) {
@@ -96,34 +187,35 @@ function saveState(extra = {}) {
   });
 }
 
-function exportSnapshot() {
-  const snapshot = {
-    version: SNAPSHOT_VERSION,
-    exportedAt: new Date().toISOString(),
-    scopeId,
-    runtimeId: currentRuntimeId,
-    path: currentPath,
-  };
-  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+function exportBlueprint() {
+  const payload = exportBlueprintPayload(config, activeBlueprint);
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `omeka-playground-${scopeId}.json`;
+  link.download = `omeka-playground.blueprint.json`;
   link.click();
   URL.revokeObjectURL(url);
 }
 
-async function importSnapshot(file) {
-  const payload = JSON.parse(await file.text());
-  if (payload.version !== SNAPSHOT_VERSION) {
-    throw new Error(`Unsupported snapshot version ${payload.version}`);
+async function importPayload(file) {
+  const imported = parseImportedBlueprintPayload(JSON.parse(await file.text()), config);
+
+  if (imported.type === "snapshot") {
+    currentRuntimeId = imported.runtimeId || currentRuntimeId;
+    currentPath = imported.path || "/";
+    els.address.value = currentPath;
+    els.runtime.value = currentRuntimeId;
+    saveState({ importedAt: new Date().toISOString() });
+    await updateFrame();
+    return;
   }
 
-  currentRuntimeId = payload.runtimeId || currentRuntimeId;
-  currentPath = payload.path || "/";
+  activeBlueprint = imported.blueprint;
+  saveActiveBlueprint(scopeId, activeBlueprint);
+  currentPath = activeBlueprint.landingPage || config.landingPath || "/";
   els.address.value = currentPath;
-  els.runtime.value = currentRuntimeId;
-  saveState({ importedAt: new Date().toISOString() });
+  saveState({ importedBlueprintAt: new Date().toISOString() });
   await updateFrame();
 }
 
@@ -134,11 +226,14 @@ function bindShellChannel() {
 
     switch (message.kind) {
       case "progress":
+        setUiLocked(true);
         setStatus(message.title, message.detail, message.progress);
         appendLog(`${message.title}: ${message.detail}`);
         break;
       case "ready":
         setStatus("Runtime ready", message.detail || "Omeka S is ready.", 1);
+        remoteFrameBooted = true;
+        setUiLocked(false);
         currentPath = message.path || currentPath;
         els.address.value = currentPath;
         saveState({ lastReadyAt: new Date().toISOString() });
@@ -149,6 +244,8 @@ function bindShellChannel() {
         saveState();
         break;
       case "error":
+        remoteFrameBooted = false;
+        setUiLocked(false);
         setStatus("Runtime error", message.detail, els.progressBar.value);
         appendLog(message.detail, true);
         break;
@@ -169,11 +266,12 @@ function bindServiceWorkerMessages() {
 
 async function main() {
   config = await loadPlaygroundConfig();
+  activeBlueprint = await resolveBlueprintForShell(scopeId, config);
   const previous = loadSessionState(scopeId);
   const defaultRuntime = getDefaultRuntime(config);
 
   currentRuntimeId = previous?.runtimeId || defaultRuntime.id;
-  currentPath = previous?.path || config.landingPath || "/";
+  currentPath = previous?.path || activeBlueprint?.landingPage || config.landingPath || "/";
   els.address.value = currentPath;
 
   for (const runtime of config.runtimes) {
@@ -186,16 +284,34 @@ async function main() {
 
   bindShellChannel();
   bindServiceWorkerMessages();
+  setUiLocked(true);
   setStatus("Booting runtime", "Loading shell and runtime configuration.", 0.04);
   await updateFrame();
 }
 
 els.refresh.addEventListener("click", () => {
-  void updateFrame();
+  refreshWithinRuntime();
+});
+
+els.homeButton.addEventListener("click", navigateHome);
+els.adminButton.addEventListener("click", navigateAdmin);
+els.panelToggle.addEventListener("click", toggleSidePanel);
+els.settingsTab.addEventListener("click", () => setActivePanel("settings"));
+els.logsTab.addEventListener("click", () => setActivePanel("logs"));
+els.addressForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (uiLocked) {
+    return;
+  }
+  navigateWithinRuntime(els.address.value || "/");
 });
 
 els.runtime.addEventListener("change", () => {
+  if (uiLocked) {
+    return;
+  }
   currentRuntimeId = els.runtime.value;
+  remoteFrameBooted = false;
   appendLog(`Switching runtime to ${currentRuntimeId}`);
   saveState({ switchedAt: new Date().toISOString() });
   serviceWorkerReady = null;
@@ -207,13 +323,19 @@ els.address.addEventListener("keydown", (event) => {
     return;
   }
 
-  currentPath = els.address.value || "/";
-  saveState();
-  void updateFrame();
+  event.preventDefault();
+  if (uiLocked) {
+    return;
+  }
+  navigateWithinRuntime(els.address.value || "/");
 });
 
 els.reset.addEventListener("click", () => {
+  if (uiLocked) {
+    return;
+  }
   clearScopeSession(scopeId);
+  remoteFrameBooted = false;
   setStatus("Resetting playground", "Clearing local shell state. The runtime overlay reset is handled inside the remote host.", 0.02);
   serviceWorkerReady = null;
   void updateFrame();
@@ -223,17 +345,25 @@ els.clearLogs.addEventListener("click", () => {
   els.logPanel.textContent = "";
 });
 
-els.exportButton.addEventListener("click", exportSnapshot);
+els.exportButton.addEventListener("click", () => {
+  if (uiLocked) {
+    return;
+  }
+  exportBlueprint();
+});
 
 els.importInput.addEventListener("change", async (event) => {
+  if (uiLocked) {
+    return;
+  }
   const [file] = event.target.files || [];
   if (!file) {
     return;
   }
 
   try {
-    await importSnapshot(file);
-    appendLog(`Imported shell snapshot from ${file.name}`);
+    await importPayload(file);
+    appendLog(`Imported configuration from ${file.name}`);
   } catch (error) {
     appendLog(String(error?.message || error), true);
   } finally {

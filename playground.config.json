@@ -1,5 +1,6 @@
 {
   "bundleVersion": "0.1.0",
+  "defaultBlueprintUrl": "./assets/blueprints/default.blueprint.json",
   "siteTitle": "Omeka S Playground",
   "landingPath": "/login",
   "locale": "en_US",
