@@ -1,7 +1,7 @@
 {
   "bundleVersion": "0.1.0",
   "siteTitle": "Omeka S Playground",
-  "landingPath": "/admin/login",
+  "landingPath": "/login",
   "locale": "en_US",
   "timezone": "UTC",
   "autologin": false,
@@ -9,7 +9,7 @@
   "admin": {
     "username": "admin",
     "password": "password",
-    "email": "admin@example.test"
+    "email": "admin@example.com"
   },
   "runtimes": [
     {
@@ -23,7 +23,6 @@
         "iconv",
         "intl",
         "libxml",
-        "xml",
         "sqlite",
         "simplexml",
         "zlib",

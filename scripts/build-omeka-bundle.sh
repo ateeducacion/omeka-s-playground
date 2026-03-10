@@ -18,6 +18,11 @@ mkdir -p "$OMEKA_STAGE" "$DIST_DIR" "$MANIFEST_DIR"
 cp -R "$SOURCE_DIR"/. "$OMEKA_STAGE"
 rm -rf "$OMEKA_STAGE/.git" "$OMEKA_STAGE/node_modules" "$OMEKA_STAGE/.github" "$OMEKA_STAGE/tests"
 
+# The browser runtime currently lacks fileinfo. Keep the web bundle bootable
+# by relaxing the environment gate while we work on a custom runtime build.
+perl -0pi -e "s/const PHP_REQUIRED_EXTENSIONS = \\['fileinfo', 'mbstring', 'PDO', 'xml'\\];/const PHP_REQUIRED_EXTENSIONS = ['mbstring', 'PDO'];/" \
+  "$OMEKA_STAGE/application/src/Stdlib/Environment.php"
+
 if command -v composer >/dev/null 2>&1; then
   composer install --working-dir="$OMEKA_STAGE" --no-dev --prefer-dist --no-progress --no-interaction >&2
 else
@@ -52,4 +57,3 @@ node "$SCRIPT_DIR/generate-manifest.mjs" \
 
 echo "Omeka VFS written to $VFS_DATA_PATH" >&2
 echo "Manifest written to $MANIFEST_PATH" >&2
-

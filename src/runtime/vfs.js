@@ -1,5 +1,5 @@
 export async function fetchArrayBuffer(path) {
-  const response = await fetch(path, { cache: "force-cache" });
+  const response = await fetch(path, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Unable to fetch ${path}: ${response.status}`);
   }
@@ -29,7 +29,7 @@ export async function loadReadonlyVfs(manifest) {
 
   const [data, index] = await Promise.all([
     fetchArrayBuffer(new URL(`../../assets/manifests/${manifest.vfs.data.path}`, import.meta.url)),
-    fetch(new URL(`../../assets/manifests/${manifest.vfs.index.path}`, import.meta.url), { cache: "force-cache" }).then((response) => {
+    fetch(new URL(`../../assets/manifests/${manifest.vfs.index.path}`, import.meta.url), { cache: "no-store" }).then((response) => {
       if (!response.ok) {
         throw new Error(`Unable to fetch ${manifest.vfs.index.path}: ${response.status}`);
       }

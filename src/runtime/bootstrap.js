@@ -25,6 +25,16 @@ function buildDatabaseIni() {
 function buildLocalConfig(config) {
   return `<?php
 return [
+    'installer' => [
+        'tasks' => [
+            Omeka\\Installation\\Task\\DestroySessionTask::class,
+            Omeka\\Installation\\Task\\ClearCacheTask::class,
+            Omeka\\Installation\\Task\\InstallSchemaTask::class,
+            Omeka\\Installation\\Task\\RecordMigrationsTask::class,
+            Omeka\\Installation\\Task\\CreateFirstUserTask::class,
+            Omeka\\Installation\\Task\\AddDefaultSettingsTask::class,
+        ],
+    ],
     'logger' => [
         'log' => false,
     ],
@@ -50,7 +60,15 @@ date_default_timezone_set('${config.timezone}');
 require OMEKA_PATH . '/vendor/autoload.php';
 $application = Omeka\\Mvc\\Application::init(require OMEKA_PATH . '/application/config/application.config.php');
 $serviceManager = $application->getServiceManager();
-$installer = $serviceManager->get('Omeka\\\\Installer');
+$installer = new Omeka\\Installation\\Installer($serviceManager);
+$installer->registerPreTask(Omeka\\Installation\\Task\\CheckEnvironmentTask::class);
+$installer->registerPreTask(Omeka\\Installation\\Task\\CheckDirPermissionsTask::class);
+$installer->registerTask(Omeka\\Installation\\Task\\DestroySessionTask::class);
+$installer->registerTask(Omeka\\Installation\\Task\\ClearCacheTask::class);
+$installer->registerTask(Omeka\\Installation\\Task\\InstallSchemaTask::class);
+$installer->registerTask(Omeka\\Installation\\Task\\RecordMigrationsTask::class);
+$installer->registerTask(Omeka\\Installation\\Task\\CreateFirstUserTask::class);
+$installer->registerTask(Omeka\\Installation\\Task\\AddDefaultSettingsTask::class);
 $status = $serviceManager->get('Omeka\\\\Status');
 
 $statePath = '${PLAYGROUND_CONFIG_PATH}';

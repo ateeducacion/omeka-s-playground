@@ -2,6 +2,16 @@ import { createPhpBridgeChannel, createWorkerRequestId } from "./src/shared/prot
 
 const bridges = new Map();
 const pending = new Map();
+const STATIC_PREFIXES = [
+  "/assets/",
+  "/src/",
+  "/vendor/",
+  "/sw.js",
+  "/remote.html",
+  "/index.html",
+  "/playground.config.json",
+  "/favicon.ico",
+];
 
 function buildErrorResponse(message, status = 500) {
   return new Response(
@@ -55,6 +65,47 @@ function ensureBridge(scopeId) {
   return bridge;
 }
 
+function extractScopedRuntime(pathname) {
+  const match = pathname.match(/\/playground\/([^/]+)\/([^/]+)(\/.*)?$/u);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    scopeId: match[1],
+    runtimeId: match[2],
+    requestPath: match[3] || "/",
+  };
+}
+
+async function resolveScopedRequest(event, url) {
+  const direct = extractScopedRuntime(url.pathname);
+  if (direct) {
+    return direct;
+  }
+
+  if (STATIC_PREFIXES.some((prefix) => url.pathname === prefix || url.pathname.startsWith(prefix))) {
+    return null;
+  }
+
+  const client = event.clientId ? await self.clients.get(event.clientId) : null;
+  if (!client) {
+    return null;
+  }
+
+  const clientUrl = new URL(client.url);
+  const scoped = extractScopedRuntime(clientUrl.pathname);
+  if (!scoped || clientUrl.origin !== url.origin) {
+    return null;
+  }
+
+  return {
+    scopeId: scoped.scopeId,
+    runtimeId: scoped.runtimeId,
+    requestPath: `${url.pathname}${url.search}`,
+  };
+}
+
 async function serializeRequest(request) {
   return {
     url: request.url,
@@ -77,6 +128,28 @@ function buildPhpRequest(originalRequest, forwardedUrl) {
   }
 
   return new Request(forwardedUrl.toString(), init);
+}
+
+function rewriteScopedLocation(response, { origin, scopeId, runtimeId }) {
+  const location = response.headers.get("location");
+  if (!location) {
+    return response;
+  }
+
+  const resolved = new URL(location, origin);
+  if (resolved.origin !== origin) {
+    return response;
+  }
+
+  const scopedPath = `/playground/${scopeId}/${runtimeId}${resolved.pathname}`.replace(/\/{2,}/gu, "/");
+  const headers = new Headers(response.headers);
+  headers.set("location", `${scopedPath}${resolved.search}${resolved.hash}`);
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function forwardToPhpWorker({ request, runtimeId, scopeId }) {
@@ -108,27 +181,31 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-  const match = url.pathname.match(/\/playground\/([^/]+)\/([^/]+)(\/.*)?$/u);
-
-  if (!match) {
-    return;
-  }
-
-  const [, scopeId, runtimeId, requestPath = "/"] = match;
-  const forwardedUrl = new URL(requestPath, `${url.origin}/`);
-  forwardedUrl.search = url.search;
-
   event.respondWith((async () => {
+    const url = new URL(event.request.url);
+    const scopedRequest = await resolveScopedRequest(event, url);
+    if (!scopedRequest) {
+      return fetch(event.request);
+    }
+
+    const { scopeId, runtimeId, requestPath } = scopedRequest;
+    const forwardedUrl = new URL(requestPath, `${url.origin}/`);
+
     await broadcastToClients({
       kind: "sw-debug",
       detail: `Intercepting ${event.request.method} ${url.pathname}`,
     });
 
-    return forwardToPhpWorker({
+    const response = await forwardToPhpWorker({
       request: buildPhpRequest(event.request, forwardedUrl),
       runtimeId,
       scopeId,
     }).catch((error) => buildErrorResponse(String(error?.stack || error?.message || error)));
+
+    return rewriteScopedLocation(response, {
+      origin: url.origin,
+      scopeId,
+      runtimeId,
+    });
   })());
 });

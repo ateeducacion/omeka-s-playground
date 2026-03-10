@@ -21,11 +21,10 @@ up: bundle serve
 
 clean:
 	rm -rf .cache
-	rm -rf vendor/php-wasm vendor/php-cgi-wasm vendor/php-wasm-dom vendor/php-wasm-iconv vendor/php-wasm-intl vendor/php-wasm-libxml vendor/php-wasm-libzip vendor/php-wasm-mbstring vendor/php-wasm-openssl vendor/php-wasm-phar vendor/php-wasm-simplexml vendor/php-wasm-zlib vendor/pglite
+	rm -rf vendor
 	rm -rf assets/omeka/*
 	rm -rf assets/manifests/*
 	touch assets/omeka/.gitkeep assets/manifests/.gitkeep
 
 reset: clean
 	rm -rf .cache
-
