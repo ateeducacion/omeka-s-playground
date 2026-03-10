@@ -13,8 +13,11 @@
         <strong>Configuring Omeka-S Playground</strong>
         <p id="remote-status">Loading playground runtime.</p>
         <div class="remote-boot__progress">
-          <progress id="remote-progress" max="1" value="0.04"></progress>
-          <span id="remote-progress-label">Loading...</span>
+          <div class="loading-indicator" aria-hidden="true">
+            <span class="loading-spinner"></span>
+            <span class="loading-bar"></span>
+          </div>
+          <span class="loading-copy">Loading runtime…</span>
         </div>
       </div>
     </div>

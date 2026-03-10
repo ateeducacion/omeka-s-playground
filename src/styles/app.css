@@ -58,11 +58,6 @@ button.danger {
   border-color: transparent;
 }
 
-progress {
-  width: 100%;
-  height: 10px;
-}
-
 .shell,
 .remote-boot {
   width: min(100vw, 100%);
@@ -266,6 +261,48 @@ progress {
   background: var(--panel-muted);
 }
 
+.loading-indicator {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: shell-spin 0.8s linear infinite;
+}
+
+.loading-bar {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.loading-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 -35%;
+  width: 35%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent 0%, var(--accent) 35%, var(--accent-strong) 100%);
+  animation: shell-loading-slide 1.15s ease-in-out infinite;
+}
+
+.loading-copy {
+  display: block;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .settings-field {
   display: grid;
   gap: 6px;
@@ -358,18 +395,24 @@ progress {
   gap: 10px;
 }
 
-.remote-boot__progress progress {
-  width: 100%;
-  height: 10px;
-}
-
-.remote-boot__progress span {
-  color: var(--muted);
-  font-size: 0.95rem;
-}
-
 .remote-boot__card.is-hidden {
   display: none;
+}
+
+@keyframes shell-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes shell-loading-slide {
+  0% {
+    transform: translateX(0%);
+  }
+
+  100% {
+    transform: translateX(390%);
+  }
 }
 
 @media (max-width: 1080px) {

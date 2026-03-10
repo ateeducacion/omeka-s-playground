@@ -6,8 +6,6 @@ import { saveSessionState } from "../shared/storage.js";
 
 const overlayEl = document.querySelector(".remote-boot__card");
 const statusEl = document.querySelector("#remote-status");
-const progressEl = document.querySelector("#remote-progress");
-const progressLabelEl = document.querySelector("#remote-progress-label");
 const frameEl = document.querySelector("#remote-frame");
 let phpWorker;
 let activeScopeId;
@@ -22,16 +20,6 @@ function setRemoteProgress(detail, progress = null) {
   if (statusEl && detail) {
     statusEl.textContent = detail;
   }
-
-  if (typeof progress === "number" && progressEl) {
-    progressEl.value = progress;
-  }
-
-  if (progressLabelEl) {
-    progressLabelEl.textContent = typeof progress === "number"
-      ? `${Math.round(progress * 100)}%`
-      : "Loading...";
-  }
 }
 
 function emit(scopeId, message) {
@@ -39,7 +27,7 @@ function emit(scopeId, message) {
     setRemoteProgress(message.detail, message.progress);
   }
   if (message?.kind === "error") {
-    setRemoteProgress(message.detail, progressEl?.value ?? null);
+    setRemoteProgress(message.detail);
   }
 
   const channel = new BroadcastChannel(createShellChannel(scopeId));
@@ -213,7 +201,7 @@ async function bootstrapRemote() {
     phpWorker = new Worker(workerUrl, { type: "module" });
     phpWorker.addEventListener("error", (event) => {
       const detail = event.message || "php-worker failed before signalling readiness.";
-      setRemoteProgress(detail, progressEl?.value ?? null);
+      setRemoteProgress(detail);
       emit(scopeId, {
         kind: "error",
         detail,
@@ -221,7 +209,7 @@ async function bootstrapRemote() {
     });
     phpWorker.addEventListener("messageerror", () => {
       const detail = "php-worker posted a malformed message.";
-      setRemoteProgress(detail, progressEl?.value ?? null);
+      setRemoteProgress(detail);
       emit(scopeId, {
         kind: "error",
         detail,
@@ -258,7 +246,7 @@ bootstrapRemote().catch((error) => {
   const url = new URL(window.location.href);
   const scopeId = url.searchParams.get("scope");
   setOverlayVisible(true);
-  setRemoteProgress(String(error?.message || error), progressEl?.value ?? null);
+  setRemoteProgress(String(error?.message || error));
   emit(scopeId, {
     kind: "error",
     detail: String(error?.stack || error?.message || error),

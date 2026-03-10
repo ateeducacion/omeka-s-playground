@@ -22,8 +22,6 @@ const els = {
   logsPanel: document.querySelector("#logs-panel"),
   logsTab: document.querySelector("#logs-tab"),
   panelToggle: document.querySelector("#panel-toggle-button"),
-  progressBar: document.querySelector("#progress-bar"),
-  progressLabel: document.querySelector("#progress-label"),
   refresh: document.querySelector("#refresh-button"),
   reset: document.querySelector("#reset-button"),
   runtime: document.querySelector("#runtime-select"),
@@ -60,11 +58,6 @@ function appendLog(message, isError = false) {
 function setStatus(title, detail, progress = null) {
   els.statusTitle.textContent = title;
   els.statusDetail.textContent = detail;
-
-  if (typeof progress === "number") {
-    els.progressBar.value = progress;
-    els.progressLabel.textContent = `${Math.round(progress * 100)}%`;
-  }
 }
 
 function setUiLocked(locked) {
@@ -246,7 +239,7 @@ function bindShellChannel() {
       case "error":
         remoteFrameBooted = false;
         setUiLocked(false);
-        setStatus("Runtime error", message.detail, els.progressBar.value);
+        setStatus("Runtime error", message.detail);
         appendLog(message.detail, true);
         break;
       default:
@@ -285,7 +278,7 @@ async function main() {
   bindShellChannel();
   bindServiceWorkerMessages();
   setUiLocked(true);
-  setStatus("Booting runtime", "Loading shell and runtime configuration.", 0.04);
+  setStatus("Booting runtime", "Loading shell and runtime configuration.");
   await updateFrame();
 }
 
