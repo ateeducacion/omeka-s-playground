@@ -212,20 +212,68 @@ function getScopedBasePath(scopeId, runtimeId) {
   return withAppBasePath(`/playground/${scopeId}/${runtimeId}`);
 }
 
-function rewriteHtmlDocument(html, { origin, scopeId, runtimeId }) {
-  const scopedBasePath = getScopedBasePath(scopeId, runtimeId);
-  const scopedOrigin = `${origin}${scopedBasePath}`;
+function decodeHtmlAttributeEntities(value) {
+  return value
+    .replace(/&#x([0-9a-f]+);/giu, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#([0-9]+);/gu, (_, dec) => String.fromCodePoint(Number.parseInt(dec, 10)))
+    .replaceAll("&amp;", "&")
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&#39;", "'")
+    .replaceAll("&apos;", "'")
+    .replaceAll("&sol;", "/")
+    .replaceAll("&colon;", ":");
+}
 
-  return html
-    .replaceAll(`${origin}/`, `${scopedOrigin}/`)
-    .replace(
-      /((?:href|src|action|data-[\w-]*url|data-url|value)=["'])\/(?!\/)/giu,
-      `$1${scopedBasePath}/`,
-    )
-    .replace(
-      /((?:href|src|action|data-[\w-]*url|data-url|value)=["'])https?:\/\/[^/]+\/(?!\/)/giu,
-      `$1${scopedOrigin}/`,
-    );
+function rewriteHtmlAttributeUrl(rawValue, { origin, scopeId, runtimeId }) {
+  const decodedValue = decodeHtmlAttributeEntities(rawValue);
+  const scopedBasePath = getScopedBasePath(scopeId, runtimeId);
+  const appBasePath = getAppBasePath();
+
+  if (!decodedValue) {
+    return decodedValue;
+  }
+
+  if (
+    decodedValue.startsWith("#")
+    || decodedValue.startsWith("javascript:")
+    || decodedValue.startsWith("data:")
+    || decodedValue.startsWith("mailto:")
+    || decodedValue.startsWith("tel:")
+    || decodedValue.startsWith("//")
+  ) {
+    return decodedValue;
+  }
+
+  try {
+    const absolute = new URL(decodedValue, origin);
+    if (absolute.origin !== origin) {
+      return decodedValue;
+    }
+
+    const absolutePath = `${absolute.pathname}${absolute.search}${absolute.hash}`;
+    if (absolute.pathname.startsWith(`${scopedBasePath}/`) || absolute.pathname === scopedBasePath) {
+      return absolutePath;
+    }
+
+    if (appBasePath !== "/" && (absolute.pathname === appBasePath || absolute.pathname.startsWith(`${appBasePath}/`))) {
+      return absolutePath;
+    }
+
+    if (!absolute.pathname.startsWith("/")) {
+      return decodedValue;
+    }
+
+    return `${scopedBasePath}${absolutePath.startsWith("/") ? absolutePath : `/${absolutePath}`}`.replace(/\/{2,}/gu, "/");
+  } catch {
+    return decodedValue;
+  }
+}
+
+function rewriteHtmlDocument(html, scope) {
+  return html.replace(
+    /((?:href|src|action|data-[\w-]*url|data-url|data-action)=["'])([^"']*)(["'])/giu,
+    (match, prefix, rawValue, suffix) => `${prefix}${rewriteHtmlAttributeUrl(rawValue, scope)}${suffix}`,
+  );
 }
 
 async function rewriteScopedHtmlResponse(response, scope) {
