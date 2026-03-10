@@ -2,6 +2,7 @@ import { createPhpBridgeChannel, createWorkerRequestId } from "./src/shared/prot
 
 const bridges = new Map();
 const pending = new Map();
+const clientContexts = new Map();
 const STATIC_PREFIXES = [
   "/assets/",
   "/src/",
@@ -101,6 +102,15 @@ async function resolveScopedRequest(event, url) {
   }
 
   const client = event.clientId ? await self.clients.get(event.clientId) : null;
+  if (event.clientId && clientContexts.has(event.clientId)) {
+    const scoped = clientContexts.get(event.clientId);
+    return {
+      scopeId: scoped.scopeId,
+      runtimeId: scoped.runtimeId,
+      requestPath: `${url.pathname}${url.search}`,
+    };
+  }
+
   if (!client) {
     return null;
   }
@@ -111,11 +121,11 @@ async function resolveScopedRequest(event, url) {
     return null;
   }
 
-  return {
-    scopeId: scoped.scopeId,
-    runtimeId: scoped.runtimeId,
-    requestPath: `${url.pathname}${url.search}`,
-  };
+    return {
+      scopeId: scoped.scopeId,
+      runtimeId: scoped.runtimeId,
+      requestPath: `${url.pathname}${url.search}`,
+    };
 }
 
 async function serializeRequest(request) {
@@ -164,6 +174,12 @@ function rewriteScopedLocation(response, { origin, scopeId, runtimeId }) {
   });
 }
 
+function buildScopedUrl(url, { scopeId, runtimeId, requestPath }) {
+  const scopedPath = `/playground/${scopeId}/${runtimeId}${requestPath.startsWith("/") ? requestPath : `/${requestPath}`}`
+    .replace(/\/{2,}/gu, "/");
+  return new URL(`${scopedPath}`, url.origin);
+}
+
 function forwardToPhpWorker({ request, runtimeId, scopeId }) {
   const bridge = ensureBridge(scopeId);
   const id = createWorkerRequestId();
@@ -201,6 +217,15 @@ self.addEventListener("fetch", (event) => {
     }
 
     const { scopeId, runtimeId, requestPath } = scopedRequest;
+    if (event.clientId) {
+      clientContexts.set(event.clientId, { scopeId, runtimeId });
+    }
+
+    const directScoped = extractScopedRuntime(url.pathname);
+    if (!directScoped && event.request.mode === "navigate" && event.request.method === "GET") {
+      return Response.redirect(buildScopedUrl(url, scopedRequest), 302);
+    }
+
     const forwardedUrl = new URL(requestPath, `${url.origin}/`);
 
     await broadcastToClients({
