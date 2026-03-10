@@ -88,6 +88,18 @@ async function resolveScopedRequest(event, url) {
     return null;
   }
 
+  if (event.request.referrer) {
+    const referrerUrl = new URL(event.request.referrer);
+    const scopedFromReferrer = extractScopedRuntime(referrerUrl.pathname);
+    if (scopedFromReferrer && referrerUrl.origin === url.origin) {
+      return {
+        scopeId: scopedFromReferrer.scopeId,
+        runtimeId: scopedFromReferrer.runtimeId,
+        requestPath: `${url.pathname}${url.search}`,
+      };
+    }
+  }
+
   const client = event.clientId ? await self.clients.get(event.clientId) : null;
   if (!client) {
     return null;
