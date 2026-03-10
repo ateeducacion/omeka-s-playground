@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ateeducacion.github.io/omeka-s-playground/assets/blueprints/blueprint-schema.json",
+  "title": "Omeka S Playground Blueprint",
+  "description": "Schema for browser-applied Omeka S Playground blueprints.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "preferredVersions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "php": { "type": "string" },
+        "omeka": { "type": "string" }
+      }
+    },
+    "landingPage": {
+      "type": "string"
+    },
+    "siteOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "locale": { "type": "string" },
+        "timezone": { "type": "string" }
+      }
+    },
+    "login": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "password": { "type": "string", "minLength": 1 }
+      }
+    },
+    "users": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "password"],
+        "properties": {
+          "username": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 1 },
+          "role": {
+            "type": "string",
+            "enum": ["global_admin", "site_admin", "editor", "reviewer", "author", "researcher", "admin", "supervisor"]
+          },
+          "isActive": { "type": "boolean" }
+        }
+      }
+    },
+    "themes": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "source": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "url": { "type": "string", "format": "uri-reference" }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "state": {
+                "type": "string",
+                "enum": ["install", "activate"]
+              },
+              "source": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "url": { "type": "string", "format": "uri-reference" }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "itemSets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "creator": { "type": "string" },
+          "itemSets": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["url"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["url"]
+                },
+                "url": { "type": "string", "format": "uri-reference" },
+                "title": { "type": "string" },
+                "altText": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string" },
+        "slug": { "type": "string" },
+        "summary": { "type": "string" },
+        "theme": { "type": "string" },
+        "isPublic": { "type": "boolean" },
+        "setAsDefault": { "type": "boolean" }
+      }
+    }
+  }
+}

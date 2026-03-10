@@ -1,13 +1,39 @@
+import { loadActiveBlueprint } from "../shared/blueprint.js";
 import { getDefaultRuntime, loadPlaygroundConfig } from "../shared/config.js";
 import { buildScopedSitePath } from "../shared/paths.js";
 import { createPhpBridgeChannel, createShellChannel } from "../shared/protocol.js";
 import { saveSessionState } from "../shared/storage.js";
 
+const overlayEl = document.querySelector(".remote-boot__card");
 const statusEl = document.querySelector("#remote-status");
 const frameEl = document.querySelector("#remote-frame");
+const remoteLogEl = document.querySelector("#remote-log");
 let phpWorker;
+let activeScopeId;
+let activeRuntimeId;
+let activePath = "/";
+
+function appendRemoteLog(message) {
+  if (!remoteLogEl) {
+    return;
+  }
+
+  remoteLogEl.textContent += `${message}\n`;
+  remoteLogEl.scrollTop = remoteLogEl.scrollHeight;
+}
+
+function setOverlayVisible(isVisible) {
+  overlayEl?.classList.toggle("is-hidden", !isVisible);
+}
 
 function emit(scopeId, message) {
+  if (message?.kind === "progress") {
+    appendRemoteLog(`${message.title}: ${message.detail}`);
+  }
+  if (message?.kind === "error") {
+    appendRemoteLog(message.detail);
+  }
+
   const channel = new BroadcastChannel(createShellChannel(scopeId));
   channel.postMessage(message);
   channel.close();
@@ -41,29 +67,109 @@ async function waitForServiceWorkerControl() {
   }
 }
 
-async function waitForPhpWorkerReady(scopeId, runtimeId) {
-  const bridge = new BroadcastChannel(createPhpBridgeChannel(scopeId));
-
+async function waitForPhpWorkerReady(scopeId, runtimeId, worker) {
   await new Promise((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
-      bridge.close();
       reject(new Error(`Timed out while waiting for php-worker readiness for ${runtimeId}.`));
     }, 15000);
 
-    bridge.addEventListener("message", (event) => {
-      const message = event.data;
+    const handleReady = (message) => {
       if (message?.kind !== "worker-ready") {
-        return;
+        return false;
       }
 
       if (message.scopeId !== scopeId || message.runtimeId !== runtimeId) {
-        return;
+        return false;
       }
 
       window.clearTimeout(timeoutId);
-      bridge.close();
+      worker.removeEventListener("message", onWorkerMessage);
       resolve();
+      return true;
+    };
+
+    const onWorkerMessage = (event) => {
+      handleReady(event.data);
+    };
+
+    worker.addEventListener("message", onWorkerMessage);
+  });
+}
+
+function extractUnscopedPath(locationLike, scopeId, runtimeId) {
+  const url = new URL(String(locationLike), window.location.origin);
+  const match = url.pathname.match(/\/playground\/([^/]+)\/([^/]+)(\/.*)?$/u);
+  if (match && match[1] === scopeId && match[2] === runtimeId) {
+    return `${match[3] || "/"}${url.search}${url.hash}`;
+  }
+
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function emitNavigation(scopeId, runtimeId, href) {
+  emit(scopeId, {
+    kind: "navigate",
+    path: extractUnscopedPath(href, scopeId, runtimeId),
+  });
+}
+
+function buildEntryUrl(scopeId, runtimeId, path) {
+  return new URL(buildScopedSitePath(scopeId, runtimeId, path), window.location.origin);
+}
+
+function navigateFrame(scopeId, runtimeId, path, { reload = false } = {}) {
+  const entryUrl = buildEntryUrl(scopeId, runtimeId, path);
+  activePath = path;
+
+  if (reload && frameEl.contentWindow) {
+    frameEl.contentWindow.location.reload();
+    return;
+  }
+
+  if (frameEl.src !== entryUrl.toString()) {
+    frameEl.src = entryUrl.toString();
+  } else if (frameEl.contentWindow) {
+    frameEl.contentWindow.location.href = entryUrl.toString();
+  }
+}
+
+function bindFrameNavigation(scopeId, runtimeId) {
+  frameEl.addEventListener("load", () => {
+    let path = activePath;
+    try {
+      if (frameEl.contentWindow?.location?.href) {
+        path = extractUnscopedPath(frameEl.contentWindow.location.href, scopeId, runtimeId);
+      }
+    } catch {
+      // Ignore transient about:blank/cross-context timing during iframe swaps.
+    }
+
+    activePath = path;
+    setOverlayVisible(false);
+    emit(scopeId, {
+      kind: "ready",
+      detail: `Iframe loaded for ${runtimeId}.`,
+      path,
     });
+    emitNavigation(scopeId, runtimeId, frameEl.contentWindow?.location?.href || buildEntryUrl(scopeId, runtimeId, path).toString());
+  });
+}
+
+function bindShellCommands(scopeId, runtimeId) {
+  window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin) {
+      return;
+    }
+
+    const message = event.data;
+    if (message?.kind === "navigate-site") {
+      navigateFrame(scopeId, runtimeId, message.path || "/");
+      return;
+    }
+
+    if (message?.kind === "refresh-site") {
+      navigateFrame(scopeId, runtimeId, activePath || "/", { reload: true });
+    }
   });
 }
 
@@ -72,10 +178,16 @@ async function bootstrapRemote() {
   const scopeId = url.searchParams.get("scope");
   const requestedRuntimeId = url.searchParams.get("runtime");
   const requestedPath = url.searchParams.get("path") || "/";
+  activeScopeId = scopeId;
+  activeRuntimeId = requestedRuntimeId;
+  activePath = requestedPath;
   const config = await loadPlaygroundConfig();
+  const blueprint = loadActiveBlueprint(scopeId);
   const runtime = config.runtimes.find((entry) => entry.id === requestedRuntimeId) || getDefaultRuntime(config);
+  setOverlayVisible(true);
 
   statusEl.textContent = "Registering the Service Worker and bootstrapping the PHP CGI worker.";
+  appendRemoteLog("Registering the Service Worker and bootstrapping the PHP CGI worker.");
   emit(scopeId, {
     kind: "progress",
     title: "Preparing runtime",
@@ -85,24 +197,50 @@ async function bootstrapRemote() {
 
   await registerRuntimeServiceWorker(scopeId, runtime.id, config);
   await waitForServiceWorkerControl();
+  appendRemoteLog("Service Worker ready and controlling this tab.");
 
   if (!phpWorker) {
     const workerUrl = new URL("../../php-worker.js", import.meta.url);
     workerUrl.searchParams.set("scope", scopeId);
     workerUrl.searchParams.set("runtime", runtime.id);
     phpWorker = new Worker(workerUrl, { type: "module" });
+    phpWorker.addEventListener("error", (event) => {
+      const detail = event.message || "php-worker failed before signalling readiness.";
+      statusEl.textContent = detail;
+      appendRemoteLog(detail);
+      emit(scopeId, {
+        kind: "error",
+        detail,
+      });
+    });
+    phpWorker.addEventListener("messageerror", () => {
+      const detail = "php-worker posted a malformed message.";
+      statusEl.textContent = detail;
+      appendRemoteLog(detail);
+      emit(scopeId, {
+        kind: "error",
+        detail,
+      });
+    });
+    phpWorker.postMessage({
+      kind: "configure-blueprint",
+      blueprint,
+    });
+    appendRemoteLog(`Created php-worker for ${runtime.id}.`);
   }
-  await waitForPhpWorkerReady(scopeId, runtime.id);
-
-  const entryUrl = new URL(buildScopedSitePath(scopeId, runtime.id, requestedPath), window.location.origin);
+  await waitForPhpWorkerReady(scopeId, runtime.id, phpWorker);
+  appendRemoteLog(`php-worker ready for ${runtime.id}.`);
 
   saveSessionState(scopeId, {
     runtimeId: runtime.id,
     path: requestedPath,
   });
 
-  frameEl.src = entryUrl.toString();
+  bindShellCommands(scopeId, runtime.id);
+  bindFrameNavigation(scopeId, runtime.id);
+  navigateFrame(scopeId, runtime.id, requestedPath);
   statusEl.textContent = "Runtime host registered. Waiting for the PHP worker to finish bootstrap.";
+  appendRemoteLog(`Runtime host registered. Loading ${requestedPath}.`);
 
   emit(scopeId, {
     kind: "progress",
@@ -111,19 +249,14 @@ async function bootstrapRemote() {
     progress: 0.18,
   });
 
-  frameEl.addEventListener("load", () => {
-    emit(scopeId, {
-      kind: "ready",
-      detail: `Iframe loaded for ${runtime.label}.`,
-      path: requestedPath,
-    });
-  });
 }
 
 bootstrapRemote().catch((error) => {
   const url = new URL(window.location.href);
   const scopeId = url.searchParams.get("scope");
+  setOverlayVisible(true);
   statusEl.textContent = String(error?.message || error);
+  appendRemoteLog(String(error?.stack || error?.message || error));
   emit(scopeId, {
     kind: "error",
     detail: String(error?.stack || error?.message || error),

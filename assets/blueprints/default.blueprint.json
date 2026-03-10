@@ -1,0 +1,62 @@
+{
+  "$schema": "./blueprint-schema.json",
+  "meta": {
+    "title": "Default Omeka S Playground Blueprint",
+    "author": "omeka-s-playground",
+    "description": "Baseline browser blueprint for Omeka S Playground."
+  },
+  "preferredVersions": {
+    "php": "8.3",
+    "omeka": "4.2.0"
+  },
+  "landingPage": "/admin",
+  "siteOptions": {
+    "title": "Omeka S Playground",
+    "locale": "en_US",
+    "timezone": "UTC"
+  },
+  "login": {
+    "email": "admin@example.com",
+    "password": "password"
+  },
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@example.com",
+      "password": "password",
+      "role": "global_admin",
+      "isActive": true
+    }
+  ],
+  "themes": [],
+  "modules": [],
+  "itemSets": [
+    {
+      "title": "Playground Collection",
+      "description": "Default collection created from the browser blueprint."
+    }
+  ],
+  "items": [
+    {
+      "title": "Openverse Sample Image",
+      "description": "Sample item created automatically from the default blueprint.",
+      "creator": "Openverse",
+      "itemSets": ["Playground Collection"],
+      "media": [
+        {
+          "type": "url",
+          "url": "./assets/samples/playground-sample.png",
+          "title": "Playground sample image"
+        }
+      ]
+    }
+  ],
+  "site": {
+    "title": "Omeka S Playground Site",
+    "slug": "playground",
+    "theme": "default",
+    "summary": "Default public site created from the browser blueprint.",
+    "isPublic": true,
+    "setAsDefault": true
+  }
+}

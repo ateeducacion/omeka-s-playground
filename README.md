@@ -4,6 +4,43 @@ Browser-based Omeka S playground for static hosting. The app is split into a she
 
 The Omeka application source is built from `ateeducacion/omeka-s` branch `feature/experimental-sqlite-support`. The bundle/build pipeline is adapted from the inspected `erseco/moodle-playground` reference: build a manifest, build a VFS image, keep the core readonly, and persist only mutable paths.
 
+## Blueprints
+
+The playground now supports a WordPress-Playground-style `blueprint.json` contract. The schema is published at:
+
+- `assets/blueprints/blueprint-schema.json`
+
+And the default bundled blueprint lives at:
+
+- `assets/blueprints/default.blueprint.json`
+
+The shell uses the default blueprint automatically unless:
+
+1. a previous blueprint is already stored for the current browser tab scope;
+2. you pass `?blueprint=/path/to/file.json` in the shell URL;
+3. you import a `.json` file from the toolbar.
+
+The `Export` button now exports the active blueprint. `Import` accepts:
+
+- the new blueprint format;
+- the legacy shell snapshot format for backward compatibility.
+
+Supported blueprint capabilities in the current implementation:
+
+- override landing page
+- override installation title, locale, and timezone
+- set the primary admin login
+- create or update multiple Omeka users
+- create or update one default site and optionally make it the installation default
+- create or update item sets
+- create or update items with remote media via the `url` ingester
+- activate bundled Omeka modules present in the browser bundle
+- select the site theme from the themes already present in the bundle
+
+Current limitation:
+
+- remote download/install of third-party Omeka themes and modules from omeka.org package pages is not yet implemented inside the browser runtime. If a blueprint references a module or theme that is not already present in the bundle, the bootstrap logs a warning and continues.
+
 ## Architecture
 
 - `index.html`: shell UI with toolbar, address bar, runtime selector, reset, export/import, log panel, and iframe viewport.
@@ -49,6 +86,14 @@ At first boot the PHP worker:
 6. stores manifest state so subsequent reloads skip reinstall unless the bundle version changes and reset-on-mismatch is enabled.
 
 Default credentials are configured in `playground.config.json`.
+
+The effective install configuration is now derived from the active blueprint. That means changing the blueprint can change:
+
+- admin email/password
+- landing page
+- users to provision
+- default site
+- locale/timezone/title
 
 ## Local Development
 
@@ -114,6 +159,66 @@ Edit `playground.config.json`:
 }
 ```
 
+Or edit `assets/blueprints/default.blueprint.json` if you want the bundled default experience to change without passing a custom blueprint.
+
+## Blueprint Example
+
+```json
+{
+  "$schema": "./assets/blueprints/blueprint-schema.json",
+  "landingPage": "/s/demo",
+  "siteOptions": {
+    "title": "Demo Omeka",
+    "locale": "es",
+    "timezone": "Atlantic/Canary"
+  },
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@example.com",
+      "password": "password",
+      "role": "global_admin"
+    },
+    {
+      "username": "editor",
+      "email": "editor@example.com",
+      "password": "password",
+      "role": "editor"
+    }
+  ],
+  "modules": [
+    { "name": "CSVImport", "state": "activate" }
+  ],
+  "itemSets": [
+    {
+      "title": "Demo Collection",
+      "description": "Collection created from blueprint provisioning."
+    }
+  ],
+  "items": [
+    {
+      "title": "Landscape sample",
+      "description": "Example item with an image URL.",
+      "creator": "Openverse",
+      "itemSets": ["Demo Collection"],
+      "media": [
+        {
+          "type": "url",
+          "url": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80",
+          "title": "Mountain landscape"
+        }
+      ]
+    }
+  ],
+  "site": {
+    "title": "Demo Site",
+    "slug": "demo",
+    "theme": "default",
+    "setAsDefault": true
+  }
+}
+```
+
 ## Resetting Saved State
 
 - Use the shell Reset button to force a clean remote reload for the current scope.
@@ -134,4 +239,3 @@ Target baseline:
 - Chromium current
 - Firefox current
 - Safari current desktop, with expected extra validation around IndexedDB and worker behavior
-

@@ -10,6 +10,7 @@ const bridgeChannel = new BroadcastChannel(createPhpBridgeChannel(scopeId));
 
 let runtimeStatePromise = null;
 let requestQueue = Promise.resolve();
+let activeBlueprint = null;
 
 function postShell(message) {
   const channel = new BroadcastChannel(createShellChannel(scopeId));
@@ -73,6 +74,7 @@ async function getRuntimeState() {
 
     await bootstrapOmeka({
       config,
+      blueprint: activeBlueprint,
       php,
       publish,
       runtimeId,
@@ -81,7 +83,7 @@ async function getRuntimeState() {
     postShell({
       kind: "ready",
       detail: `Omeka bootstrapped for ${runtime.label}.`,
-      path: config.landingPath,
+      path: activeBlueprint?.landingPage || config.landingPath,
     });
 
     return { php };
@@ -121,7 +123,27 @@ bridgeChannel.addEventListener("message", (event) => {
   });
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.kind !== "configure-blueprint") {
+    return;
+  }
+
+  activeBlueprint = event.data.blueprint || null;
+
+  self.postMessage({
+    kind: "worker-ready",
+    scopeId,
+    runtimeId,
+  });
+});
+
 respond({
+  kind: "worker-ready",
+  scopeId,
+  runtimeId,
+});
+
+self.postMessage({
   kind: "worker-ready",
   scopeId,
   runtimeId,
