@@ -43,6 +43,7 @@ let channel;
 let serviceWorkerReady = null;
 let activeBlueprint;
 let remoteFrameBooted = false;
+let uiLocked = true;
 const CONTROL_RELOAD_KEY = `omeka-playground:${scopeId}:sw-controlled`;
 
 function appendLog(message, isError = false) {
@@ -64,6 +65,18 @@ function setStatus(title, detail, progress = null) {
     els.progressBar.value = progress;
     els.progressLabel.textContent = `${Math.round(progress * 100)}%`;
   }
+}
+
+function setUiLocked(locked) {
+  uiLocked = locked;
+  els.address.disabled = locked;
+  els.homeButton.disabled = locked;
+  els.adminButton.disabled = locked;
+  els.runtime.disabled = locked;
+  els.reset.disabled = locked;
+  els.exportButton.disabled = locked;
+  els.importInput.disabled = locked;
+  els.addressForm.classList.toggle("is-disabled", locked);
 }
 
 async function ensureRuntimeServiceWorker() {
@@ -116,6 +129,10 @@ function postToRemote(message) {
 }
 
 function navigateWithinRuntime(path) {
+  if (uiLocked) {
+    return;
+  }
+
   currentPath = path || "/";
   els.address.value = currentPath;
   saveState();
@@ -209,12 +226,14 @@ function bindShellChannel() {
 
     switch (message.kind) {
       case "progress":
+        setUiLocked(true);
         setStatus(message.title, message.detail, message.progress);
         appendLog(`${message.title}: ${message.detail}`);
         break;
       case "ready":
         setStatus("Runtime ready", message.detail || "Omeka S is ready.", 1);
         remoteFrameBooted = true;
+        setUiLocked(false);
         currentPath = message.path || currentPath;
         els.address.value = currentPath;
         saveState({ lastReadyAt: new Date().toISOString() });
@@ -226,6 +245,7 @@ function bindShellChannel() {
         break;
       case "error":
         remoteFrameBooted = false;
+        setUiLocked(false);
         setStatus("Runtime error", message.detail, els.progressBar.value);
         appendLog(message.detail, true);
         break;
@@ -264,6 +284,7 @@ async function main() {
 
   bindShellChannel();
   bindServiceWorkerMessages();
+  setUiLocked(true);
   setStatus("Booting runtime", "Loading shell and runtime configuration.", 0.04);
   await updateFrame();
 }
@@ -279,10 +300,16 @@ els.settingsTab.addEventListener("click", () => setActivePanel("settings"));
 els.logsTab.addEventListener("click", () => setActivePanel("logs"));
 els.addressForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (uiLocked) {
+    return;
+  }
   navigateWithinRuntime(els.address.value || "/");
 });
 
 els.runtime.addEventListener("change", () => {
+  if (uiLocked) {
+    return;
+  }
   currentRuntimeId = els.runtime.value;
   remoteFrameBooted = false;
   appendLog(`Switching runtime to ${currentRuntimeId}`);
@@ -297,10 +324,16 @@ els.address.addEventListener("keydown", (event) => {
   }
 
   event.preventDefault();
+  if (uiLocked) {
+    return;
+  }
   navigateWithinRuntime(els.address.value || "/");
 });
 
 els.reset.addEventListener("click", () => {
+  if (uiLocked) {
+    return;
+  }
   clearScopeSession(scopeId);
   remoteFrameBooted = false;
   setStatus("Resetting playground", "Clearing local shell state. The runtime overlay reset is handled inside the remote host.", 0.02);
@@ -312,9 +345,17 @@ els.clearLogs.addEventListener("click", () => {
   els.logPanel.textContent = "";
 });
 
-els.exportButton.addEventListener("click", exportBlueprint);
+els.exportButton.addEventListener("click", () => {
+  if (uiLocked) {
+    return;
+  }
+  exportBlueprint();
+});
 
 els.importInput.addEventListener("change", async (event) => {
+  if (uiLocked) {
+    return;
+  }
   const [file] = event.target.files || [];
   if (!file) {
     return;

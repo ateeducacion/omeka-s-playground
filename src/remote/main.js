@@ -6,32 +6,40 @@ import { saveSessionState } from "../shared/storage.js";
 
 const overlayEl = document.querySelector(".remote-boot__card");
 const statusEl = document.querySelector("#remote-status");
+const progressEl = document.querySelector("#remote-progress");
+const progressLabelEl = document.querySelector("#remote-progress-label");
 const frameEl = document.querySelector("#remote-frame");
-const remoteLogEl = document.querySelector("#remote-log");
 let phpWorker;
 let activeScopeId;
 let activeRuntimeId;
 let activePath = "/";
 
-function appendRemoteLog(message) {
-  if (!remoteLogEl) {
-    return;
-  }
-
-  remoteLogEl.textContent += `${message}\n`;
-  remoteLogEl.scrollTop = remoteLogEl.scrollHeight;
-}
-
 function setOverlayVisible(isVisible) {
   overlayEl?.classList.toggle("is-hidden", !isVisible);
 }
 
+function setRemoteProgress(detail, progress = null) {
+  if (statusEl && detail) {
+    statusEl.textContent = detail;
+  }
+
+  if (typeof progress === "number" && progressEl) {
+    progressEl.value = progress;
+  }
+
+  if (progressLabelEl) {
+    progressLabelEl.textContent = typeof progress === "number"
+      ? `${Math.round(progress * 100)}%`
+      : "Loading...";
+  }
+}
+
 function emit(scopeId, message) {
   if (message?.kind === "progress") {
-    appendRemoteLog(`${message.title}: ${message.detail}`);
+    setRemoteProgress(message.detail, message.progress);
   }
   if (message?.kind === "error") {
-    appendRemoteLog(message.detail);
+    setRemoteProgress(message.detail, progressEl?.value ?? null);
   }
 
   const channel = new BroadcastChannel(createShellChannel(scopeId));
@@ -186,8 +194,7 @@ async function bootstrapRemote() {
   const runtime = config.runtimes.find((entry) => entry.id === requestedRuntimeId) || getDefaultRuntime(config);
   setOverlayVisible(true);
 
-  statusEl.textContent = "Registering the Service Worker and bootstrapping the PHP CGI worker.";
-  appendRemoteLog("Registering the Service Worker and bootstrapping the PHP CGI worker.");
+  setRemoteProgress("Registering the Service Worker and bootstrapping the PHP CGI worker.", 0.08);
   emit(scopeId, {
     kind: "progress",
     title: "Preparing runtime",
@@ -197,7 +204,7 @@ async function bootstrapRemote() {
 
   await registerRuntimeServiceWorker(scopeId, runtime.id, config);
   await waitForServiceWorkerControl();
-  appendRemoteLog("Service Worker ready and controlling this tab.");
+  setRemoteProgress("Service Worker ready and controlling this tab.", 0.12);
 
   if (!phpWorker) {
     const workerUrl = new URL("../../php-worker.js", import.meta.url);
@@ -206,8 +213,7 @@ async function bootstrapRemote() {
     phpWorker = new Worker(workerUrl, { type: "module" });
     phpWorker.addEventListener("error", (event) => {
       const detail = event.message || "php-worker failed before signalling readiness.";
-      statusEl.textContent = detail;
-      appendRemoteLog(detail);
+      setRemoteProgress(detail, progressEl?.value ?? null);
       emit(scopeId, {
         kind: "error",
         detail,
@@ -215,8 +221,7 @@ async function bootstrapRemote() {
     });
     phpWorker.addEventListener("messageerror", () => {
       const detail = "php-worker posted a malformed message.";
-      statusEl.textContent = detail;
-      appendRemoteLog(detail);
+      setRemoteProgress(detail, progressEl?.value ?? null);
       emit(scopeId, {
         kind: "error",
         detail,
@@ -226,10 +231,9 @@ async function bootstrapRemote() {
       kind: "configure-blueprint",
       blueprint,
     });
-    appendRemoteLog(`Created php-worker for ${runtime.id}.`);
   }
   await waitForPhpWorkerReady(scopeId, runtime.id, phpWorker);
-  appendRemoteLog(`php-worker ready for ${runtime.id}.`);
+  setRemoteProgress(`php-worker ready for ${runtime.id}.`, 0.16);
 
   saveSessionState(scopeId, {
     runtimeId: runtime.id,
@@ -239,8 +243,7 @@ async function bootstrapRemote() {
   bindShellCommands(scopeId, runtime.id);
   bindFrameNavigation(scopeId, runtime.id);
   navigateFrame(scopeId, runtime.id, requestedPath);
-  statusEl.textContent = "Runtime host registered. Waiting for the PHP worker to finish bootstrap.";
-  appendRemoteLog(`Runtime host registered. Loading ${requestedPath}.`);
+  setRemoteProgress("Runtime host registered. Waiting for the PHP worker to finish bootstrap.", 0.18);
 
   emit(scopeId, {
     kind: "progress",
@@ -255,8 +258,7 @@ bootstrapRemote().catch((error) => {
   const url = new URL(window.location.href);
   const scopeId = url.searchParams.get("scope");
   setOverlayVisible(true);
-  statusEl.textContent = String(error?.message || error);
-  appendRemoteLog(String(error?.stack || error?.message || error));
+  setRemoteProgress(String(error?.message || error), progressEl?.value ?? null);
   emit(scopeId, {
     kind: "error",
     detail: String(error?.stack || error?.message || error),

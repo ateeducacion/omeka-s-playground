@@ -106,6 +106,24 @@ progress {
   width: 100%;
 }
 
+.address-form.is-disabled {
+  opacity: 0.72;
+}
+
+.toolbar-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.toolbar-brand__logo {
+  display: block;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
 .address-form__input {
   flex: 1;
 }
@@ -117,6 +135,14 @@ progress {
   border-radius: 10px;
   background: #2a3039;
   color: var(--ink);
+}
+
+.address-form__input input:disabled,
+.toolbar-link:disabled,
+.settings-field select:disabled,
+.settings-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .icon-button {
@@ -299,13 +325,13 @@ progress {
 
 .remote-boot__card > strong,
 .remote-boot__card > p,
-.remote-boot__card > details {
+.remote-boot__card > .remote-boot__progress {
   width: min(560px, 100%);
 }
 
 .remote-boot__card > strong,
 .remote-boot__card > p,
-.remote-boot__details {
+.remote-boot__progress {
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -317,15 +343,19 @@ progress {
   margin: 0;
 }
 
-.remote-boot__details summary {
-  cursor: pointer;
-  color: var(--muted);
+.remote-boot__progress {
+  display: grid;
+  gap: 10px;
 }
 
-.log-panel--compact {
-  min-height: 120px;
-  max-height: 280px;
-  margin-top: 12px;
+.remote-boot__progress progress {
+  width: 100%;
+  height: 10px;
+}
+
+.remote-boot__progress span {
+  color: var(--muted);
+  font-size: 0.95rem;
 }
 
 .remote-boot__card.is-hidden {
