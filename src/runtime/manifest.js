@@ -1,6 +1,6 @@
 export async function fetchManifest() {
   const url = new URL("../../assets/manifests/latest.json", import.meta.url);
-  const response = await fetch(url, { cache: "no-store" });
+  const response = await fetch(url, { cache: "no-cache" });
 
   if (!response.ok) {
     throw new Error(`Unable to load Omeka manifest: ${response.status}`);
@@ -18,4 +18,3 @@ export function buildManifestState(manifest, runtimeId, bundleVersion) {
     generatedAt: manifest.generatedAt,
   };
 }
-

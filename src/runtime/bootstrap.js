@@ -7,7 +7,8 @@ const decoder = new TextDecoder();
 
 export const PLAYGROUND_DB_PATH = "/persist/mutable/db/omeka.sqlite";
 export const PLAYGROUND_CONFIG_PATH = "/persist/mutable/config/playground-state.json";
-export const OMEKA_ROOT = "/persist/www/omeka";
+export const OMEKA_ROOT = "/www/omeka";
+export const OMEKA_FILES_PATH = "/persist/mutable/files";
 
 function phpString(value) {
   return String(value)
@@ -45,6 +46,11 @@ return [
     ],
     'assets' => [
         'use_externals' => false,
+    ],
+    'file_store' => [
+        'local' => [
+            'base_path' => '${OMEKA_FILES_PATH}',
+        ],
     ],
     'translator' => [
         'locale' => '${config.locale}',
@@ -517,10 +523,51 @@ async function ensureMutableLayout(php) {
     "/persist/mutable/logs",
     "/persist/mutable/session",
     "/persist/runtime",
-    "/persist/www",
   ]) {
     await ensureDir(php, path);
   }
+}
+
+function removeNodeIfPresent(FS, path) {
+  const about = FS.analyzePath(path);
+  if (!about.exists) {
+    return;
+  }
+
+  const mode = about.object?.mode;
+  if (typeof mode === "number" && FS.isDir(mode)) {
+    for (const entry of FS.readdir(path)) {
+      if (entry === "." || entry === "..") {
+        continue;
+      }
+      removeNodeIfPresent(FS, `${path}/${entry}`.replace(/\/{2,}/gu, "/"));
+    }
+    FS.rmdir(path);
+    return;
+  }
+
+  FS.unlink(path);
+}
+
+async function linkMutableFilesDir(php) {
+  const binary = await php.binary;
+  const { FS } = binary;
+  const targetPath = `${OMEKA_ROOT}/files`;
+  const about = FS.analyzePath(targetPath);
+
+  if (about.exists) {
+    const mode = about.object?.mode;
+    if (typeof mode === "number" && FS.isLink(mode)) {
+      const existingTarget = FS.readlink(targetPath);
+      if (existingTarget === OMEKA_FILES_PATH) {
+        return;
+      }
+    }
+
+    removeNodeIfPresent(FS, targetPath);
+  }
+
+  FS.symlink(OMEKA_FILES_PATH, targetPath);
 }
 
 async function safeUnlink(php, path) {
@@ -575,7 +622,8 @@ export async function bootstrapOmeka({ blueprint, config, php, publish, runtimeI
   }
 
   publish("Mounting readonly Omeka core bundle.", 0.4);
-  await mountReadonlyCore(php, manifest);
+  await mountReadonlyCore(php, manifest, { root: OMEKA_ROOT });
+  await linkMutableFilesDir(php);
 
   publish("Writing SQLite and local config overrides.", 0.48);
   await php.writeFile(`${OMEKA_ROOT}/config/database.ini`, encoder.encode(buildDatabaseIni()));

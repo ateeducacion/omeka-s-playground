@@ -44,6 +44,7 @@ const manifest = {
   runtimeVersion: args.runtimeVersion,
   vfs: {
     format: "omeka-vfs-image-v1",
+    mountMode: "memfs-hydrate-v1",
     data: {
       path: relative(resolve(manifestPath, ".."), dataPath).replaceAll("\\", "/"),
       fileName: basename(dataPath),
@@ -61,4 +62,3 @@ const manifest = {
 };
 
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-

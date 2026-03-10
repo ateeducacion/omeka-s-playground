@@ -63,6 +63,7 @@ The runtime selector is wired to those entries. Switching runtime reloads the re
 The design is:
 
 - readonly core bundle in `assets/omeka/*.vfs.bin` + `*.vfs.index.json`
+- readonly Omeka tree hydrated into the runtime memory filesystem at boot
 - writable overlay persisted in the browser for:
   - SQLite database
   - `config/database.ini`
