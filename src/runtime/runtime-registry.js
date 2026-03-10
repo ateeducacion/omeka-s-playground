@@ -8,6 +8,7 @@ import * as PhpWasmOpenssl from "../../vendor/php-wasm-openssl/index.js";
 import * as PhpWasmPhar from "../../vendor/php-wasm-phar/index.js";
 import * as PhpWasmSqlite from "../../vendor/php-wasm-sqlite/index.js";
 import * as PhpWasmSimplexml from "../../vendor/php-wasm-simplexml/index.js";
+import * as PhpWasmXml from "../../vendor/php-wasm-xml/index.js";
 import * as PhpWasmZlib from "../../vendor/php-wasm-zlib/index.js";
 
 const LIBS = {
@@ -22,6 +23,7 @@ const LIBS = {
   phar: PhpWasmPhar,
   simplexml: PhpWasmSimplexml,
   zlib: PhpWasmZlib,
+  xml: PhpWasmXml,
 };
 
 export function resolveSharedLibs(runtime) {

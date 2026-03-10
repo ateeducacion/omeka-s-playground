@@ -23,6 +23,7 @@
         "iconv",
         "intl",
         "libxml",
+        "xml",
         "sqlite",
         "simplexml",
         "zlib",

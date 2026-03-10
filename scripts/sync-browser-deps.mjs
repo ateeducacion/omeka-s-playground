@@ -11,6 +11,7 @@ const extensionPackages = [
   "php-wasm-iconv",
   "php-wasm-intl",
   "php-wasm-libxml",
+  "php-wasm-xml",
   "php-wasm-sqlite",
   "php-wasm-dom",
   "php-wasm-simplexml",

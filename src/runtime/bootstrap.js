@@ -76,13 +76,29 @@ if (!$status->isInstalled()) {
   ]);
 
   if (!$installer->install()) {
-    fwrite(STDERR, implode(PHP_EOL, $installer->getErrors()) . PHP_EOL);
+    echo implode(PHP_EOL, $installer->getErrors()) . PHP_EOL;
     exit(1);
   }
 }
 
 file_put_contents($statePath, json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 echo "omeka-playground-bootstrap-complete\\n";
+`;
+}
+
+function buildProbeScript() {
+  return `<?php
+$result = [
+  'php_ini_loaded_file' => php_ini_loaded_file(),
+  'pdo_loaded' => extension_loaded('PDO'),
+  'sqlite_loaded' => extension_loaded('sqlite3'),
+  'pdo_sqlite_loaded' => extension_loaded('pdo_sqlite'),
+  'available_drivers' => class_exists('PDO') ? PDO::getAvailableDrivers() : [],
+  'php_ini' => @file_get_contents('/php.ini'),
+];
+
+header('Content-Type: application/json');
+echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 `;
 }
 
@@ -186,6 +202,15 @@ export async function bootstrapOmeka({ config, php, publish, runtimeId }) {
   await php.writeFile(`${OMEKA_ROOT}/config/database.ini`, encoder.encode(buildDatabaseIni()));
   await php.writeFile(`${OMEKA_ROOT}/config/local.config.php`, encoder.encode(buildLocalConfig(config)));
   await appendPhpIniOverrides(php, config);
+  await php.writeFile(`${OMEKA_ROOT}/playground-probe.php`, encoder.encode(buildProbeScript()));
+
+  const probeResponse = await php.request(new Request("https://playground.internal/playground-probe.php"));
+  const probeText = await probeResponse.text();
+  const probe = JSON.parse(probeText);
+
+  if (!probe.available_drivers?.includes("sqlite")) {
+    throw new Error(`SQLite probe failed: ${probeText}`);
+  }
 
   publish("Running automatic Omeka installer if needed.", 0.64);
   await php.writeFile(`${OMEKA_ROOT}/playground-install.php`, encoder.encode(buildInstallScript(config, manifestState)));
