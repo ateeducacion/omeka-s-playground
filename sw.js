@@ -15,6 +15,38 @@ const STATIC_PREFIXES = [
   "/favicon.ico",
 ];
 
+function getAppBasePath() {
+  const scopeUrl = new URL(self.registration.scope);
+  const pathname = scopeUrl.pathname;
+  return pathname.endsWith("/") ? pathname.slice(0, -1) || "/" : pathname || "/";
+}
+
+function stripAppBasePath(pathname) {
+  const basePath = getAppBasePath();
+  if (basePath === "/") {
+    return pathname || "/";
+  }
+
+  if (pathname === basePath) {
+    return "/";
+  }
+
+  if (pathname.startsWith(`${basePath}/`)) {
+    return pathname.slice(basePath.length) || "/";
+  }
+
+  return pathname || "/";
+}
+
+function withAppBasePath(pathname) {
+  const basePath = getAppBasePath();
+  if (basePath === "/") {
+    return pathname;
+  }
+
+  return `${basePath}${pathname.startsWith("/") ? pathname : `/${pathname}`}`.replace(/\/{2,}/gu, "/");
+}
+
 function buildErrorResponse(message, status = 500) {
   return new Response(
     `<!doctype html><meta charset="utf-8"><title>Omeka Playground Error</title><body><pre>${message}</pre></body>`,
@@ -68,7 +100,7 @@ function ensureBridge(scopeId) {
 }
 
 function extractScopedRuntime(pathname) {
-  const match = pathname.match(/\/playground\/([^/]+)\/([^/]+)(\/.*)?$/u);
+  const match = stripAppBasePath(pathname).match(/\/playground\/([^/]+)\/([^/]+)(\/.*)?$/u);
   if (!match) {
     return null;
   }
@@ -81,12 +113,13 @@ function extractScopedRuntime(pathname) {
 }
 
 async function resolveScopedRequest(event, url) {
+  const strippedPathname = stripAppBasePath(url.pathname);
   const direct = extractScopedRuntime(url.pathname);
   if (direct) {
     return direct;
   }
 
-  if (STATIC_PREFIXES.some((prefix) => url.pathname === prefix || url.pathname.startsWith(prefix))) {
+  if (STATIC_PREFIXES.some((prefix) => strippedPathname === prefix || strippedPathname.startsWith(prefix))) {
     return null;
   }
 
@@ -97,7 +130,7 @@ async function resolveScopedRequest(event, url) {
       return {
         scopeId: scopedFromReferrer.scopeId,
         runtimeId: scopedFromReferrer.runtimeId,
-        requestPath: `${url.pathname}${url.search}`,
+        requestPath: `${strippedPathname}${url.search}`,
       };
     }
   }
@@ -108,7 +141,7 @@ async function resolveScopedRequest(event, url) {
     return {
       scopeId: scoped.scopeId,
       runtimeId: scoped.runtimeId,
-      requestPath: `${url.pathname}${url.search}`,
+      requestPath: `${strippedPathname}${url.search}`,
     };
   }
 
@@ -125,7 +158,7 @@ async function resolveScopedRequest(event, url) {
     return {
       scopeId: scoped.scopeId,
       runtimeId: scoped.runtimeId,
-      requestPath: `${url.pathname}${url.search}`,
+      requestPath: `${strippedPathname}${url.search}`,
     };
 }
 
@@ -164,7 +197,7 @@ function rewriteScopedLocation(response, { origin, scopeId, runtimeId }) {
     return response;
   }
 
-  const scopedPath = `/playground/${scopeId}/${runtimeId}${resolved.pathname}`.replace(/\/{2,}/gu, "/");
+  const scopedPath = withAppBasePath(`/playground/${scopeId}/${runtimeId}${stripAppBasePath(resolved.pathname)}`.replace(/\/{2,}/gu, "/"));
   const headers = new Headers(response.headers);
   headers.set("location", `${scopedPath}${resolved.search}${resolved.hash}`);
 
@@ -176,8 +209,10 @@ function rewriteScopedLocation(response, { origin, scopeId, runtimeId }) {
 }
 
 function buildScopedUrl(url, { scopeId, runtimeId, requestPath }) {
-  const scopedPath = `/playground/${scopeId}/${runtimeId}${requestPath.startsWith("/") ? requestPath : `/${requestPath}`}`
-    .replace(/\/{2,}/gu, "/");
+  const scopedPath = withAppBasePath(
+    `/playground/${scopeId}/${runtimeId}${requestPath.startsWith("/") ? requestPath : `/${requestPath}`}`
+      .replace(/\/{2,}/gu, "/"),
+  );
   return new URL(`${scopedPath}`, url.origin);
 }
 
@@ -218,10 +253,11 @@ self.addEventListener("fetch", (event) => {
 
     const scopedRequest = await resolveScopedRequest(event, url);
     if (!scopedRequest) {
-      if (url.pathname === "/jquery-3.7.1.min.js") {
-        return fetch(new URL("/application/asset/vendor/jquery/jquery.min.js", self.location.origin));
+      const strippedPathname = stripAppBasePath(url.pathname);
+      if (strippedPathname === "/jquery-3.7.1.min.js") {
+        return fetch(new URL(withAppBasePath("/application/asset/vendor/jquery/jquery.min.js"), self.location.origin));
       }
-      if (url.pathname === "/css" && url.searchParams.has("family")) {
+      if (strippedPathname === "/css" && url.searchParams.has("family")) {
         return new Response("", {
           status: 200,
           headers: {
