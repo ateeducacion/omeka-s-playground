@@ -449,7 +449,6 @@ $propertyIdByTerm = function (string $term) use ($searchOne, &$warnings) {
   $property = $searchOne('properties', ['term' => $term]);
   if (!$property) {
     $warnings[] = sprintf('Property "%s" is not available in this Omeka installation.', $term);
-    $propertyMap[$term] = null;
     return null;
   }
 

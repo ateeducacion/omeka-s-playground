@@ -116,7 +116,10 @@ async function resolveScopedRequest(event, url) {
   const strippedPathname = stripAppBasePath(url.pathname);
   const direct = extractScopedRuntime(url.pathname);
   if (direct) {
-    return direct;
+    return {
+      ...direct,
+      requestPath: `${direct.requestPath}${url.search}`,
+    };
   }
 
   if (STATIC_PREFIXES.some((prefix) => strippedPathname === prefix || strippedPathname.startsWith(prefix))) {
