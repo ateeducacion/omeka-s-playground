@@ -10,7 +10,7 @@ theme:
 nav:
   - Home: index.md
   - Getting started: getting-started.md
-  - WordPress Playground: wordpress-playground.md
+  - WordPress Playground model: wordpress-playground.md
   - blueprint.json: blueprint-json.md
   - Development: development.md
 markdown_extensions:

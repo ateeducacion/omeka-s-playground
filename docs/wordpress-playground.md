@@ -1,4 +1,4 @@
-# WordPress Playground in this repository
+# WordPress Playground-inspired model
 
 ## What WordPress Playground means here
 
@@ -73,7 +73,7 @@ When contributors change any of those areas, they should think in Playground ter
 - Each scope gets its own persisted state.
 - Importing a blueprint triggers a clean boot for that scope.
 - The shell UI stores session state such as the active path and runtime selection.
-- Runtime navigation happens inside the iframe, while the new **Docs** menu entry opens published documentation in a separate tab.
+- Runtime navigation happens inside the iframe, while the **Docs** menu entry opens published documentation in a separate tab.
 
 ## Constraints and caveats
 
