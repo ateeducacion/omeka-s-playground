@@ -189,6 +189,7 @@ Relevant files:
 Blueprints can define:
 
 - Site title, locale, timezone
+- Debug mode for development-style error visibility
 - Admin and other users
 - Landing page
 - Site creation

@@ -9,6 +9,9 @@
     "php": "8.3",
     "omeka": "4.2.0"
   },
+  "debug": {
+    "enabled": false
+  },
   "landingPage": "/admin",
   "siteOptions": {
     "title": "Omeka S Playground",

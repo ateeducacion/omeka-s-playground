@@ -42,6 +42,7 @@ let serviceWorkerReady = null;
 let activeBlueprint;
 let remoteFrameBooted = false;
 let uiLocked = true;
+let remoteReloadToken = 0;
 const CONTROL_RELOAD_KEY = `omeka-playground:${scopeId}:sw-controlled`;
 
 function appendLog(message, isError = false) {
@@ -87,11 +88,12 @@ async function ensureRuntimeServiceWorker() {
   swUrl.searchParams.set("scope", scopeId);
   swUrl.searchParams.set("runtime", currentRuntimeId);
 
-  await navigator.serviceWorker.register(swUrl, {
+  const registration = await navigator.serviceWorker.register(swUrl, {
     scope: "./",
     type: "module",
     updateViaCache: "none",
   });
+  await registration.update();
   await navigator.serviceWorker.ready;
 
   if (!navigator.serviceWorker.controller) {
@@ -113,6 +115,9 @@ async function updateFrame() {
 
   await serviceWorkerReady;
   const url = resolveRemoteUrl(scopeId, currentRuntimeId, currentPath);
+  if (remoteReloadToken > 0) {
+    url.searchParams.set("reload", String(remoteReloadToken));
+  }
   remoteFrameBooted = false;
   els.frame.src = url.toString();
 }
@@ -149,6 +154,22 @@ function refreshWithinRuntime() {
     return;
   }
 
+  void updateFrame();
+}
+
+function restartRuntime() {
+  if (uiLocked) {
+    return;
+  }
+
+  remoteReloadToken = Date.now();
+  remoteFrameBooted = false;
+  serviceWorkerReady = null;
+  setUiLocked(true);
+  setStatus("Restarting runtime", "Reloading the runtime host, service worker, and PHP worker.", 0.08);
+  appendLog(`Restarting runtime for ${currentRuntimeId}`);
+  // Force a fresh remote host bootstrap instead of a plain iframe page reload.
+  els.frame.src = "about:blank";
   void updateFrame();
 }
 
@@ -290,7 +311,7 @@ async function main() {
 }
 
 els.refresh.addEventListener("click", () => {
-  refreshWithinRuntime();
+  restartRuntime();
 });
 
 els.homeButton.addEventListener("click", navigateHome);

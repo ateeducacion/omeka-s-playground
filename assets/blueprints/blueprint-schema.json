@@ -26,6 +26,13 @@
         "omeka": { "type": "string" }
       }
     },
+    "debug": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
     "landingPage": {
       "type": "string"
     },

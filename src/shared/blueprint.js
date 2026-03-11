@@ -186,6 +186,9 @@ export function buildDefaultBlueprint(config) {
       php: config.runtimes?.find((runtime) => runtime.default)?.phpVersionLabel || config.runtimes?.[0]?.phpVersionLabel || "8.3",
       omeka: "4.2.0",
     },
+    debug: {
+      enabled: false,
+    },
     landingPage: "/admin",
     siteOptions: {
       title: config.siteTitle,
@@ -281,6 +284,9 @@ export function normalizeBlueprint(input, config) {
       php: blueprint.preferredVersions?.php || fallback.preferredVersions.php,
       omeka: blueprint.preferredVersions?.omeka || fallback.preferredVersions.omeka,
     },
+    debug: {
+      enabled: blueprint.debug?.enabled === true,
+    },
     landingPage: normalizePath(blueprint.landingPage || blueprint.landingPath || fallback.landingPage, fallback.landingPage),
     siteOptions: {
       title: blueprint.siteOptions?.title || fallback.siteOptions.title,
@@ -332,6 +338,7 @@ export function buildEffectivePlaygroundConfig(config, blueprint) {
     locale: normalized.siteOptions.locale,
     timezone: normalized.siteOptions.timezone,
     landingPath: normalized.landingPage,
+    debug: normalized.debug,
     admin: {
       username: primaryUser.username,
       email: normalized.login.email || primaryUser.email,

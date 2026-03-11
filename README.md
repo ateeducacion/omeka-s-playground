@@ -79,6 +79,7 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
 ### What blueprints can configure
 
 - Landing page, installation title, locale, and timezone
+- Debug mode for Omeka/PHP error visibility
 - Admin and additional users
 - A default site with a theme selection
 - Item sets and items with remote media
@@ -90,6 +91,9 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
 ```json
 {
   "$schema": "./assets/blueprints/blueprint-schema.json",
+  "debug": {
+    "enabled": true
+  },
   "landingPage": "/s/demo",
   "siteOptions": {
     "title": "Demo Omeka",
@@ -138,6 +142,8 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
 ```
 
 The full schema is at [`assets/blueprints/blueprint-schema.json`](assets/blueprints/blueprint-schema.json).
+
+When `debug.enabled` is `true`, the playground switches that scope into a development-like Omeka/PHP mode so browser `500` responses expose more useful detail. Use it for diagnosis, not for normal demo blueprints.
 
 For embedded URL payloads, `blueprint-data` expects the JSON blueprint encoded as base64url. Standard base64 is also accepted as long as it is URL-encoded safely.
 
