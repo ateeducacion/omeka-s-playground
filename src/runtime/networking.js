@@ -26,9 +26,19 @@ function isAllowedHost(hostname, allowedHosts) {
   });
 }
 
-function shouldBypassPolicy(url) {
+function isConfiguredProxyUrl(url, config) {
+  const proxyUrl = resolveConfiguredProxyUrl(config, globalThis.location?.href);
+  return Boolean(
+    proxyUrl
+    && url.origin === proxyUrl.origin
+    && url.pathname === proxyUrl.pathname,
+  );
+}
+
+function shouldBypassPolicy(url, config) {
   return !["http:", "https:"].includes(url.protocol)
-    || (globalThis.location && url.origin === globalThis.location.origin);
+    || (globalThis.location && url.origin === globalThis.location.origin)
+    || isConfiguredProxyUrl(url, config);
 }
 
 function rebuildResponse(response, bytes) {
@@ -126,7 +136,7 @@ export function installOutboundFetchPolicy(config) {
     const request = input instanceof Request ? input : new Request(input, init);
     const url = new URL(request.url, globalThis.location?.href);
 
-    if (shouldBypassPolicy(url)) {
+    if (shouldBypassPolicy(url, normalized)) {
       return originalFetch(input, init);
     }
 

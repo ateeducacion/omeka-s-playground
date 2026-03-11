@@ -9,7 +9,8 @@
       "omeka.org",
       "raw.githubusercontent.com",
       "github.com",
-      "codeload.github.com"
+      "codeload.github.com",
+      "zip-proxy.erseco.workers.dev"
     ],
     "allowedMethods": [
       "GET",
