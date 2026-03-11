@@ -41,6 +41,7 @@
       "cgiWasmPath": "./vendor/php-cgi-wasm",
       "sharedLibs": [
         "dom",
+        "gd",
         "iconv",
         "intl",
         "libxml",

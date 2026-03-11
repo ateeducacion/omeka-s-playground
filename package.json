@@ -13,6 +13,7 @@
     "php-cgi-wasm": "0.0.9-alpha-32",
     "php-wasm": "0.0.9-alpha-32",
     "php-wasm-dom": "^0.0.0-j",
+    "php-wasm-gd": "^0.0.9-j",
     "php-wasm-iconv": "^0.0.9-j",
     "php-wasm-intl": "^0.0.0-l",
     "php-wasm-libxml": "^0.0.9-q",

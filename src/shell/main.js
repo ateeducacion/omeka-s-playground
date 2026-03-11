@@ -13,6 +13,9 @@ const els = {
   addressForm: document.querySelector("#address-form"),
   address: document.querySelector("#address-input"),
   adminButton: document.querySelector("#admin-button"),
+  blueprintPanel: document.querySelector("#blueprint-panel"),
+  blueprintTab: document.querySelector("#blueprint-tab"),
+  blueprintTextarea: document.querySelector("#blueprint-textarea"),
   clearLogs: document.querySelector("#clear-logs-button"),
   exportButton: document.querySelector("#export-button"),
   importInput: document.querySelector("#import-input"),
@@ -182,13 +185,18 @@ function navigateAdmin() {
 }
 
 function setActivePanel(panel) {
-  const isLogs = panel === "logs";
-  els.settingsPanel.classList.toggle("is-hidden", isLogs);
-  els.logsPanel.classList.toggle("is-hidden", !isLogs);
-  els.settingsTab.classList.toggle("is-active", !isLogs);
-  els.logsTab.classList.toggle("is-active", isLogs);
-  els.settingsTab.setAttribute("aria-selected", String(!isLogs));
-  els.logsTab.setAttribute("aria-selected", String(isLogs));
+  const panels = {
+    blueprint: [els.blueprintPanel, els.blueprintTab],
+    logs: [els.logsPanel, els.logsTab],
+    settings: [els.settingsPanel, els.settingsTab],
+  };
+
+  for (const [panelName, [panelEl, tabEl]] of Object.entries(panels)) {
+    const isActive = panelName === panel;
+    panelEl.classList.toggle("is-hidden", !isActive);
+    tabEl.classList.toggle("is-active", isActive);
+    tabEl.setAttribute("aria-selected", String(isActive));
+  }
 }
 
 function toggleSidePanel() {
@@ -217,6 +225,15 @@ function exportBlueprint() {
   URL.revokeObjectURL(url);
 }
 
+function updateBlueprintTextarea() {
+  if (!config || !activeBlueprint || !els.blueprintTextarea) {
+    return;
+  }
+
+  els.blueprintTextarea.value = JSON.stringify(exportBlueprintPayload(config, activeBlueprint), null, 2);
+  els.blueprintTextarea.scrollTop = 0;
+}
+
 async function importPayload(file) {
   const imported = parseImportedBlueprintPayload(JSON.parse(await file.text()), config);
 
@@ -234,6 +251,7 @@ async function importPayload(file) {
   saveActiveBlueprint(scopeId, activeBlueprint);
   currentPath = activeBlueprint.landingPage || config.landingPath || "/";
   els.address.value = currentPath;
+  updateBlueprintTextarea();
   saveState({ importedBlueprintAt: new Date().toISOString() });
   await updateFrame();
 }
@@ -286,6 +304,7 @@ function bindServiceWorkerMessages() {
 async function main() {
   config = await loadPlaygroundConfig();
   activeBlueprint = await resolveBlueprintForShell(scopeId, config);
+  updateBlueprintTextarea();
   const previous = loadSessionState(scopeId);
   const defaultRuntime = getDefaultRuntime(config);
   const preferredPath = activeBlueprint?.landingPage || config.landingPath || "/";
@@ -319,6 +338,7 @@ els.adminButton.addEventListener("click", navigateAdmin);
 els.panelToggle.addEventListener("click", toggleSidePanel);
 els.settingsTab.addEventListener("click", () => setActivePanel("settings"));
 els.logsTab.addEventListener("click", () => setActivePanel("logs"));
+els.blueprintTab.addEventListener("click", () => setActivePanel("blueprint"));
 els.addressForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (uiLocked) {

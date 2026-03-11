@@ -15,6 +15,7 @@ const extensionPackages = [
   "php-wasm-xml",
   "php-wasm-sqlite",
   "php-wasm-dom",
+  "php-wasm-gd",
   "php-wasm-simplexml",
   "php-wasm-libzip",
   "php-wasm-mbstring",

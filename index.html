@@ -79,6 +79,7 @@
           <div class="panel-tabs" role="tablist" aria-label="Playground panel tabs">
             <button type="button" id="settings-tab" class="panel-tab is-active" role="tab" aria-selected="true" data-panel-tab="settings">Settings</button>
             <button type="button" id="logs-tab" class="panel-tab" role="tab" aria-selected="false" data-panel-tab="logs">Logs</button>
+            <button type="button" id="blueprint-tab" class="panel-tab" role="tab" aria-selected="false" data-panel-tab="blueprint">Blueprint</button>
           </div>
 
           <section id="settings-panel" class="side-panel__content" role="tabpanel" aria-labelledby="settings-tab" data-panel-view="settings">
@@ -95,12 +96,19 @@
             </div>
           </section>
 
-          <section id="logs-panel" class="side-panel__content is-hidden" role="tabpanel" aria-labelledby="logs-tab" data-panel-view="logs">
+          <section id="logs-panel" class="side-panel__content side-panel__content--stack is-hidden" role="tabpanel" aria-labelledby="logs-tab" data-panel-view="logs">
             <div class="panel__row">
               <span>Runtime log</span>
               <button type="button" id="clear-logs-button">Clear</button>
             </div>
             <pre id="log-panel" class="log-panel"></pre>
+          </section>
+
+          <section id="blueprint-panel" class="side-panel__content side-panel__content--stack is-hidden" role="tabpanel" aria-labelledby="blueprint-tab" data-panel-view="blueprint">
+            <div class="panel__row">
+              <span>Blueprint JSON</span>
+            </div>
+            <textarea id="blueprint-textarea" class="panel-textarea" spellcheck="false" readonly></textarea>
           </section>
 
           <footer class="side-panel__footer">

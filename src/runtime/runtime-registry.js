@@ -1,4 +1,5 @@
 import * as PhpWasmDom from "../../vendor/php-wasm-dom/index.js";
+import * as PhpWasmGd from "../../vendor/php-wasm-gd/index.js";
 import * as PhpWasmIconv from "../../vendor/php-wasm-iconv/index.js";
 import * as PhpWasmIntl from "../../vendor/php-wasm-intl/index.js";
 import * as PhpWasmLibxml from "../../vendor/php-wasm-libxml/index.js";
@@ -13,6 +14,7 @@ import * as PhpWasmZlib from "../../vendor/php-wasm-zlib/index.js";
 
 const LIBS = {
   dom: PhpWasmDom,
+  gd: PhpWasmGd,
   iconv: PhpWasmIconv,
   intl: PhpWasmIntl,
   libxml: PhpWasmLibxml,

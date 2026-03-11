@@ -169,6 +169,11 @@ button.danger {
   overflow: hidden;
 }
 
+.workspace > * {
+  min-width: 0;
+  min-height: 0;
+}
+
 .workspace.is-panel-collapsed {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -192,6 +197,8 @@ button.danger {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   border-left: 1px solid var(--line);
   background: #15181e;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .side-panel.is-collapsed {
@@ -241,10 +248,18 @@ button.danger {
 
 .side-panel__content {
   overflow: auto;
+  min-height: 0;
 }
 
 .side-panel__content.is-hidden {
   display: none;
+}
+
+.side-panel__content--stack {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .side-panel__footer {
@@ -378,7 +393,8 @@ button.danger {
 
 .log-panel {
   margin: 0;
-  min-height: 220px;
+  height: 100%;
+  min-height: 0;
   border-radius: 12px;
   padding: 12px;
   background: #101418;
@@ -389,6 +405,20 @@ button.danger {
 
 .log-panel .error {
   color: #ffb4a6;
+}
+
+.panel-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  resize: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: #101418;
+  color: #edf2f7;
+  font: 0.83rem/1.5 ui-monospace, "SFMono-Regular", monospace;
+  overflow: auto;
 }
 
 .remote-boot {
