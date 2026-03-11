@@ -1032,7 +1032,8 @@ async function cacheBlueprintMediaFiles({ php, blueprint, publish }) {
       }
 
       try {
-        const response = await fetch(sourceUrl, { redirect: "follow" });
+        const directFetch = globalThis.__omekaOriginalFetch || globalThis.fetch.bind(globalThis);
+        const response = await directFetch(sourceUrl, { redirect: "follow" });
         if (!response.ok) {
           throw new Error(`${response.status} ${response.statusText}`.trim());
         }

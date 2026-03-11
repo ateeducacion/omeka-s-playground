@@ -41,15 +41,41 @@
   ],
   "items": [
     {
-      "title": "Openverse Sample Image",
-      "description": "Sample item created automatically from the default blueprint.",
-      "creator": "Openverse",
+      "title": "The Garden of Earthly Delights",
+      "description": "Public domain sample item created automatically from the default blueprint.",
+      "creator": "Hieronymus Bosch",
       "itemSets": ["Playground Collection"],
       "media": [
         {
           "type": "url",
-          "url": "./assets/samples/playground-sample.png",
-          "title": "Playground sample image"
+          "url": "./assets/samples/garden-of-earthly-delights.jpg",
+          "title": "The Garden of Earthly Delights"
+        }
+      ]
+    },
+    {
+      "title": "Thomas Carlyle Oil Painting 1868",
+      "description": "Public domain sample item bundled with the default blueprint.",
+      "creator": "George Frederic Watts",
+      "itemSets": ["Playground Collection"],
+      "media": [
+        {
+          "type": "url",
+          "url": "./assets/samples/thomas-carlyle-oil-painting-1868.jpg",
+          "title": "Thomas Carlyle Oil Painting 1868"
+        }
+      ]
+    },
+    {
+      "title": "Beethoven Sample Audio",
+      "description": "Public domain Beethoven recording bundled with the playground sample blueprint.",
+      "creator": "Ludwig van Beethoven",
+      "itemSets": ["Playground Collection"],
+      "media": [
+        {
+          "type": "url",
+          "url": "./assets/samples/beethoven-public-domain.ogg",
+          "title": "Public domain Beethoven recording"
         }
       ]
     }
