@@ -6,6 +6,8 @@
   "outboundHttp": {
     "enabled": true,
     "allowedHosts": [
+      "localhost",
+      "127.0.0.1",
       "omeka.org",
       "raw.githubusercontent.com",
       "github.com",

@@ -11,6 +11,7 @@ export const PLAYGROUND_CONFIG_PATH = "/persist/mutable/config/playground-state.
 export const PLAYGROUND_PREPEND_PATH = "/persist/mutable/config/playground-prepend.php";
 export const OMEKA_ROOT = "/www/omeka";
 export const OMEKA_FILES_PATH = "/persist/mutable/files";
+export const PLAYGROUND_BLUEPRINT_MEDIA_PATH = "/persist/runtime/blueprint-media";
 
 function phpString(value) {
   return String(value)
@@ -140,6 +141,68 @@ return [
         'aliases' => [
             'Omeka\\File\\Thumbnailer' => $thumbnailerAlias,
             'Omeka\\Job\\DispatchStrategy' => 'Omeka\\Job\\DispatchStrategy\\Synchronous',
+        ],
+    ],
+    'media_ingesters' => [
+        'factories' => [
+            'playground_cached_file' => function ($services) {
+                $tempFileFactory = $services->get('Omeka\\\\File\\\\TempFileFactory');
+                return new class ($tempFileFactory) implements \\Omeka\\Media\\Ingester\\IngesterInterface {
+                    private $tempFileFactory;
+
+                    public function __construct($tempFileFactory)
+                    {
+                        $this->tempFileFactory = $tempFileFactory;
+                    }
+
+                    public function getLabel()
+                    {
+                        return 'Playground cached file';
+                    }
+
+                    public function getRenderer()
+                    {
+                        return 'file';
+                    }
+
+                    public function ingest(\\Omeka\\Entity\\Media $media, \\Omeka\\Api\\Request $request, \\Omeka\\Stdlib\\ErrorStore $errorStore)
+                    {
+                        $data = $request->getContent();
+                        $cachedPath = isset($data['playground_cached_path']) ? (string) $data['playground_cached_path'] : '';
+                        if ($cachedPath === '' || !is_readable($cachedPath)) {
+                            $errorStore->addError('playground_cached_path', 'No readable cached file was prepared for this media.');
+                            return;
+                        }
+
+                        $tempFile = $this->tempFileFactory->build();
+
+                        try {
+                            if (!@copy($cachedPath, $tempFile->getTempPath())) {
+                                $errorStore->addError('playground_cached_path', sprintf('Unable to copy cached file "%s" into Omeka temp storage.', $cachedPath));
+                                return;
+                            }
+
+                            $sourceName = isset($data['playground_cached_name']) && $data['playground_cached_name'] !== ''
+                                ? (string) $data['playground_cached_name']
+                                : basename($cachedPath);
+
+                            $tempFile->setSourceName($sourceName);
+                            if (!array_key_exists('o:source', $data)) {
+                                $media->setSource($sourceName);
+                            }
+
+                            $tempFile->mediaIngestFile($media, $request, $errorStore);
+                        } finally {
+                            $tempFile->delete();
+                        }
+                    }
+
+                    public function form(\\Laminas\\View\\Renderer\\PhpRenderer $view, array $options = [])
+                    {
+                        return '';
+                    }
+                };
+            },
         ],
     ],
 ];
@@ -406,6 +469,56 @@ $literalValues = function (?int $propertyId, ?string $value) {
   ]];
 };
 
+$findExistingMediaBySource = function (int $itemId, string $source) use ($entityManager) {
+  $item = $entityManager->find(Omeka\\Entity\\Item::class, $itemId);
+  if (!$item) {
+    return null;
+  }
+
+  return $entityManager->getRepository(Omeka\\Entity\\Media::class)->findOneBy([
+    'item' => $item,
+    'source' => $source,
+  ]);
+};
+
+$flattenErrors = function ($messages) use (&$flattenErrors) {
+  $flattened = [];
+  foreach ((array) $messages as $key => $value) {
+    if (is_array($value)) {
+      foreach ($flattenErrors($value) as $nested) {
+        $flattened[] = is_string($key) && $key !== '' ? sprintf('%s: %s', $key, $nested) : $nested;
+      }
+      continue;
+    }
+
+    if ($value instanceof Stringable) {
+      $flattened[] = (string) $value;
+      continue;
+    }
+
+    if ($value !== null && $value !== '') {
+      $flattened[] = (string) $value;
+    }
+  }
+  return $flattened;
+};
+
+$describeThrowable = function (Throwable $e) use ($flattenErrors) {
+  $parts = [];
+  $message = trim($e->getMessage());
+  if ($message !== '') {
+    $parts[] = $message;
+  }
+  if (method_exists($e, 'getErrorStore')) {
+    $errors = $e->getErrorStore()->getErrors();
+    $flattened = $flattenErrors($errors);
+    if ($flattened) {
+      $parts[] = implode(' | ', array_unique($flattened));
+    }
+  }
+  return $parts ? implode(' | ', $parts) : get_class($e);
+};
+
 $ensureCoreVocabulary = function () use ($searchOne, $propertyIdByTerm, $apiManager, &$warnings, $debug) {
   if ($propertyIdByTerm('dcterms:title')) {
     $debug('Dublin Core vocabulary already available.');
@@ -666,36 +779,67 @@ foreach (($blueprint['items'] ?? []) as $itemSpec) {
     $payload['o:site'] = [['o:id' => $siteResource->id()]];
   }
 
-  $payload['o:media'] = [];
-  foreach (($itemSpec['media'] ?? []) as $mediaSpec) {
-    if (($mediaSpec['type'] ?? 'url') !== 'url' || empty($mediaSpec['url'])) {
-      continue;
-    }
-
-    $mediaPayload = [
-      'o:ingester' => 'url',
-      'ingest_url' => $mediaSpec['url'],
-      'o:source' => $mediaSpec['url'],
-    ];
-    if (!empty($mediaSpec['title'])) {
-      $mediaPayload['dcterms:title'] = $literalValues($titlePropertyId, $mediaSpec['title']);
-    }
-    if (!empty($mediaSpec['altText'])) {
-      $mediaPayload['o:alt_text'] = $mediaSpec['altText'];
-    }
-    $payload['o:media'][] = $mediaPayload;
-  }
-
   try {
+    $itemId = null;
     if ($existing) {
       $apiManager->update('items', $existing->id(), $payload);
+      $itemId = $existing->id();
       $debug(sprintf('Updated item "%s" (#%s).', $itemSpec['title'], $existing->id()));
     } else {
       $response = $apiManager->create('items', $payload);
-      $debug(sprintf('Created item "%s" (#%s).', $itemSpec['title'], $response->getContent()->id()));
+      $itemId = $response->getContent()->id();
+      $debug(sprintf('Created item "%s" (#%s).', $itemSpec['title'], $itemId));
+    }
+
+    if (!$itemId) {
+      continue;
+    }
+
+    foreach (($itemSpec['media'] ?? []) as $mediaSpec) {
+      if (($mediaSpec['type'] ?? 'url') !== 'url' || empty($mediaSpec['url'])) {
+        continue;
+      }
+
+      $mediaSource = trim((string) $mediaSpec['url']);
+      if ($mediaSource === '') {
+        continue;
+      }
+
+      if ($findExistingMediaBySource($itemId, $mediaSource)) {
+        $debug(sprintf('Skipped media "%s" for item "%s" (#%s) because it already exists.', $mediaSource, $itemSpec['title'], $itemId));
+        continue;
+      }
+
+      $cachedPath = isset($mediaSpec['cachedPath']) ? trim((string) $mediaSpec['cachedPath']) : '';
+      $mediaPayload = [
+        'o:item' => ['o:id' => $itemId],
+        'o:source' => $mediaSource,
+      ];
+      if (!empty($mediaSpec['title'])) {
+        $mediaPayload['dcterms:title'] = $literalValues($titlePropertyId, $mediaSpec['title']);
+      }
+      if (!empty($mediaSpec['altText'])) {
+        $mediaPayload['o:alt_text'] = $mediaSpec['altText'];
+      }
+
+      try {
+        if ($cachedPath !== '' && is_readable($cachedPath)) {
+          $mediaPayload['o:ingester'] = 'playground_cached_file';
+          $mediaPayload['playground_cached_path'] = $cachedPath;
+          $mediaPayload['playground_cached_name'] = !empty($mediaSpec['cachedName']) ? $mediaSpec['cachedName'] : basename($cachedPath);
+          $mediaResponse = $apiManager->create('media', $mediaPayload);
+        } else {
+          $mediaPayload['o:ingester'] = 'url';
+          $mediaPayload['ingest_url'] = $mediaSource;
+          $mediaResponse = $apiManager->create('media', $mediaPayload);
+        }
+        $debug(sprintf('Created media for item "%s" (#%s) from "%s" (#%s).', $itemSpec['title'], $itemId, $mediaSource, $mediaResponse->getContent()->id()));
+      } catch (Throwable $e) {
+        $warnings[] = sprintf('Unable to attach media "%s" to item "%s": %s', $mediaSource, $itemSpec['title'], $describeThrowable($e));
+      }
     }
   } catch (Throwable $e) {
-    $warnings[] = sprintf('Unable to provision item "%s": %s', $itemSpec['title'], $e->getMessage());
+    $warnings[] = sprintf('Unable to provision item "%s": %s', $itemSpec['title'], $describeThrowable($e));
   }
 }
 } elseif (($blueprint['itemSets'] ?? []) || ($blueprint['items'] ?? [])) {
@@ -853,9 +997,60 @@ async function ensureMutableLayout(php) {
     "/persist/mutable/logs",
     "/persist/mutable/session",
     "/persist/runtime",
+    PLAYGROUND_BLUEPRINT_MEDIA_PATH,
   ]) {
     await ensureDir(php, path);
   }
+}
+
+function sanitizeMediaFilename(value, fallback = "media.bin") {
+  const normalized = String(value || "").trim().replace(/[?#].*$/u, "");
+  const candidate = normalized.split("/").filter(Boolean).pop() || fallback;
+  const sanitized = candidate.replace(/[^a-zA-Z0-9._-]/gu, "_");
+  return sanitized || fallback;
+}
+
+function buildBlueprintMediaCachePath(itemIndex, mediaIndex, filename) {
+  const safeName = sanitizeMediaFilename(filename, `media-${itemIndex + 1}-${mediaIndex + 1}.bin`);
+  return `${PLAYGROUND_BLUEPRINT_MEDIA_PATH}/item-${itemIndex + 1}-media-${mediaIndex + 1}-${safeName}`;
+}
+
+async function cacheBlueprintMediaFiles({ php, blueprint, publish }) {
+  const stagedBlueprint = structuredClone(blueprint);
+  const items = Array.isArray(stagedBlueprint.items) ? stagedBlueprint.items : [];
+
+  for (const [itemIndex, item] of items.entries()) {
+    const mediaEntries = Array.isArray(item.media) ? item.media : [];
+    for (const [mediaIndex, media] of mediaEntries.entries()) {
+      if ((media?.type || "url") !== "url" || !media?.url) {
+        continue;
+      }
+
+      const sourceUrl = String(media.url).trim();
+      if (!sourceUrl) {
+        continue;
+      }
+
+      try {
+        const response = await fetch(sourceUrl, { redirect: "follow" });
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`.trim());
+        }
+
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const cachedName = sanitizeMediaFilename(new URL(response.url || sourceUrl, sourceUrl).pathname, `media-${itemIndex + 1}-${mediaIndex + 1}.bin`);
+        const cachedPath = buildBlueprintMediaCachePath(itemIndex, mediaIndex, cachedName);
+        await php.writeFile(cachedPath, bytes);
+        media.cachedPath = cachedPath;
+        media.cachedName = cachedName;
+      } catch (error) {
+        const detail = error?.message ? String(error.message) : String(error);
+        publish(`[warning] Unable to prefetch media "${sourceUrl}" for blueprint item "${item.title || `#${itemIndex + 1}`}": ${detail}`, 0.56);
+      }
+    }
+  }
+
+  return stagedBlueprint;
 }
 
 function removeNodeIfPresent(FS, path) {
@@ -965,6 +1160,13 @@ export async function bootstrapOmeka({ blueprint, config, php, publish, runtimeI
     config: effectiveConfig,
   });
 
+  publish("Prefetching blueprint media files.", 0.56);
+  const runtimeBlueprint = await cacheBlueprintMediaFiles({
+    php,
+    blueprint: normalizedBlueprint,
+    publish,
+  });
+
   publish("Writing SQLite and local config overrides.", 0.6);
   await php.writeFile(`${OMEKA_ROOT}/config/database.ini`, encoder.encode(buildDatabaseIni()));
   await php.writeFile(`${OMEKA_ROOT}/config/local.config.php`, encoder.encode(buildLocalConfig(effectiveConfig)));
@@ -986,7 +1188,7 @@ export async function bootstrapOmeka({ blueprint, config, php, publish, runtimeI
   }
 
   publish("Running automatic Omeka installer if needed.", 0.64);
-  await php.writeFile(`${OMEKA_ROOT}/playground-install.php`, encoder.encode(buildInstallScript(effectiveConfig, manifestState, normalizedBlueprint, addonsState)));
+  await php.writeFile(`${OMEKA_ROOT}/playground-install.php`, encoder.encode(buildInstallScript(effectiveConfig, manifestState, runtimeBlueprint, addonsState)));
 
   let bootstrapComplete = false;
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -1032,7 +1234,7 @@ export async function bootstrapOmeka({ blueprint, config, php, publish, runtimeI
     throw new Error("Omeka bootstrap did not complete after repeated module install passes.");
   }
 
-  let readyPath = normalizedBlueprint.landingPage || effectiveConfig.landingPath || "/admin";
+  let readyPath = runtimeBlueprint.landingPage || effectiveConfig.landingPath || "/admin";
 
   if (effectiveConfig.autologin) {
     const autologin = await performAutologin(php, effectiveConfig, publish);
