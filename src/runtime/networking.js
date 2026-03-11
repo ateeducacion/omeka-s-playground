@@ -1,4 +1,4 @@
-import { resolveAppUrl } from "../shared/paths.js";
+import { resolveConfiguredProxyUrl } from "../shared/paths.js";
 
 function normalizeHost(value) {
   return String(value || "").trim().toLowerCase();
@@ -40,12 +40,10 @@ function rebuildResponse(response, bytes) {
 }
 
 function buildProxiedUrl(targetUrl, config) {
-  const proxyPath = String(config.proxyPath || "").trim();
-  if (!proxyPath) {
+  const proxied = resolveConfiguredProxyUrl(config, globalThis.location?.href);
+  if (!proxied) {
     return targetUrl;
   }
-
-  const proxied = resolveAppUrl(proxyPath, globalThis.location?.href);
   proxied.searchParams.set("url", targetUrl.toString());
   return proxied;
 }
@@ -98,6 +96,7 @@ export function normalizeOutboundHttpConfig(config) {
     allowedHosts,
     allowedMethods,
     proxyPath: String(raw.proxyPath || config?.addonProxyPath || "").trim(),
+    proxyUrl: String(raw.proxyUrl || config?.addonProxyUrl || "").trim(),
     proxyAllCrossOrigin: raw.proxyAllCrossOrigin !== false,
     timeoutMs: parsePositiveNumber(raw.timeoutMs, 15_000),
     maxBytes: parsePositiveNumber(raw.maxBytes, 1_048_576),

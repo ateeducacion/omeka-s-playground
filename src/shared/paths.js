@@ -48,6 +48,39 @@ export function resolveAppUrl(path, locationLike) {
   return new URL(pathname, current.origin);
 }
 
+function isLocalDevHostname(hostname = "") {
+  const normalized = String(hostname || "").trim().toLowerCase();
+  return normalized === "localhost"
+    || normalized === "127.0.0.1"
+    || normalized === "[::1]";
+}
+
+export function resolveConfiguredProxyUrl(config = {}, locationLike) {
+  const current = locationLike instanceof URL
+    ? locationLike
+    : new URL(
+      String(locationLike || globalThis.location?.href || "http://localhost/"),
+      globalThis.location?.href || "http://localhost/",
+    );
+
+  const proxyPath = String(config.proxyPath || config.addonProxyPath || "").trim();
+  const proxyUrl = String(config.proxyUrl || config.addonProxyUrl || "").trim();
+
+  if (isLocalDevHostname(current.hostname) && proxyPath) {
+    return resolveAppUrl(proxyPath, current);
+  }
+
+  if (proxyUrl) {
+    return resolveAppUrl(proxyUrl, current);
+  }
+
+  if (proxyPath) {
+    return resolveAppUrl(proxyPath, current);
+  }
+
+  return null;
+}
+
 export function buildScopedSitePath(scopeId, runtimeId, path = "/") {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   return joinBasePath(getBasePath(), `playground/${scopeId}/${runtimeId}${normalized}`).replace(/\/{2,}/gu, "/");

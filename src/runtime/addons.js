@@ -1,5 +1,5 @@
 import { unzipSync } from "../../vendor/fflate/esm/browser.js";
-import { resolveAppUrl } from "../shared/paths.js";
+import { resolveConfiguredProxyUrl } from "../shared/paths.js";
 
 export const PERSIST_ADDONS_ROOT = "/persist/addons";
 const MODULES_ROOT = `${PERSIST_ADDONS_ROOT}/modules`;
@@ -251,12 +251,10 @@ function buildDownloadUrl(downloadUrl, config) {
     return parsed.toString();
   }
 
-  const proxyPath = String(config?.addonProxyPath || "").trim();
-  if (!proxyPath) {
+  const proxied = resolveConfiguredProxyUrl(config, self.location?.href);
+  if (!proxied) {
     return parsed.toString();
   }
-
-  const proxied = resolveAppUrl(proxyPath, self.location?.href);
   proxied.searchParams.set("url", parsed.toString());
   return proxied.toString();
 }

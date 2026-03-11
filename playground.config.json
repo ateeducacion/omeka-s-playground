@@ -2,12 +2,14 @@
   "bundleVersion": "0.1.0",
   "defaultBlueprintUrl": "./assets/blueprints/default.blueprint.json",
   "addonProxyPath": "/__addon_proxy__",
+  "addonProxyUrl": "https://zip-proxy.erseco.workers.dev/",
   "outboundHttp": {
     "enabled": true,
     "allowedHosts": [
       "omeka.org",
       "raw.githubusercontent.com",
-      "github.com"
+      "github.com",
+      "codeload.github.com"
     ],
     "allowedMethods": [
       "GET",

@@ -120,6 +120,7 @@ Responsibilities:
 - `scripts/dev-server.mjs`
   - Serves the static app locally
   - Proxies remote addon ZIP downloads back to the same origin for browser runtime fetches
+  - This proxy is local-only; production static hosting uses the external ZIP proxy configured in `playground.config.json`
 
 ### Storage Model
 
@@ -211,9 +212,11 @@ Important flags include:
 - `autologin`
 - admin credentials and site defaults
 - `outboundHttp`
+- `addonProxyPath`
+- `addonProxyUrl`
 
 If you change autologin behavior, verify both first boot and reload behavior.
-If you change `outboundHttp`, verify both the PHP-side VRZNO probe and the browser-side proxy behavior.
+If you change `outboundHttp`, `addonProxyPath`, or `addonProxyUrl`, verify both local-dev proxy behavior and the production ZIP proxy flow.
 
 ## Development Conventions
 
