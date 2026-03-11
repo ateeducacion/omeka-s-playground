@@ -1,4 +1,5 @@
 import { buildEffectivePlaygroundConfig, normalizeBlueprint } from "../shared/blueprint.js";
+import { materializeBlueprintAddons } from "./addons.js";
 import { fetchManifest, buildManifestState } from "./manifest.js";
 import { mountReadonlyCore } from "./vfs.js";
 
@@ -66,7 +67,7 @@ return [
 `;
 }
 
-function buildInstallScript(config, manifestState, blueprint) {
+function buildInstallScript(config, manifestState, blueprint, addonsState) {
   return `<?php
 define('OMEKA_PATH', '${OMEKA_ROOT}');
 chdir(OMEKA_PATH);
@@ -97,10 +98,19 @@ $statePath = '${PLAYGROUND_CONFIG_PATH}';
 $state = [
   'manifest' => json_decode('${phpString(JSON.stringify(manifestState))}', true),
   'blueprint' => $blueprint,
+  'addons' => json_decode('${phpString(JSON.stringify(addonsState))}', true),
   'installedAt' => gmdate('c'),
 ];
 
 $warnings = [];
+$shouldRerunBootstrap = false;
+$themeSpecsByName = [];
+foreach (($blueprint['themes'] ?? []) as $themeSpec) {
+  $themeName = trim((string) ($themeSpec['name'] ?? ''));
+  if ($themeName !== '') {
+    $themeSpecsByName[$themeName] = $themeSpec;
+  }
+}
 
 $findUserByEmail = function (string $email) use ($entityManager) {
   return $entityManager->getRepository(Omeka\\Entity\\User::class)->findOneBy(['email' => $email]);
@@ -285,7 +295,12 @@ foreach (($blueprint['modules'] ?? []) as $moduleSpec) {
 
   $module = $moduleManager->getModule($moduleName);
   if (!$module) {
-    $warnings[] = sprintf('Module "%s" is not present in the bundled Omeka filesystem. Remote download is not implemented in-browser yet.', $moduleName);
+    $sourceType = strtolower(trim((string) (($moduleSpec['source']['type'] ?? 'bundled'))));
+    if ($sourceType !== 'bundled') {
+      throw new RuntimeException(sprintf('Module "%s" was requested from source type "%s" but is still missing from the runtime filesystem.', $moduleName, $sourceType));
+    }
+
+    $warnings[] = sprintf('Module "%s" is not present in the bundled Omeka filesystem.', $moduleName);
     continue;
   }
 
@@ -294,12 +309,24 @@ foreach (($blueprint['modules'] ?? []) as $moduleSpec) {
 
   if ($moduleState === Omeka\\Module\\Manager::STATE_NOT_INSTALLED && in_array($state, ['install', 'activate'], true)) {
     $moduleManager->install($module);
-    continue;
+    $shouldRerunBootstrap = true;
+    break;
   }
 
   if ($moduleState === Omeka\\Module\\Manager::STATE_NOT_ACTIVE && $state === 'activate') {
     $moduleManager->activate($module);
+    $shouldRerunBootstrap = true;
+    break;
   }
+}
+
+if ($shouldRerunBootstrap) {
+  file_put_contents($statePath, json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+  echo "omeka-playground-bootstrap-continue\\n";
+  foreach ($warnings as $warning) {
+    echo "[warning] " . $warning . "\\n";
+  }
+  exit(0);
 }
 
 $siteSpec = $blueprint['site'] ?? null;
@@ -307,6 +334,12 @@ $siteResource = null;
 if (is_array($siteSpec) && !empty($siteSpec['title'])) {
   $themeName = trim((string) ($siteSpec['theme'] ?? 'default'));
   if (!$themeManager->getTheme($themeName)) {
+    $themeSpec = $themeSpecsByName[$themeName] ?? null;
+    $sourceType = strtolower(trim((string) (($themeSpec['source']['type'] ?? 'bundled'))));
+    if ($sourceType !== 'bundled') {
+      throw new RuntimeException(sprintf('Theme "%s" was requested from source type "%s" but is still missing from the runtime filesystem.', $themeName, $sourceType));
+    }
+
     $warnings[] = sprintf('Theme "%s" is not present in the bundled Omeka filesystem. Falling back to "default".', $themeName);
     $themeName = 'default';
   }
@@ -599,6 +632,7 @@ async function ensureDir(php, path) {
 async function ensureMutableLayout(php) {
   for (const path of [
     "/persist",
+    "/persist/addons",
     "/persist/mutable",
     "/persist/mutable/config",
     "/persist/mutable/db",
@@ -708,7 +742,16 @@ export async function bootstrapOmeka({ blueprint, config, php, publish, runtimeI
   await mountReadonlyCore(php, manifest, { root: OMEKA_ROOT });
   await linkMutableFilesDir(php);
 
-  publish("Writing SQLite and local config overrides.", 0.48);
+  publish("Preparing blueprint modules and themes.", 0.52);
+  const addonsState = await materializeBlueprintAddons({
+    php,
+    blueprint: normalizedBlueprint,
+    omekaRoot: OMEKA_ROOT,
+    publish,
+    config: effectiveConfig,
+  });
+
+  publish("Writing SQLite and local config overrides.", 0.6);
   await php.writeFile(`${OMEKA_ROOT}/config/database.ini`, encoder.encode(buildDatabaseIni()));
   await php.writeFile(`${OMEKA_ROOT}/config/local.config.php`, encoder.encode(buildLocalConfig(effectiveConfig)));
   await appendPhpIniOverrides(php, effectiveConfig);
@@ -723,35 +766,50 @@ export async function bootstrapOmeka({ blueprint, config, php, publish, runtimeI
   }
 
   publish("Running automatic Omeka installer if needed.", 0.64);
-  await php.writeFile(`${OMEKA_ROOT}/playground-install.php`, encoder.encode(buildInstallScript(effectiveConfig, manifestState, normalizedBlueprint)));
-  const output = await php.request(new Request("https://playground.internal/playground-install.php"));
+  await php.writeFile(`${OMEKA_ROOT}/playground-install.php`, encoder.encode(buildInstallScript(effectiveConfig, manifestState, normalizedBlueprint, addonsState)));
 
-  const outputText = await output.text();
-  const outputLines = outputText
-    .split(/\r?\n/gu)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  let bootstrapComplete = false;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const output = await php.request(new Request("https://playground.internal/playground-install.php"));
+    const outputText = await output.text();
+    const outputLines = outputText
+      .split(/\r?\n/gu)
+      .map((line) => line.trim())
+      .filter(Boolean);
 
-  for (const line of outputLines) {
-    if (line === "omeka-playground-bootstrap-complete") {
+    for (const line of outputLines) {
+      if (line === "omeka-playground-bootstrap-complete" || line === "omeka-playground-bootstrap-continue") {
+        continue;
+      }
+
+      if (line.startsWith("[debug]")) {
+        publish(line, 0.78);
+        continue;
+      }
+
+      if (line.startsWith("[warning]")) {
+        publish(line, 0.82);
+        continue;
+      }
+
+      publish(`Installer output: ${line}`, 0.74);
+    }
+
+    if (outputText.includes("omeka-playground-bootstrap-complete")) {
+      bootstrapComplete = true;
+      break;
+    }
+
+    if (outputText.includes("omeka-playground-bootstrap-continue")) {
+      publish("Reinitializing Omeka after module install.", 0.72);
       continue;
     }
 
-    if (line.startsWith("[debug]")) {
-      publish(line, 0.78);
-      continue;
-    }
-
-    if (line.startsWith("[warning]")) {
-      publish(line, 0.82);
-      continue;
-    }
-
-    publish(`Installer output: ${line}`, 0.74);
+    throw new Error(`Unexpected Omeka bootstrap output: ${outputText}`);
   }
 
-  if (!outputText.includes("omeka-playground-bootstrap-complete")) {
-    throw new Error(`Unexpected Omeka bootstrap output: ${outputText}`);
+  if (!bootstrapComplete) {
+    throw new Error("Omeka bootstrap did not complete after repeated module install passes.");
   }
 
   let readyPath = normalizedBlueprint.landingPage || effectiveConfig.landingPath || "/admin";

@@ -119,8 +119,8 @@ button.danger {
 
 .toolbar-brand__logo {
   display: block;
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   object-fit: contain;
 }
 
@@ -189,7 +189,7 @@ button.danger {
 
 .side-panel {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   border-left: 1px solid var(--line);
   background: #15181e;
 }
@@ -200,7 +200,8 @@ button.danger {
 
 .side-panel__header,
 .panel-tabs,
-.side-panel__content {
+.side-panel__content,
+.side-panel__footer {
   padding: 16px;
 }
 
@@ -244,6 +245,41 @@ button.danger {
 
 .side-panel__content.is-hidden {
   display: none;
+}
+
+.side-panel__footer {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.side-panel__footer p {
+  margin: 0;
+}
+
+.side-panel__footer a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.side-panel__footer a:hover {
+  color: var(--accent);
+}
+
+.side-panel__footer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  font-weight: 600;
+}
+
+.side-panel__footer-link svg {
+  width: 16px;
+  height: 16px;
 }
 
 .settings-card,

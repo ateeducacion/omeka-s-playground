@@ -27,6 +27,48 @@ function getBlueprintStorageKey(scopeId) {
   return `${BLUEPRINT_KEY_PREFIX}:${scopeId}`;
 }
 
+function decodeBase64Text(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    throw new Error("Blueprint data payload is empty.");
+  }
+
+  const normalized = text
+    .replace(/-/gu, "+")
+    .replace(/_/gu, "/")
+    .replace(/\s+/gu, "");
+  const padding = normalized.length % 4;
+  const padded = padding === 0 ? normalized : `${normalized}${"=".repeat(4 - padding)}`;
+
+  let binary;
+  try {
+    binary = atob(padded);
+  } catch {
+    throw new Error("Blueprint data payload is not valid base64.");
+  }
+
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error("Blueprint data payload is not valid UTF-8.");
+  }
+}
+
+function parseBlueprintDataParam(value, config) {
+  let rawPayload;
+  try {
+    rawPayload = JSON.parse(decodeBase64Text(value));
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error("Blueprint data payload is not valid JSON.");
+    }
+    throw error;
+  }
+
+  return normalizeBlueprint(rawPayload, config);
+}
+
 function normalizePath(path, fallback = "/") {
   if (!path || typeof path !== "string") {
     return fallback;
@@ -57,6 +99,75 @@ function slugify(value, fallback = "playground") {
     .replace(/^-+|-+$/gu, "");
 
   return slug || fallback;
+}
+
+function normalizeAddonSource(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { type: "bundled" };
+  }
+
+  const type = String(
+    input.type
+      || (input.url ? "url" : "")
+      || (input.slug ? "omeka.org" : "")
+      || "bundled",
+  ).trim().toLowerCase();
+
+  if (type === "bundled") {
+    return { type };
+  }
+
+  if (type === "url") {
+    const url = absolutizeUrl(input.url || "");
+    if (!url) {
+      throw new Error("Blueprint addon source.type='url' requires source.url.");
+    }
+    return { type, url };
+  }
+
+  if (type === "omeka.org") {
+    const slug = String(input.slug || "").trim();
+    if (!slug) {
+      throw new Error("Blueprint addon source.type='omeka.org' requires source.slug.");
+    }
+    return { type, slug };
+  }
+
+  throw new Error(`Unsupported blueprint addon source type "${type}".`);
+}
+
+function normalizeAddonCollection(input, kind) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const seen = new Set();
+  return input.map((entry) => {
+    const normalized = {
+      name: String(entry?.name || entry || "").trim(),
+      source: normalizeAddonSource(entry?.source),
+    };
+
+    if (kind === "module") {
+      normalized.state = String(entry?.state || "activate").trim().toLowerCase() || "activate";
+    }
+
+    if (!normalized.name) {
+      return null;
+    }
+
+    if (/[\\/]/u.test(normalized.name) || normalized.name === "." || normalized.name === "..") {
+      throw new Error(`Blueprint ${kind} name "${normalized.name}" must be a single path segment.`);
+    }
+
+    const dedupeKey = normalized.name.toLowerCase();
+    if (seen.has(dedupeKey)) {
+      throw new Error(`Blueprint ${kind}s cannot include duplicate entry "${normalized.name}".`);
+    }
+    seen.add(dedupeKey);
+
+    return normalized;
+  }).filter(Boolean);
 }
 
 export function getBlueprintSchemaUrl() {
@@ -182,19 +293,8 @@ export function normalizeBlueprint(input, config) {
     },
     users: normalizedUsers,
     site: activeSite,
-    themes: Array.isArray(blueprint.themes)
-      ? blueprint.themes.map((theme) => ({
-          name: String(theme?.name || theme || "").trim(),
-          source: theme?.source || null,
-        })).filter((theme) => theme.name)
-      : [],
-    modules: Array.isArray(blueprint.modules)
-      ? blueprint.modules.map((module) => ({
-          name: String(module?.name || module || "").trim(),
-          source: module?.source || null,
-          state: String(module?.state || "activate").trim().toLowerCase(),
-        })).filter((module) => module.name)
-      : [],
+    themes: normalizeAddonCollection(blueprint.themes, "theme"),
+    modules: normalizeAddonCollection(blueprint.modules, "module"),
     itemSets: Array.isArray(blueprint.itemSets)
       ? blueprint.itemSets.map((itemSet) => ({
           title: String(itemSet?.title || "").trim(),
@@ -280,6 +380,13 @@ export async function resolveBlueprintForShell(scopeId, config) {
   }
 
   const url = new URL(window.location.href);
+  const blueprintDataParam = url.searchParams.get("blueprint-data");
+  if (blueprintDataParam) {
+    const payload = parseBlueprintDataParam(blueprintDataParam, config);
+    saveActiveBlueprint(scopeId, payload);
+    return payload;
+  }
+
   const blueprintParam = url.searchParams.get("blueprint");
   if (blueprintParam) {
     const response = await fetch(new URL(blueprintParam, window.location.href), { cache: "no-store" });

@@ -1,7 +1,7 @@
 <!--
 MAINTENANCE: Update this file when:
 - Adding/removing npm scripts in package.json or targets in Makefile
-- Changing the runtime flow (shell, remote host, service worker, php worker)
+- Changing the runtime flow (shell, remote host, service worker, php worker, dev proxy server)
 - Modifying the Omeka bundle format, manifest schema, or storage model
 - Changing deployment assumptions for GitHub Pages or other static hosting
 - Adding new conventions for blueprints, autologin, or persistent state
@@ -17,12 +17,13 @@ Omeka S Playground runs a full Omeka S instance entirely in the browser using We
 It is inspired by WordPress Playground, but this repository is a much smaller static-site
 application rather than a monorepo.
 
-The project has four main layers:
+The project has five main layers:
 
 1. Shell UI: `index.html` and `src/shell/main.js`
 2. Runtime host: `remote.html` and `src/remote/main.js`
 3. Request routing: `sw.js` and `php-worker.js`
 4. PHP/Omeka runtime: `src/runtime/*` + generated assets under `assets/omeka/`
+5. Local dev proxy server: `scripts/dev-server.mjs`
 
 At runtime, the readonly Omeka core is loaded from a prebuilt bundle into memory, while
 mutable state is stored separately in browser persistence.
@@ -35,7 +36,6 @@ This project uses a small npm + Makefile workflow.
 
 - Node.js 18+
 - npm
-- Python 3
 - Composer
 - Git
 
@@ -69,6 +69,7 @@ make reset
 - `npm run sync-browser-deps`: vendors browser runtime dependencies
 - `npm run prepare-runtime`: prepares the PHP runtime assets
 - `npm run bundle`: fetches/builds Omeka and generates the readonly bundle
+- `make serve`: runs the local Node dev server, including the addon proxy endpoint for remote blueprint ZIP downloads
 
 ### Generated Assets
 
@@ -115,6 +116,9 @@ Responsibilities:
   - Handles autologin
 - `src/runtime/vfs.js`
   - Mounts the readonly Omeka core bundle into the WASM filesystem
+- `scripts/dev-server.mjs`
+  - Serves the static app locally
+  - Proxies remote addon ZIP downloads back to the same origin for browser runtime fetches
 
 ### Storage Model
 
@@ -124,6 +128,7 @@ Current model:
 
 - Readonly core: hydrated into in-memory FS under `/www/omeka`
 - Mutable state: persisted under `/persist`
+- Remote blueprint addons: persisted under `/persist/addons` and symlinked into `/www/omeka/modules` or `/www/omeka/themes` at boot
 - Uploads: stored under `/persist/mutable/files`
 - Database/config/session data: stored in the persistent overlay
 
@@ -186,7 +191,9 @@ Blueprints can define:
 - Landing page
 - Site creation
 - Items, item sets, and media
-- Modules already available in the bundle
+- Modules and themes from bundled assets, direct ZIP URLs, or `omeka.org` slugs
+
+Blueprint input can come from the default bundled file, `?blueprint=` URL fetches, or `?blueprint-data=` base64url JSON payloads.
 
 When changing blueprint semantics, update both the schema and the runtime code that consumes it.
 

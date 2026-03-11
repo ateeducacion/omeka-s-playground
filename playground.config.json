@@ -1,6 +1,7 @@
 {
   "bundleVersion": "0.1.0",
   "defaultBlueprintUrl": "./assets/blueprints/default.blueprint.json",
+  "addonProxyPath": "/__addon_proxy__",
   "siteTitle": "Omeka S Playground",
   "landingPath": "/admin",
   "locale": "en_US",

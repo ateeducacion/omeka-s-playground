@@ -8,6 +8,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoDir = resolve(scriptDir, "..");
 const vendorDir = resolve(repoDir, "vendor");
 const extensionPackages = [
+  "fflate",
   "php-wasm-iconv",
   "php-wasm-intl",
   "php-wasm-libxml",

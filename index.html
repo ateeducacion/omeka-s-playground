@@ -4,6 +4,32 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Omeka S Playground</title>
+    <meta
+      name="description"
+      content="Omeka S running in your browser for learning, testing, and prototyping digital collections."
+    >
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Omeka S Playground">
+    <meta
+      property="og:description"
+      content="Omeka S running in your browser for learning, testing, and prototyping digital collections."
+    >
+    <meta property="og:url" content="https://ateeducacion.github.io/omeka-s-playground/">
+    <meta
+      property="og:image"
+      content="https://ateeducacion.github.io/omeka-s-playground/ogimage.png"
+    >
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Omeka S Playground">
+    <meta
+      name="twitter:description"
+      content="Omeka S running in your browser for learning, testing, and prototyping digital collections."
+    >
+    <meta
+      name="twitter:image"
+      content="https://ateeducacion.github.io/omeka-s-playground/ogimage.png"
+    >
+    <link rel="icon" type="image/x-icon" href="./favicon.ico">
     <link rel="stylesheet" href="./src/styles/app.css">
   </head>
   <body data-app="shell">
@@ -12,7 +38,7 @@
         <div class="browser-toolbar__address">
           <form id="address-form" class="address-form">
             <div class="toolbar-brand" aria-label="Omeka S Playground">
-              <img src="./assets/branding/logo.png" alt="Omeka S" class="toolbar-brand__logo">
+              <img src="./OmekaBadge.svg" alt="Omeka S" class="toolbar-brand__logo">
             </div>
             <button type="button" id="refresh-button" class="icon-button" aria-label="Refresh page" title="Refresh page">
               <span aria-hidden="true">↻</span>
@@ -71,6 +97,31 @@
             </div>
             <pre id="log-panel" class="log-panel"></pre>
           </section>
+
+          <footer class="side-panel__footer">
+            <p>
+              Made with <span aria-label="love" title="love">♥</span> by
+              <a href="https://www3.gobiernodecanarias.org/medusa/ecoescuela/ate/" target="_blank" rel="noreferrer">
+                Área de Tecnología Educativa
+              </a>
+            </p>
+            <a
+              class="side-panel__footer-link"
+              href="https://github.com/ateeducacion/omeka-s-playground"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="GitHub repository"
+              title="GitHub repository"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M8 0C3.58 0 0 3.67 0 8.2c0 3.63 2.29 6.71 5.47 7.8.4.08.55-.18.55-.4 0-.2-.01-.87-.01-1.58-2.01.38-2.53-.5-2.69-.96-.09-.24-.48-.97-.82-1.17-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.84.72 1.24 1.87.89 2.33.68.07-.54.28-.89.51-1.09-1.78-.21-3.64-.92-3.64-4.08 0-.9.31-1.64.82-2.22-.08-.21-.36-1.06.08-2.2 0 0 .67-.22 2.2.85a7.38 7.38 0 0 1 4 0c1.53-1.07 2.2-.85 2.2-.85.44 1.14.16 1.99.08 2.2.51.58.82 1.31.82 2.22 0 3.17-1.87 3.87-3.65 4.08.29.26.54.75.54 1.52 0 1.1-.01 1.99-.01 2.26 0 .22.15.49.55.4A8.18 8.18 0 0 0 16 8.2C16 3.67 12.42 0 8 0Z"
+                />
+              </svg>
+              <span>GitHub</span>
+            </a>
+          </footer>
         </aside>
       </div>
     </div>

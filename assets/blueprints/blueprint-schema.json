@@ -76,11 +76,33 @@
             "properties": {
               "name": { "type": "string" },
               "source": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "url": { "type": "string", "format": "uri-reference" }
-                }
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": { "type": "string", "enum": ["bundled"] }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["url"],
+                    "properties": {
+                      "type": { "type": "string", "enum": ["url"] },
+                      "url": { "type": "string", "format": "uri-reference" }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["slug"],
+                    "properties": {
+                      "type": { "type": "string", "enum": ["omeka.org"] },
+                      "slug": { "type": "string", "minLength": 1 }
+                    }
+                  }
+                ]
               }
             }
           }
@@ -103,11 +125,33 @@
                 "enum": ["install", "activate"]
               },
               "source": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "url": { "type": "string", "format": "uri-reference" }
-                }
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": { "type": "string", "enum": ["bundled"] }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["url"],
+                    "properties": {
+                      "type": { "type": "string", "enum": ["url"] },
+                      "url": { "type": "string", "format": "uri-reference" }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["slug"],
+                    "properties": {
+                      "type": { "type": "string", "enum": ["omeka.org"] },
+                      "slug": { "type": "string", "minLength": 1 }
+                    }
+                  }
+                ]
               }
             }
           }
