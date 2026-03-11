@@ -381,11 +381,6 @@ export async function resolveBlueprintForShell(scopeId, config) {
     return buildDefaultBlueprint(config);
   }
 
-  const stored = loadActiveBlueprint(scopeId);
-  if (stored) {
-    return normalizeBlueprint(stored, config);
-  }
-
   const url = new URL(window.location.href);
   const blueprintDataParam = url.searchParams.get("blueprint-data");
   if (blueprintDataParam) {
@@ -403,6 +398,11 @@ export async function resolveBlueprintForShell(scopeId, config) {
     const payload = normalizeBlueprint(await response.json(), config);
     saveActiveBlueprint(scopeId, payload);
     return payload;
+  }
+
+  const stored = loadActiveBlueprint(scopeId);
+  if (stored) {
+    return normalizeBlueprint(stored, config);
   }
 
   if (config.defaultBlueprintUrl) {

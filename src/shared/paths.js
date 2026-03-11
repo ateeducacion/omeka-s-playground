@@ -26,6 +26,14 @@ export function resolveRemoteUrl(scopeId, runtimeId, path = "/") {
   return url;
 }
 
+export function hasBlueprintUrlOverride(locationLike = window.location.href) {
+  const url = locationLike instanceof URL
+    ? locationLike
+    : new URL(String(locationLike || window.location.href), window.location.href);
+
+  return url.searchParams.has("blueprint") || url.searchParams.has("blueprint-data");
+}
+
 export function resolveAppUrl(path, locationLike) {
   const rawPath = String(path || "").trim();
   const fallbackLocation = globalThis.location?.href || "http://localhost/";

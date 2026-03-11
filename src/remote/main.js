@@ -11,6 +11,7 @@ let phpWorker;
 let activeScopeId;
 let activeRuntimeId;
 let activePath = "/";
+let forceCleanBoot = false;
 
 function setOverlayVisible(isVisible) {
   overlayEl?.classList.toggle("is-hidden", !isVisible);
@@ -174,6 +175,7 @@ async function bootstrapRemote() {
   const scopeId = url.searchParams.get("scope");
   const requestedRuntimeId = url.searchParams.get("runtime");
   const requestedPath = url.searchParams.get("path") || "/";
+  forceCleanBoot = url.searchParams.get("clean") === "1";
   activeScopeId = scopeId;
   activeRuntimeId = requestedRuntimeId;
   activePath = requestedPath;
@@ -218,6 +220,7 @@ async function bootstrapRemote() {
     phpWorker.postMessage({
       kind: "configure-blueprint",
       blueprint,
+      clean: forceCleanBoot,
     });
   }
   await waitForPhpWorkerReady(scopeId, runtime.id, phpWorker);

@@ -1003,6 +1003,23 @@ async function ensureMutableLayout(php) {
   }
 }
 
+async function resetPersistedState(php) {
+  const binary = await php.binary;
+  const { FS } = binary;
+  const persistedRoot = "/persist";
+  const about = FS.analyzePath(persistedRoot);
+  if (!about.exists) {
+    return;
+  }
+
+  for (const entry of FS.readdir(persistedRoot)) {
+    if (entry === "." || entry === "..") {
+      continue;
+    }
+    removeNodeIfPresent(FS, `${persistedRoot}/${entry}`.replace(/\/{2,}/gu, "/"));
+  }
+}
+
 function sanitizeMediaFilename(value, fallback = "media.bin") {
   const normalized = String(value || "").trim().replace(/[?#].*$/u, "");
   const candidate = normalized.split("/").filter(Boolean).pop() || fallback;
@@ -1126,9 +1143,14 @@ async function appendPhpIniOverrides(php, config) {
   await php.writeFile(PLAYGROUND_PREPEND_PATH, encoder.encode(buildPhpPrepend(config)));
 }
 
-export async function bootstrapOmeka({ blueprint, config, php, publish, runtimeId }) {
+export async function bootstrapOmeka({ blueprint, clean = false, config, php, publish, runtimeId }) {
   const normalizedBlueprint = normalizeBlueprint(blueprint, config);
   const effectiveConfig = buildEffectivePlaygroundConfig(config, normalizedBlueprint);
+
+  if (clean) {
+    publish("Resetting persisted runtime state.", 0.16);
+    await resetPersistedState(php);
+  }
 
   publish("Preparing PHP filesystem layout.", 0.2);
   await ensureMutableLayout(php);

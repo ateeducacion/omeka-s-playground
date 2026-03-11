@@ -5,7 +5,7 @@ import {
   saveActiveBlueprint,
 } from "../shared/blueprint.js";
 import { getDefaultRuntime, loadPlaygroundConfig } from "../shared/config.js";
-import { resolveRemoteUrl } from "../shared/paths.js";
+import { hasBlueprintUrlOverride, resolveRemoteUrl } from "../shared/paths.js";
 import { createShellChannel } from "../shared/protocol.js";
 import { clearScopeSession, getOrCreateScopeId, loadSessionState, saveSessionState } from "../shared/storage.js";
 
@@ -46,6 +46,7 @@ let activeBlueprint;
 let remoteFrameBooted = false;
 let uiLocked = true;
 let remoteReloadToken = 0;
+let pendingCleanBoot = hasBlueprintUrlOverride(window.location.href);
 const CONTROL_RELOAD_KEY = `omeka-playground:${scopeId}:sw-controlled`;
 
 function appendLog(message, isError = false) {
@@ -118,11 +119,15 @@ async function updateFrame() {
 
   await serviceWorkerReady;
   const url = resolveRemoteUrl(scopeId, currentRuntimeId, currentPath);
+  if (pendingCleanBoot) {
+    url.searchParams.set("clean", "1");
+  }
   if (remoteReloadToken > 0) {
     url.searchParams.set("reload", String(remoteReloadToken));
   }
   remoteFrameBooted = false;
   els.frame.src = url.toString();
+  pendingCleanBoot = false;
 }
 
 function postToRemote(message) {
@@ -249,6 +254,7 @@ async function importPayload(file) {
 
   activeBlueprint = imported.blueprint;
   saveActiveBlueprint(scopeId, activeBlueprint);
+  pendingCleanBoot = true;
   currentPath = activeBlueprint.landingPage || config.landingPath || "/";
   els.address.value = currentPath;
   updateBlueprintTextarea();
@@ -308,10 +314,13 @@ async function main() {
   const previous = loadSessionState(scopeId);
   const defaultRuntime = getDefaultRuntime(config);
   const preferredPath = activeBlueprint?.landingPage || config.landingPath || "/";
+  const shouldForceCleanBoot = pendingCleanBoot;
   const shouldBypassSavedLogin = config.autologin && previous?.path === "/login";
 
-  currentRuntimeId = previous?.runtimeId || defaultRuntime.id;
-  currentPath = shouldBypassSavedLogin ? preferredPath : (previous?.path || preferredPath);
+  currentRuntimeId = shouldForceCleanBoot ? defaultRuntime.id : (previous?.runtimeId || defaultRuntime.id);
+  currentPath = shouldForceCleanBoot
+    ? preferredPath
+    : (shouldBypassSavedLogin ? preferredPath : (previous?.path || preferredPath));
   els.address.value = currentPath;
 
   for (const runtime of config.runtimes) {
@@ -376,6 +385,7 @@ els.reset.addEventListener("click", () => {
     return;
   }
   clearScopeSession(scopeId);
+  pendingCleanBoot = true;
   remoteFrameBooted = false;
   setStatus("Resetting playground", "Clearing local shell state. The runtime overlay reset is handled inside the remote host.", 0.02);
   serviceWorkerReady = null;

@@ -12,6 +12,7 @@ const bridgeChannel = new BroadcastChannel(createPhpBridgeChannel(scopeId));
 let runtimeStatePromise = null;
 let requestQueue = Promise.resolve();
 let activeBlueprint = null;
+let forceCleanBoot = false;
 
 function formatErrorDetail(error) {
   if (typeof error === "string") {
@@ -101,6 +102,7 @@ async function getRuntimeState() {
     const bootstrapState = await bootstrapOmeka({
       config,
       blueprint: activeBlueprint,
+      clean: forceCleanBoot,
       php,
       publish,
       runtimeId,
@@ -155,6 +157,7 @@ self.addEventListener("message", (event) => {
   }
 
   activeBlueprint = event.data.blueprint || null;
+  forceCleanBoot = event.data.clean === true;
 
   self.postMessage({
     kind: "worker-ready",
