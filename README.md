@@ -28,7 +28,7 @@ Default credentials: `admin@example.com` / `password` (configurable in [`playgro
 
 - [Node.js](https://nodejs.org/) >= 18 + npm
 - [Composer](https://getcomposer.org/)
-- [Python 3](https://www.python.org/) (for the local static server)
+- [Node.js 18+](https://nodejs.org/) (also used by the local dev server)
 - [Git](https://git-scm.com/)
 
 ### Make targets
@@ -38,7 +38,7 @@ Default credentials: `admin@example.com` / `password` (configurable in [`playgro
 | `make up` | Install deps, build the Omeka bundle, and serve locally |
 | `make prepare` | Install npm deps and vendor browser runtime assets |
 | `make bundle` | Fetch Omeka, run Composer, build the VFS image and manifest |
-| `make serve` | Start a static server on port 8080 |
+| `make serve` | Start the local dev server on port 8080, including the addon download proxy |
 | `make clean` | Remove generated bundle and vendored runtime assets |
 
 ---
@@ -73,6 +73,7 @@ Blueprints are JSON files that describe the desired state of a playground instan
 A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](assets/blueprints/default.blueprint.json). You can override it by:
 
 - Passing `?blueprint=/path/to/file.json` in the URL.
+- Passing `?blueprint-data=...` in the URL with a base64url-encoded UTF-8 JSON blueprint payload.
 - Importing a `.json` file from the toolbar.
 
 ### What blueprints can configure
@@ -81,7 +82,8 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
 - Admin and additional users
 - A default site with a theme selection
 - Item sets and items with remote media
-- Module activation (from modules already in the bundle)
+- Module installation/activation from bundled addons, direct ZIP URLs, or `omeka.org` slugs
+- Theme installation from bundled addons, direct ZIP URLs, or `omeka.org` slugs
 
 ### Example
 
@@ -97,8 +99,24 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
   "users": [
     { "username": "admin", "email": "admin@example.com", "password": "password", "role": "global_admin" }
   ],
+  "themes": [
+    {
+      "name": "Foundation",
+      "source": { "type": "omeka.org", "slug": "foundation-s" }
+    }
+  ],
   "modules": [
-    { "name": "CSVImport", "state": "activate" }
+    { "name": "CSVImport", "state": "activate" },
+    {
+      "name": "NumericDataTypes",
+      "state": "install",
+      "source": { "type": "omeka.org", "slug": "numeric-data-types" }
+    },
+    {
+      "name": "Mapping",
+      "state": "activate",
+      "source": { "type": "url", "url": "https://example.com/Mapping.zip" }
+    }
   ],
   "itemSets": [
     { "title": "Demo Collection" }
@@ -113,13 +131,34 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
   "site": {
     "title": "Demo Site",
     "slug": "demo",
-    "theme": "default",
+    "theme": "Foundation",
     "setAsDefault": true
   }
 }
 ```
 
 The full schema is at [`assets/blueprints/blueprint-schema.json`](assets/blueprints/blueprint-schema.json).
+
+For embedded URL payloads, `blueprint-data` expects the JSON blueprint encoded as base64url. Standard base64 is also accepted as long as it is URL-encoded safely.
+
+Example:
+
+```text
+?blueprint-data=eyJsYW5kaW5nUGFnZSI6Ii9hZG1pbiIsInNpdGVPcHRpb25zIjp7InRpdGxlIjoiRW1iZWRkZWQgRGVtbyJ9fQ
+```
+
+Short form strings remain supported for bundled addons:
+
+```json
+{
+  "modules": ["CSVImport"],
+  "themes": ["default"]
+}
+```
+
+Remote addons are downloaded into persistent browser storage under `/persist/addons` and re-linked into Omeka on each boot. This means the readonly core bundle stays untouched while downloaded modules/themes survive reloads for the same playground scope.
+
+When running locally, the dev server exposes a same-origin addon proxy at the configured `addonProxyPath` so browser-based runtime fetches can read cross-origin ZIPs from GitHub Releases and similar hosts.
 
 ---
 
@@ -146,7 +185,9 @@ The Omeka source is built from the [`feature/experimental-sqlite-support`](https
 
 ## Known Limitations
 
-- Remote installation of third-party modules/themes from omeka.org is not yet supported — only modules already present in the bundle can be activated.
+- Remote addon installation only supports ZIP packages that are already ready to run in Omeka. Releases that require Composer, Node builds, or extra post-install steps are not supported in-browser.
+- `omeka.org` slug resolution depends on the current HTML download links on omeka.org.
+- Remote ZIP downloads need a same-origin proxy endpoint when the upstream host does not expose CORS headers. The local dev server provides one, but static-only deployments must provide an equivalent proxy if they want remote addon installs to work.
 - Browser compatibility is focused on Chromium; Firefox and Safari may need additional validation for IndexedDB and Service Worker behavior.
 - The export/import of full overlay snapshots is still being hardened.
 

@@ -153,7 +153,7 @@ function refreshWithinRuntime() {
 }
 
 function navigateHome() {
-  navigateWithinRuntime("/s/playground");
+  navigateWithinRuntime("/");
 }
 
 function navigateAdmin() {

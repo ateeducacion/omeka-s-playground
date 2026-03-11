@@ -12,6 +12,26 @@ let runtimeStatePromise = null;
 let requestQueue = Promise.resolve();
 let activeBlueprint = null;
 
+function formatErrorDetail(error) {
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error?.stack) {
+    return String(error.stack);
+  }
+
+  if (error?.message) {
+    return String(error.message);
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 function postShell(message) {
   const channel = new BroadcastChannel(createShellChannel(scopeId));
   channel.postMessage(message);
@@ -109,7 +129,7 @@ bridgeChannel.addEventListener("message", (event) => {
         response: await serializeResponse(response),
       });
     } catch (error) {
-      const detail = String(error?.stack || error?.message || error);
+      const detail = formatErrorDetail(error);
       respond({
         kind: "http-error",
         id: data.id,

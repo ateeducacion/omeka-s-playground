@@ -15,7 +15,7 @@ bundle: prepare
 	OMEKA_REF=$(OMEKA_REF) OMEKA_REF_BRANCH=$(OMEKA_REF_BRANCH) npm run bundle
 
 serve:
-	python3 -m http.server $(PORT)
+	PORT=$(PORT) node ./scripts/dev-server.mjs
 
 up: bundle serve
 
