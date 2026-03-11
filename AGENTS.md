@@ -109,6 +109,7 @@ Responsibilities:
 - `php-worker.js`
   - Owns the `php-cgi-wasm` instance for a scope
   - Boots Omeka and serves HTTP requests through the bridge
+  - Applies the outbound HTTP policy used by VRZNO-backed `http`/`https` PHP stream access
 - `src/runtime/bootstrap.js`
   - Prepares storage
   - Installs Omeka when needed
@@ -209,8 +210,10 @@ Important flags include:
 - `landingPath`
 - `autologin`
 - admin credentials and site defaults
+- `outboundHttp`
 
 If you change autologin behavior, verify both first boot and reload behavior.
+If you change `outboundHttp`, verify both the PHP-side VRZNO probe and the browser-side proxy behavior.
 
 ## Development Conventions
 
@@ -281,6 +284,7 @@ If a change touches routing or HTML rewriting, prefer checking real browser beha
 
 - Do not assume the app is hosted at `/`; production runs in a subdirectory.
 - Do not assume Omeka-generated links are plain text; some are HTML-escaped.
+- Do not assume PHP can open raw sockets to the internet; outbound HTTP is expected to flow through VRZNO/fetch and the configured allowlist/proxy policy.
 - Do not move the entire core into persistent storage unless explicitly required.
 - Do not break the separation between readonly core and mutable overlay.
 - Do not forget that service worker changes often require a hard refresh or worker reset to verify.

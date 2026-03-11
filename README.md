@@ -160,6 +160,8 @@ Remote addons are downloaded into persistent browser storage under `/persist/add
 
 When running locally, the dev server exposes a same-origin addon proxy at the configured `addonProxyPath` so browser-based runtime fetches can read cross-origin ZIPs from GitHub Releases and similar hosts.
 
+The PHP runtime also supports outbound `http`/`https` stream access through VRZNO. In this app those requests are filtered by the `outboundHttp` config, which applies an allowlist and can route cross-origin traffic through the same same-origin proxy used for addon downloads.
+
 ---
 
 ## Deployment
@@ -188,6 +190,7 @@ The Omeka source is built from the [`feature/experimental-sqlite-support`](https
 - Remote addon installation only supports ZIP packages that are already ready to run in Omeka. Releases that require Composer, Node builds, or extra post-install steps are not supported in-browser.
 - `omeka.org` slug resolution depends on the current HTML download links on omeka.org.
 - Remote ZIP downloads need a same-origin proxy endpoint when the upstream host does not expose CORS headers. The local dev server provides one, but static-only deployments must provide an equivalent proxy if they want remote addon installs to work.
+- PHP outbound HTTP is limited by the configured `outboundHttp.allowedHosts` and `allowedMethods`. Hosts outside that policy will fail by design.
 - Browser compatibility is focused on Chromium; Firefox and Safari may need additional validation for IndexedDB and Service Worker behavior.
 - The export/import of full overlay snapshots is still being hardened.
 

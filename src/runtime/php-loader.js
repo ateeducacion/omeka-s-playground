@@ -16,7 +16,9 @@ const MIME_TYPES = {
   xml: "application/xml; charset=utf-8",
 };
 
-export function createPhpRuntime(runtime) {
+export function createPhpRuntime(runtime, options = {}) {
+  const { moduleArgs = {} } = options;
+
   return new PhpCgiWorker({
     PGlite,
     prefix: "/",
@@ -24,5 +26,6 @@ export function createPhpRuntime(runtime) {
     sharedLibs: resolveSharedLibs(runtime),
     types: MIME_TYPES,
     rewrite: (pathname) => pathname,
+    ...moduleArgs,
   });
 }

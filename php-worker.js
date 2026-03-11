@@ -2,6 +2,7 @@ import { loadPlaygroundConfig } from "./src/shared/config.js";
 import { createPhpBridgeChannel, createShellChannel } from "./src/shared/protocol.js";
 import { bootstrapOmeka } from "./src/runtime/bootstrap.js";
 import { createPhpRuntime } from "./src/runtime/php-loader.js";
+import { installOutboundFetchPolicy } from "./src/runtime/networking.js";
 
 const workerUrl = new URL(self.location.href);
 const scopeId = workerUrl.searchParams.get("scope");
@@ -71,8 +72,13 @@ async function getRuntimeState() {
 
   runtimeStatePromise = (async () => {
     const config = await loadPlaygroundConfig();
+    const outboundHttp = installOutboundFetchPolicy(config);
     const runtime = config.runtimes.find((entry) => entry.id === runtimeId) || config.runtimes[0];
-    const php = createPhpRuntime(runtime);
+    const php = createPhpRuntime(runtime, {
+      moduleArgs: {
+        playgroundNetwork: outboundHttp,
+      },
+    });
 
     postShell({
       kind: "progress",

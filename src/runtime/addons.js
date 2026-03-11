@@ -1,9 +1,37 @@
 import { unzipSync } from "../../vendor/fflate/esm/browser.js";
+import { resolveAppUrl } from "../shared/paths.js";
 
 export const PERSIST_ADDONS_ROOT = "/persist/addons";
 const MODULES_ROOT = `${PERSIST_ADDONS_ROOT}/modules`;
 const THEMES_ROOT = `${PERSIST_ADDONS_ROOT}/themes`;
 const MANIFESTS_ROOT = `${PERSIST_ADDONS_ROOT}/manifests`;
+const EASY_ADMIN_CACHE_DIR = "data/playground-cache";
+const EASY_ADMIN_REMOTE_SOURCES = [
+  {
+    url: "https://omeka.org/add-ons/json/s_module.json",
+    relativePath: `${EASY_ADMIN_CACHE_DIR}/s_module.json`,
+  },
+  {
+    url: "https://omeka.org/add-ons/json/s_theme.json",
+    relativePath: `${EASY_ADMIN_CACHE_DIR}/s_theme.json`,
+  },
+  {
+    url: "https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_modules.csv",
+    relativePath: `${EASY_ADMIN_CACHE_DIR}/omeka_s_modules.csv`,
+  },
+  {
+    url: "https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_themes.csv",
+    relativePath: `${EASY_ADMIN_CACHE_DIR}/omeka_s_themes.csv`,
+  },
+  {
+    url: "https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_selections.csv",
+    relativePath: `${EASY_ADMIN_CACHE_DIR}/omeka_s_selections.csv`,
+  },
+  {
+    url: "https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/refs/heads/master/_data/omeka_s_selections.csv",
+    relativePath: `${EASY_ADMIN_CACHE_DIR}/omeka_s_selections.csv`,
+  },
+];
 
 function ensureDirSync(FS, path) {
   const segments = path.split("/").filter(Boolean);
@@ -228,7 +256,7 @@ function buildDownloadUrl(downloadUrl, config) {
     return parsed.toString();
   }
 
-  const proxied = new URL(proxyPath, self.location.origin);
+  const proxied = resolveAppUrl(proxyPath, self.location?.href);
   proxied.searchParams.set("url", parsed.toString());
   return proxied.toString();
 }
@@ -274,6 +302,75 @@ function writeArchiveToFs(FS, targetDir, zipBytes) {
 
   if (!writtenFiles) {
     throw new Error("Archive did not contain any installable files.");
+  }
+}
+
+function pathExists(FS, path) {
+  return FS.analyzePath(path)?.exists || false;
+}
+
+async function prepareEasyAdminCatalogCache(FS, persistedPath, config) {
+  for (const source of EASY_ADMIN_REMOTE_SOURCES) {
+    const targetPath = `${persistedPath}/${source.relativePath}`.replace(/\/{2,}/gu, "/");
+    const targetDir = targetPath.split("/").slice(0, -1).join("/") || "/";
+    ensureDirSync(FS, targetDir);
+
+    if (!pathExists(FS, targetPath)) {
+      const bytes = await fetchZipBytes(buildDownloadUrl(source.url, config));
+      FS.writeFile(targetPath, bytes);
+    }
+  }
+}
+
+async function patchEasyAdminAddon(FS, persistedPath, config) {
+  await prepareEasyAdminCatalogCache(FS, persistedPath, config);
+  const addonPluginPath = `${persistedPath}/src/Mvc/Controller/Plugin/Addons.php`.replace(/\/{2,}/gu, "/");
+  const addonsFormFactoryPath = `${persistedPath}/src/Service/Form/AddonsFormFactory.php`.replace(/\/{2,}/gu, "/");
+  // This compatibility layer is intentionally specific to EasyAdmin.
+  // The module hardcodes remote catalog URLs and reads them directly from PHP.
+  const moduleCacheRoot = "OMEKA_PATH . '/modules/EasyAdmin/data/playground-cache'";
+
+  if (pathExists(FS, addonPluginPath)) {
+    let raw = FS.readFile(addonPluginPath, { encoding: "utf8" });
+
+    const sourceExpressionReplacements = new Map([
+      ["'https://omeka.org/add-ons/json/s_module.json'", `${moduleCacheRoot} . '/s_module.json'`],
+      ["'https://omeka.org/add-ons/json/s_theme.json'", `${moduleCacheRoot} . '/s_theme.json'`],
+      ["'https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_modules.csv'", `${moduleCacheRoot} . '/omeka_s_modules.csv'`],
+      ["'https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_themes.csv'", `${moduleCacheRoot} . '/omeka_s_themes.csv'`],
+    ]);
+    for (const [search, replace] of sourceExpressionReplacements.entries()) {
+      raw = raw.split(search).join(replace);
+    }
+
+    raw = raw.replace(
+      "@file_get_contents('https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/refs/heads/master/_data/omeka_s_selections.csv')",
+      `@file_get_contents(${moduleCacheRoot} . '/omeka_s_selections.csv')`,
+    );
+    raw = raw.replace(
+      "@file_get_contents('https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_selections.csv')",
+      `@file_get_contents(${moduleCacheRoot} . '/omeka_s_selections.csv')`,
+    );
+
+    raw = raw.replace(
+      "    protected function fileGetContents($url): ?string\n    {\n        $uri = new HttpUri($url);\n        $this->httpClient->reset();\n        $this->httpClient->setUri($uri);\n        try {\n            $response = $this->httpClient->send();\n            $response = $response->isOk() ? $response->getBody() : null;\n        } catch (RuntimeException $e) {\n            $response = null;\n        }\n",
+      "    protected function fileGetContents($url): ?string\n    {\n        if (!preg_match('~^https?://~i', (string) $url)) {\n            $response = @file_get_contents($url) ?: null;\n        } else {\n            $uri = new HttpUri($url);\n            $this->httpClient->reset();\n            $this->httpClient->setUri($uri);\n            try {\n                $response = $this->httpClient->send();\n                $response = $response->isOk() ? $response->getBody() : null;\n            } catch (RuntimeException $e) {\n                $response = null;\n            }\n        }\n",
+    );
+
+    FS.writeFile(addonPluginPath, raw, { encoding: "utf8" });
+  }
+
+  if (pathExists(FS, addonsFormFactoryPath)) {
+    let raw = FS.readFile(addonsFormFactoryPath, { encoding: "utf8" });
+    raw = raw.replace(
+      "@file_get_contents('https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/refs/heads/master/_data/omeka_s_selections.csv')",
+      `@file_get_contents(${moduleCacheRoot} . '/omeka_s_selections.csv')`,
+    );
+    raw = raw.replace(
+      "@file_get_contents('https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_selections.csv')",
+      `@file_get_contents(${moduleCacheRoot} . '/omeka_s_selections.csv')`,
+    );
+    FS.writeFile(addonsFormFactoryPath, raw, { encoding: "utf8" });
   }
 }
 
@@ -403,6 +500,11 @@ async function materializeAddon({ FS, kind, spec, omekaRoot, publish, config }) 
       source,
       downloadedAt: new Date().toISOString(),
     });
+  }
+
+  if (kind === "module" && spec.name === "EasyAdmin") {
+    publish(`Applying EasyAdmin-specific catalog compatibility patch.`, 0.58);
+    await patchEasyAdminAddon(FS, persistedPath, config);
   }
 
   ensureAddonMount(FS, mountPath, persistedPath);

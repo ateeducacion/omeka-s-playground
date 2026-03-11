@@ -607,6 +607,7 @@ function buildPhpIni(config) {
     "error_reporting=E_ALL",
     "memory_limit=512M",
     "max_execution_time=30",
+    "allow_url_fopen=1",
     `date.timezone=${config.timezone}`,
     "session.save_path=/persist/mutable/session",
     "",
@@ -759,7 +760,13 @@ export async function bootstrapOmeka({ blueprint, config, php, publish, runtimeI
 
   const probeResponse = await php.request(new Request("https://playground.internal/playground-probe.php"));
   const probeText = await probeResponse.text();
-  const probe = JSON.parse(probeText);
+  let probe;
+  try {
+    probe = JSON.parse(probeText);
+  } catch (error) {
+    const preview = probeText.slice(0, 800);
+    throw new Error(`Probe response was not valid JSON: ${preview}`);
+  }
 
   if (!probe.available_drivers?.includes("sqlite")) {
     throw new Error(`SQLite probe failed: ${probeText}`);
