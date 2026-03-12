@@ -1,6 +1,8 @@
 node_modules/
 .cache/
 dist/
+site/
+.venv/
 vendor/
 .DS_Store
 assets/omeka/*

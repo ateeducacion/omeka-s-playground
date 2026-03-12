@@ -4,7 +4,7 @@
 
 This project runs a full [Omeka S](https://omeka.org/s/) instance entirely in the browser using [php-wasm](https://github.com/nicordev/nicordev-php-wasm). The readonly Omeka core is loaded from a pre-built bundle while a writable overlay persisted in the browser handles the database, uploads, and configuration.
 
-[Live demo](https://ateeducacion.github.io/omeka-s-playground/) | [Report a bug](https://github.com/ateeducacion/omeka-s-playground/issues)
+[Live demo](https://ateeducacion.github.io/omeka-s-playground/) | [Documentation](https://ateeducacion.github.io/omeka-s-playground/docs/) | [Report a bug](https://github.com/ateeducacion/omeka-s-playground/issues)
 
 ![](https://raw.githubusercontent.com/ateeducacion/omeka-s-playground/main/.github/screenshot.png)
 
@@ -176,7 +176,7 @@ The PHP runtime also supports outbound `http`/`https` stream access through VRZN
 
 The project deploys as a **static site** — no backend needed.
 
-A [GitHub Pages workflow](.github/workflows/pages.yml) is included and runs automatically on push to `main`. It installs dependencies, builds the Omeka bundle, and publishes the result.
+A [GitHub Pages workflow](.github/workflows/pages.yml) is included and runs automatically on push to `main`. It installs dependencies, builds the Omeka bundle, renders the MkDocs site under `/docs/`, and publishes the app plus docs together.
 
 ---
 
