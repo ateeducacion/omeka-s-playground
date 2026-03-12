@@ -178,27 +178,6 @@ The project deploys as a **static site** — no backend needed.
 
 A [GitHub Pages workflow](.github/workflows/pages.yml) is included and runs automatically on push to `main`. It installs dependencies, builds the Omeka bundle, renders the MkDocs site under `/docs/`, and publishes the app plus docs together.
 
-## Documentation
-
-The repository now includes a dedicated MkDocs site under [`/docs`](docs/).
-
-### Preview the docs locally
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements-docs.txt
-mkdocs serve
-```
-
-Then open <http://127.0.0.1:8000/>.
-
-### Update and publish docs
-
-1. Edit the Markdown files in [`docs/`](docs/).
-2. Run `mkdocs build --strict` locally before opening a pull request.
-3. Merge to `main` to let [`.github/workflows/pages.yml`](.github/workflows/pages.yml) rebuild and publish the app and docs to GitHub Pages.
-
 ---
 
 ## Key Technologies
