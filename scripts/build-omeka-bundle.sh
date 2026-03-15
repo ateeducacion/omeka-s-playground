@@ -33,7 +33,7 @@ perl -0pi -e "s/\\n\\\$this->headLink\\(\\)->prependStylesheet\\('\\/\\/fonts\\.
   "$OMEKA_STAGE/application/view/common/user-bar.phtml"
 
 if command -v composer >/dev/null 2>&1; then
-  composer install --working-dir="$OMEKA_STAGE" --no-dev --prefer-dist --no-progress --no-interaction >&2
+  composer install --working-dir="$OMEKA_STAGE" --no-dev --prefer-dist --no-progress --no-interaction --ignore-platform-reqs >&2
 else
   echo "composer is required to materialize Omeka vendor dependencies for the browser bundle." >&2
   exit 1

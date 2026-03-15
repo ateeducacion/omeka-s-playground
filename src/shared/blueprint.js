@@ -38,7 +38,8 @@ function decodeBase64Text(value) {
     .replace(/_/gu, "/")
     .replace(/\s+/gu, "");
   const padding = normalized.length % 4;
-  const padded = padding === 0 ? normalized : `${normalized}${"=".repeat(4 - padding)}`;
+  const padded =
+    padding === 0 ? normalized : `${normalized}${"=".repeat(4 - padding)}`;
 
   let binary;
   try {
@@ -78,7 +79,9 @@ function normalizePath(path, fallback = "/") {
 }
 
 function normalizeRole(role, fallback = "global_admin") {
-  const normalized = String(role || fallback).trim().toLowerCase();
+  const normalized = String(role || fallback)
+    .trim()
+    .toLowerCase();
   const aliases = {
     admin: "global_admin",
     globaladmin: "global_admin",
@@ -107,11 +110,13 @@ function normalizeAddonSource(input) {
   }
 
   const type = String(
-    input.type
-      || (input.url ? "url" : "")
-      || (input.slug ? "omeka.org" : "")
-      || "bundled",
-  ).trim().toLowerCase();
+    input.type ||
+      (input.url ? "url" : "") ||
+      (input.slug ? "omeka.org" : "") ||
+      "bundled",
+  )
+    .trim()
+    .toLowerCase();
 
   if (type === "bundled") {
     return { type };
@@ -128,7 +133,9 @@ function normalizeAddonSource(input) {
   if (type === "omeka.org") {
     const slug = String(input.slug || "").trim();
     if (!slug) {
-      throw new Error("Blueprint addon source.type='omeka.org' requires source.slug.");
+      throw new Error(
+        "Blueprint addon source.type='omeka.org' requires source.slug.",
+      );
     }
     return { type, slug };
   }
@@ -142,36 +149,52 @@ function normalizeAddonCollection(input, kind) {
   }
 
   const seen = new Set();
-  return input.map((entry) => {
-    const normalized = {
-      name: String(entry?.name || entry || "").trim(),
-      source: normalizeAddonSource(entry?.source),
-    };
+  return input
+    .map((entry) => {
+      const normalized = {
+        name: String(entry?.name || entry || "").trim(),
+        source: normalizeAddonSource(entry?.source),
+      };
 
-    if (kind === "module") {
-      normalized.state = String(entry?.state || "activate").trim().toLowerCase() || "activate";
-    }
+      if (kind === "module") {
+        normalized.state =
+          String(entry?.state || "activate")
+            .trim()
+            .toLowerCase() || "activate";
+      }
 
-    if (!normalized.name) {
-      return null;
-    }
+      if (!normalized.name) {
+        return null;
+      }
 
-    if (/[\\/]/u.test(normalized.name) || normalized.name === "." || normalized.name === "..") {
-      throw new Error(`Blueprint ${kind} name "${normalized.name}" must be a single path segment.`);
-    }
+      if (
+        /[\\/]/u.test(normalized.name) ||
+        normalized.name === "." ||
+        normalized.name === ".."
+      ) {
+        throw new Error(
+          `Blueprint ${kind} name "${normalized.name}" must be a single path segment.`,
+        );
+      }
 
-    const dedupeKey = normalized.name.toLowerCase();
-    if (seen.has(dedupeKey)) {
-      throw new Error(`Blueprint ${kind}s cannot include duplicate entry "${normalized.name}".`);
-    }
-    seen.add(dedupeKey);
+      const dedupeKey = normalized.name.toLowerCase();
+      if (seen.has(dedupeKey)) {
+        throw new Error(
+          `Blueprint ${kind}s cannot include duplicate entry "${normalized.name}".`,
+        );
+      }
+      seen.add(dedupeKey);
 
-    return normalized;
-  }).filter(Boolean);
+      return normalized;
+    })
+    .filter(Boolean);
 }
 
 export function getBlueprintSchemaUrl() {
-  return new URL("../../assets/blueprints/blueprint-schema.json", import.meta.url).toString();
+  return new URL(
+    "../../assets/blueprints/blueprint-schema.json",
+    import.meta.url,
+  ).toString();
 }
 
 export function buildDefaultBlueprint(config) {
@@ -183,7 +206,10 @@ export function buildDefaultBlueprint(config) {
       description: "Default Omeka S Playground blueprint.",
     },
     preferredVersions: {
-      php: config.runtimes?.find((runtime) => runtime.default)?.phpVersionLabel || config.runtimes?.[0]?.phpVersionLabel || "8.3",
+      php:
+        config.runtimes?.find((runtime) => runtime.default)?.phpVersionLabel ||
+        config.runtimes?.[0]?.phpVersionLabel ||
+        "8.3",
       omeka: "4.2.0",
     },
     debug: {
@@ -213,13 +239,15 @@ export function buildDefaultBlueprint(config) {
     itemSets: [
       {
         title: "Playground Collection",
-        description: "Default collection created from the Omeka S Playground blueprint.",
+        description:
+          "Default collection created from the Omeka S Playground blueprint.",
       },
     ],
     items: [
       {
         title: "Openverse Sample Image",
-        description: "Sample item created automatically from the default blueprint.",
+        description:
+          "Sample item created automatically from the default blueprint.",
         creator: "Openverse",
         itemSets: ["Playground Collection"],
         media: [
@@ -235,46 +263,74 @@ export function buildDefaultBlueprint(config) {
 }
 
 export function normalizeBlueprint(input, config) {
-  const blueprint = (input && typeof input === "object" && !Array.isArray(input))
-    ? structuredClone(input)
-    : {};
+  const blueprint =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? structuredClone(input)
+      : {};
   const fallback = buildDefaultBlueprint(config);
-  const users = Array.isArray(blueprint.users) && blueprint.users.length > 0
-    ? blueprint.users
-    : fallback.users;
+  const users =
+    Array.isArray(blueprint.users) && blueprint.users.length > 0
+      ? blueprint.users
+      : fallback.users;
 
   const normalizedUsers = users.map((user, index) => {
     const fallbackUser = index === 0 ? fallback.users[0] : {};
     const email = String(user?.email || fallbackUser.email || "").trim();
-    const username = String(user?.username || user?.name || fallbackUser.username || email.split("@")[0] || `user-${index + 1}`).trim();
-    const password = String(user?.password || fallbackUser.password || "").trim();
+    const username = String(
+      user?.username ||
+        user?.name ||
+        fallbackUser.username ||
+        email.split("@")[0] ||
+        `user-${index + 1}`,
+    ).trim();
+    const password = String(
+      user?.password || fallbackUser.password || "",
+    ).trim();
 
     if (!email || !password) {
-      throw new Error(`Blueprint user at index ${index} must include email and password.`);
+      throw new Error(
+        `Blueprint user at index ${index} must include email and password.`,
+      );
     }
 
     return {
       username,
       email,
       password,
-      role: normalizeRole(user?.role, index === 0 ? "global_admin" : "researcher"),
+      role: normalizeRole(
+        user?.role,
+        index === 0 ? "global_admin" : "researcher",
+      ),
       isActive: user?.isActive !== false,
     };
   });
 
-  const activeSite = blueprint.site && typeof blueprint.site === "object"
-    ? {
-        title: String(blueprint.site.title || fallback.siteOptions.title).trim(),
-        slug: slugify(blueprint.site.slug || blueprint.site.title || fallback.siteOptions.title),
-        summary: typeof blueprint.site.summary === "string" ? blueprint.site.summary : "",
-        theme: String(blueprint.site.theme || "default").trim(),
-        isPublic: blueprint.site.isPublic !== false,
-        setAsDefault: blueprint.site.setAsDefault !== false,
-      }
-    : null;
+  const activeSite =
+    blueprint.site && typeof blueprint.site === "object"
+      ? {
+          title: String(
+            blueprint.site.title || fallback.siteOptions.title,
+          ).trim(),
+          slug: slugify(
+            blueprint.site.slug ||
+              blueprint.site.title ||
+              fallback.siteOptions.title,
+          ),
+          summary:
+            typeof blueprint.site.summary === "string"
+              ? blueprint.site.summary
+              : "",
+          theme: String(blueprint.site.theme || "default").trim(),
+          isPublic: blueprint.site.isPublic !== false,
+          setAsDefault: blueprint.site.setAsDefault !== false,
+        }
+      : null;
 
   return {
-    $schema: typeof blueprint.$schema === "string" ? blueprint.$schema : fallback.$schema,
+    $schema:
+      typeof blueprint.$schema === "string"
+        ? blueprint.$schema
+        : fallback.$schema,
     meta: {
       title: blueprint.meta?.title || fallback.meta.title,
       author: blueprint.meta?.author || fallback.meta.author,
@@ -282,16 +338,21 @@ export function normalizeBlueprint(input, config) {
     },
     preferredVersions: {
       php: blueprint.preferredVersions?.php || fallback.preferredVersions.php,
-      omeka: blueprint.preferredVersions?.omeka || fallback.preferredVersions.omeka,
+      omeka:
+        blueprint.preferredVersions?.omeka || fallback.preferredVersions.omeka,
     },
     debug: {
       enabled: blueprint.debug?.enabled === true,
     },
-    landingPage: normalizePath(blueprint.landingPage || blueprint.landingPath || fallback.landingPage, fallback.landingPage),
+    landingPage: normalizePath(
+      blueprint.landingPage || blueprint.landingPath || fallback.landingPage,
+      fallback.landingPage,
+    ),
     siteOptions: {
       title: blueprint.siteOptions?.title || fallback.siteOptions.title,
       locale: blueprint.siteOptions?.locale || fallback.siteOptions.locale,
-      timezone: blueprint.siteOptions?.timezone || fallback.siteOptions.timezone,
+      timezone:
+        blueprint.siteOptions?.timezone || fallback.siteOptions.timezone,
     },
     login: {
       email: blueprint.login?.email || normalizedUsers[0].email,
@@ -302,28 +363,43 @@ export function normalizeBlueprint(input, config) {
     themes: normalizeAddonCollection(blueprint.themes, "theme"),
     modules: normalizeAddonCollection(blueprint.modules, "module"),
     itemSets: Array.isArray(blueprint.itemSets)
-      ? blueprint.itemSets.map((itemSet) => ({
-          title: String(itemSet?.title || "").trim(),
-          description: typeof itemSet?.description === "string" ? itemSet.description : "",
-        })).filter((itemSet) => itemSet.title)
+      ? blueprint.itemSets
+          .map((itemSet) => ({
+            title: String(itemSet?.title || "").trim(),
+            description:
+              typeof itemSet?.description === "string"
+                ? itemSet.description
+                : "",
+          }))
+          .filter((itemSet) => itemSet.title)
       : [],
     items: Array.isArray(blueprint.items)
-      ? blueprint.items.map((item) => ({
-          title: String(item?.title || "").trim(),
-          description: typeof item?.description === "string" ? item.description : "",
-          creator: typeof item?.creator === "string" ? item.creator : "",
-          itemSets: Array.isArray(item?.itemSets)
-            ? item.itemSets.map((entry) => String(entry || "").trim()).filter(Boolean)
-            : [],
-          media: Array.isArray(item?.media)
-            ? item.media.map((media) => ({
-                type: String(media?.type || "url").trim().toLowerCase(),
-                url: absolutizeUrl(media?.url || media?.source || ""),
-                title: typeof media?.title === "string" ? media.title : "",
-                altText: typeof media?.altText === "string" ? media.altText : "",
-              })).filter((media) => media.url)
-            : [],
-        })).filter((item) => item.title)
+      ? blueprint.items
+          .map((item) => ({
+            title: String(item?.title || "").trim(),
+            description:
+              typeof item?.description === "string" ? item.description : "",
+            creator: typeof item?.creator === "string" ? item.creator : "",
+            itemSets: Array.isArray(item?.itemSets)
+              ? item.itemSets
+                  .map((entry) => String(entry || "").trim())
+                  .filter(Boolean)
+              : [],
+            media: Array.isArray(item?.media)
+              ? item.media
+                  .map((media) => ({
+                    type: String(media?.type || "url")
+                      .trim()
+                      .toLowerCase(),
+                    url: absolutizeUrl(media?.url || media?.source || ""),
+                    title: typeof media?.title === "string" ? media.title : "",
+                    altText:
+                      typeof media?.altText === "string" ? media.altText : "",
+                  }))
+                  .filter((media) => media.url)
+              : [],
+          }))
+          .filter((item) => item.title)
       : [],
   };
 }
@@ -356,7 +432,10 @@ export function saveActiveBlueprint(scopeId, blueprint) {
     return;
   }
 
-  window.sessionStorage.setItem(getBlueprintStorageKey(scopeId), JSON.stringify(blueprint));
+  window.sessionStorage.setItem(
+    getBlueprintStorageKey(scopeId),
+    JSON.stringify(blueprint),
+  );
 }
 
 export function loadActiveBlueprint(scopeId) {
@@ -391,9 +470,14 @@ export async function resolveBlueprintForShell(scopeId, config) {
 
   const blueprintParam = url.searchParams.get("blueprint");
   if (blueprintParam) {
-    const response = await fetch(new URL(blueprintParam, window.location.href), { cache: "no-store" });
+    const response = await fetch(
+      new URL(blueprintParam, window.location.href),
+      { cache: "no-store" },
+    );
     if (!response.ok) {
-      throw new Error(`Unable to load blueprint from ${blueprintParam}: ${response.status}`);
+      throw new Error(
+        `Unable to load blueprint from ${blueprintParam}: ${response.status}`,
+      );
     }
     const payload = normalizeBlueprint(await response.json(), config);
     saveActiveBlueprint(scopeId, payload);
@@ -406,7 +490,10 @@ export async function resolveBlueprintForShell(scopeId, config) {
   }
 
   if (config.defaultBlueprintUrl) {
-    const response = await fetch(new URL(config.defaultBlueprintUrl, window.location.href), { cache: "no-store" });
+    const response = await fetch(
+      new URL(config.defaultBlueprintUrl, window.location.href),
+      { cache: "no-store" },
+    );
     if (!response.ok) {
       throw new Error(`Unable to load default blueprint: ${response.status}`);
     }

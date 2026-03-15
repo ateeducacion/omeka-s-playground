@@ -1,15 +1,15 @@
 import { loadActiveBlueprint } from "../shared/blueprint.js";
 import { getDefaultRuntime, loadPlaygroundConfig } from "../shared/config.js";
 import { buildScopedSitePath } from "../shared/paths.js";
-import { createPhpBridgeChannel, createShellChannel } from "../shared/protocol.js";
+import { createShellChannel } from "../shared/protocol.js";
 import { saveSessionState } from "../shared/storage.js";
 
 const overlayEl = document.querySelector(".remote-boot__card");
 const statusEl = document.querySelector("#remote-status");
 const frameEl = document.querySelector("#remote-frame");
 let phpWorker;
-let activeScopeId;
-let activeRuntimeId;
+let _activeScopeId;
+let _activeRuntimeId;
 let activePath = "/";
 let forceCleanBoot = false;
 
@@ -17,7 +17,7 @@ function setOverlayVisible(isVisible) {
   overlayEl?.classList.toggle("is-hidden", !isVisible);
 }
 
-function setRemoteProgress(detail, progress = null) {
+function setRemoteProgress(detail, _progress = null) {
   if (statusEl && detail) {
     statusEl.textContent = detail;
   }
@@ -59,7 +59,9 @@ async function registerRuntimeServiceWorker(scopeId, runtimeId, config) {
 async function waitForServiceWorkerControl() {
   if (!navigator.serviceWorker.controller) {
     await new Promise((resolve) => {
-      navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true });
+      navigator.serviceWorker.addEventListener("controllerchange", resolve, {
+        once: true,
+      });
     });
   }
 }
@@ -67,7 +69,11 @@ async function waitForServiceWorkerControl() {
 async function waitForPhpWorkerReady(scopeId, runtimeId, worker) {
   await new Promise((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
-      reject(new Error(`Timed out while waiting for php-worker readiness for ${runtimeId}.`));
+      reject(
+        new Error(
+          `Timed out while waiting for php-worker readiness for ${runtimeId}.`,
+        ),
+      );
     }, 15000);
 
     const handleReady = (message) => {
@@ -111,7 +117,10 @@ function emitNavigation(scopeId, runtimeId, href) {
 }
 
 function buildEntryUrl(scopeId, runtimeId, path) {
-  return new URL(buildScopedSitePath(scopeId, runtimeId, path), window.location.origin);
+  return new URL(
+    buildScopedSitePath(scopeId, runtimeId, path),
+    window.location.origin,
+  );
 }
 
 function navigateFrame(scopeId, runtimeId, path, { reload = false } = {}) {
@@ -135,7 +144,11 @@ function bindFrameNavigation(scopeId, runtimeId) {
     let path = activePath;
     try {
       if (frameEl.contentWindow?.location?.href) {
-        path = extractUnscopedPath(frameEl.contentWindow.location.href, scopeId, runtimeId);
+        path = extractUnscopedPath(
+          frameEl.contentWindow.location.href,
+          scopeId,
+          runtimeId,
+        );
       }
     } catch {
       // Ignore transient about:blank/cross-context timing during iframe swaps.
@@ -148,7 +161,12 @@ function bindFrameNavigation(scopeId, runtimeId) {
       detail: `Iframe loaded for ${runtimeId}.`,
       path,
     });
-    emitNavigation(scopeId, runtimeId, frameEl.contentWindow?.location?.href || buildEntryUrl(scopeId, runtimeId, path).toString());
+    emitNavigation(
+      scopeId,
+      runtimeId,
+      frameEl.contentWindow?.location?.href ||
+        buildEntryUrl(scopeId, runtimeId, path).toString(),
+    );
   });
 }
 
@@ -176,15 +194,20 @@ async function bootstrapRemote() {
   const requestedRuntimeId = url.searchParams.get("runtime");
   const requestedPath = url.searchParams.get("path") || "/";
   forceCleanBoot = url.searchParams.get("clean") === "1";
-  activeScopeId = scopeId;
-  activeRuntimeId = requestedRuntimeId;
+  _activeScopeId = scopeId;
+  _activeRuntimeId = requestedRuntimeId;
   activePath = requestedPath;
   const config = await loadPlaygroundConfig();
   const blueprint = loadActiveBlueprint(scopeId);
-  const runtime = config.runtimes.find((entry) => entry.id === requestedRuntimeId) || getDefaultRuntime(config);
+  const runtime =
+    config.runtimes.find((entry) => entry.id === requestedRuntimeId) ||
+    getDefaultRuntime(config);
   setOverlayVisible(true);
 
-  setRemoteProgress("Registering the Service Worker and bootstrapping the PHP CGI worker.", 0.08);
+  setRemoteProgress(
+    "Registering the Service Worker and bootstrapping the PHP CGI worker.",
+    0.08,
+  );
   emit(scopeId, {
     kind: "progress",
     title: "Preparing runtime",
@@ -202,7 +225,8 @@ async function bootstrapRemote() {
     workerUrl.searchParams.set("runtime", runtime.id);
     phpWorker = new Worker(workerUrl, { type: "module" });
     phpWorker.addEventListener("error", (event) => {
-      const detail = event.message || "php-worker failed before signalling readiness.";
+      const detail =
+        event.message || "php-worker failed before signalling readiness.";
       setRemoteProgress(detail);
       emit(scopeId, {
         kind: "error",
@@ -234,7 +258,10 @@ async function bootstrapRemote() {
   bindShellCommands(scopeId, runtime.id);
   bindFrameNavigation(scopeId, runtime.id);
   navigateFrame(scopeId, runtime.id, requestedPath);
-  setRemoteProgress("Runtime host registered. Waiting for the PHP worker to finish bootstrap.", 0.18);
+  setRemoteProgress(
+    "Runtime host registered. Waiting for the PHP worker to finish bootstrap.",
+    0.18,
+  );
 
   emit(scopeId, {
     kind: "progress",
@@ -242,7 +269,6 @@ async function bootstrapRemote() {
     detail: "The embedded Omeka iframe is loading.",
     progress: 0.18,
   });
-
 }
 
 bootstrapRemote().catch((error) => {

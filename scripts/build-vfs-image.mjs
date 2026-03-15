@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 
-import { createWriteStream, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  createWriteStream,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 function parseArgs(argv) {
@@ -25,7 +32,9 @@ function listFiles(rootDir) {
   const files = [];
 
   function walk(currentDir) {
-    const entries = readdirSync(currentDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    const entries = readdirSync(currentDir, { withFileTypes: true }).sort(
+      (a, b) => a.name.localeCompare(b.name),
+    );
     for (const entry of entries) {
       const absolute = join(currentDir, entry.name);
       if (entry.isDirectory()) {
@@ -87,19 +96,25 @@ async function main() {
     });
   });
 
-  writeFileSync(indexPath, `${JSON.stringify({
-    schemaVersion: 1,
-    format: "omeka-vfs-image-v1",
-    generatedAt: new Date().toISOString(),
-    root: "/",
-    fileCount: entries.length,
-    totalBytes: offset,
-    entries,
-  }, null, 2)}\n`);
+  writeFileSync(
+    indexPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        format: "omeka-vfs-image-v1",
+        generatedAt: new Date().toISOString(),
+        root: "/",
+        fileCount: entries.length,
+        totalBytes: offset,
+        entries,
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-

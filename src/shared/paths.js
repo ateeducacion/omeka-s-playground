@@ -1,5 +1,7 @@
 export function getBasePathFromPathname(pathname = "/") {
-  const segments = String(pathname || "/").split("/").filter(Boolean);
+  const segments = String(pathname || "/")
+    .split("/")
+    .filter(Boolean);
 
   if (segments.length <= 1) {
     return "/";
@@ -27,19 +29,26 @@ export function resolveRemoteUrl(scopeId, runtimeId, path = "/") {
 }
 
 export function hasBlueprintUrlOverride(locationLike = window.location.href) {
-  const url = locationLike instanceof URL
-    ? locationLike
-    : new URL(String(locationLike || window.location.href), window.location.href);
+  const url =
+    locationLike instanceof URL
+      ? locationLike
+      : new URL(
+          String(locationLike || window.location.href),
+          window.location.href,
+        );
 
-  return url.searchParams.has("blueprint") || url.searchParams.has("blueprint-data");
+  return (
+    url.searchParams.has("blueprint") || url.searchParams.has("blueprint-data")
+  );
 }
 
 export function resolveAppUrl(path, locationLike) {
   const rawPath = String(path || "").trim();
   const fallbackLocation = globalThis.location?.href || "http://localhost/";
-  const current = locationLike instanceof URL
-    ? locationLike
-    : new URL(String(locationLike || fallbackLocation), fallbackLocation);
+  const current =
+    locationLike instanceof URL
+      ? locationLike
+      : new URL(String(locationLike || fallbackLocation), fallbackLocation);
 
   if (!rawPath) {
     return current;
@@ -52,26 +61,38 @@ export function resolveAppUrl(path, locationLike) {
   }
 
   const normalizedPath = rawPath.startsWith("/") ? rawPath.slice(1) : rawPath;
-  const pathname = joinBasePath(getBasePathFromPathname(current.pathname), normalizedPath);
+  const pathname = joinBasePath(
+    getBasePathFromPathname(current.pathname),
+    normalizedPath,
+  );
   return new URL(pathname, current.origin);
 }
 
 function isLocalDevHostname(hostname = "") {
-  const normalized = String(hostname || "").trim().toLowerCase();
-  return normalized === "localhost"
-    || normalized === "127.0.0.1"
-    || normalized === "[::1]";
+  const normalized = String(hostname || "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "[::1]"
+  );
 }
 
 export function resolveConfiguredProxyUrl(config = {}, locationLike) {
-  const current = locationLike instanceof URL
-    ? locationLike
-    : new URL(
-      String(locationLike || globalThis.location?.href || "http://localhost/"),
-      globalThis.location?.href || "http://localhost/",
-    );
+  const current =
+    locationLike instanceof URL
+      ? locationLike
+      : new URL(
+          String(
+            locationLike || globalThis.location?.href || "http://localhost/",
+          ),
+          globalThis.location?.href || "http://localhost/",
+        );
 
-  const proxyPath = String(config.proxyPath || config.addonProxyPath || "").trim();
+  const proxyPath = String(
+    config.proxyPath || config.addonProxyPath || "",
+  ).trim();
   const proxyUrl = String(config.proxyUrl || config.addonProxyUrl || "").trim();
 
   if (isLocalDevHostname(current.hostname) && proxyPath) {
@@ -91,5 +112,8 @@ export function resolveConfiguredProxyUrl(config = {}, locationLike) {
 
 export function buildScopedSitePath(scopeId, runtimeId, path = "/") {
   const normalized = path.startsWith("/") ? path : `/${path}`;
-  return joinBasePath(getBasePath(), `playground/${scopeId}/${runtimeId}${normalized}`).replace(/\/{2,}/gu, "/");
+  return joinBasePath(
+    getBasePath(),
+    `playground/${scopeId}/${runtimeId}${normalized}`,
+  ).replace(/\/{2,}/gu, "/");
 }

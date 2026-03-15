@@ -1,7 +1,7 @@
-import { PhpCgiWorker } from "../../vendor/php-cgi-wasm/PhpCgiWorker.js";
 import { PGlite } from "../../vendor/pglite/index.js";
-import { resolveSharedLibs } from "./runtime-registry.js";
+import { PhpCgiWorker } from "../../vendor/php-cgi-wasm/PhpCgiWorker.js";
 import { OMEKA_ROOT } from "./bootstrap.js";
+import { resolveSharedLibs } from "./runtime-registry.js";
 
 const MIME_TYPES = {
   css: "text/css; charset=utf-8",

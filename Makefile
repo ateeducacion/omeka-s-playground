@@ -12,7 +12,7 @@ OMEKA_REF_BRANCH ?= feature/experimental-sqlite-support
 #   make serve PORT=9090
 #   make bundle OMEKA_REF=https://github.com/<org>/omeka-s.git OMEKA_REF_BRANCH=<branch>
 
-.PHONY: help up deps prepare bundle serve clean reset
+.PHONY: help up deps prepare bundle serve clean reset test lint format
 
 help:
 	@printf '%s\n' \
@@ -23,6 +23,9 @@ help:
 		'  make bundle    Build the readonly Omeka bundle' \
 		'  make serve     Start the local dev server' \
 		'  make up        Run bundle + serve' \
+		'  make test      Run tests' \
+		'  make lint      Check code with Biome' \
+		'  make format    Auto-fix code with Biome' \
 		'  make clean     Remove generated caches and bundle artifacts' \
 		'  make reset     Alias of clean plus cache reset' \
 		'' \
@@ -51,6 +54,15 @@ clean:
 	rm -rf assets/omeka/*
 	rm -rf assets/manifests/*
 	touch assets/omeka/.gitkeep assets/manifests/.gitkeep
+
+test:
+	node --test tests/*.test.mjs
+
+lint:
+	npx @biomejs/biome check
+
+format:
+	npx @biomejs/biome check --fix
 
 reset: clean
 	rm -rf .cache
