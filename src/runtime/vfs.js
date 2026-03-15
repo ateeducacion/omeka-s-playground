@@ -28,10 +28,23 @@ export async function loadReadonlyVfs(manifest) {
   }
 
   const [data, index] = await Promise.all([
-    fetchArrayBuffer(new URL(`../../assets/manifests/${manifest.vfs.data.path}`, import.meta.url)),
-    fetch(new URL(`../../assets/manifests/${manifest.vfs.index.path}`, import.meta.url), { cache: "default" }).then((response) => {
+    fetchArrayBuffer(
+      new URL(
+        `../../assets/manifests/${manifest.vfs.data.path}`,
+        import.meta.url,
+      ),
+    ),
+    fetch(
+      new URL(
+        `../../assets/manifests/${manifest.vfs.index.path}`,
+        import.meta.url,
+      ),
+      { cache: "default" },
+    ).then((response) => {
       if (!response.ok) {
-        throw new Error(`Unable to fetch ${manifest.vfs.index.path}: ${response.status}`);
+        throw new Error(
+          `Unable to fetch ${manifest.vfs.index.path}: ${response.status}`,
+        );
       }
       return response.json();
     }),
@@ -40,7 +53,11 @@ export async function loadReadonlyVfs(manifest) {
   return { data, index };
 }
 
-export async function mountReadonlyCore(php, manifest, { root = "/www/omeka" } = {}) {
+export async function mountReadonlyCore(
+  php,
+  manifest,
+  { root = "/www/omeka" } = {},
+) {
   const vfs = await loadReadonlyVfs(manifest);
   const binary = await php.binary;
   const { FS } = binary;
@@ -52,7 +69,10 @@ export async function mountReadonlyCore(php, manifest, { root = "/www/omeka" } =
     const targetPath = `${root}/${entry.path}`.replace(/\/{2,}/gu, "/");
     const dirPath = targetPath.split("/").slice(0, -1).join("/") || "/";
     ensureDirSync(FS, dirPath);
-    FS.writeFile(targetPath, bytes.subarray(entry.offset, entry.offset + entry.size));
+    FS.writeFile(
+      targetPath,
+      bytes.subarray(entry.offset, entry.offset + entry.size),
+    );
   }
 
   return vfs;

@@ -79,18 +79,22 @@ function normalizeArchivePath(path) {
 }
 
 function isUnsafeArchivePath(path) {
-  return path === ".."
-    || path.startsWith("../")
-    || path.includes("/../")
-    || path.endsWith("/..");
+  return (
+    path === ".." ||
+    path.startsWith("../") ||
+    path.includes("/../") ||
+    path.endsWith("/..")
+  );
 }
 
 function isSkippableArchivePath(path) {
-  return !path
-    || path.startsWith("__MACOSX/")
-    || path === "__MACOSX"
-    || path.endsWith("/.DS_Store")
-    || path === ".DS_Store";
+  return (
+    !path ||
+    path.startsWith("__MACOSX/") ||
+    path === "__MACOSX" ||
+    path.endsWith("/.DS_Store") ||
+    path === ".DS_Store"
+  );
 }
 
 function getArchiveRoot(entries) {
@@ -170,8 +174,14 @@ function sanitizeSegment(value, fallback) {
 }
 
 function buildPageUrl(kind, slug) {
-  const base = kind === "module" ? "https://omeka.org/s/modules/" : "https://omeka.org/s/themes/";
-  return new URL(`${encodeURIComponent(slug).replace(/%2F/gu, "/")}/`, base).toString();
+  const base =
+    kind === "module"
+      ? "https://omeka.org/s/modules/"
+      : "https://omeka.org/s/themes/";
+  return new URL(
+    `${encodeURIComponent(slug).replace(/%2F/gu, "/")}/`,
+    base,
+  ).toString();
 }
 
 function parseDownloadLink(html, pageUrl) {
@@ -179,7 +189,11 @@ function parseDownloadLink(html, pageUrl) {
   let match;
   while ((match = anchorPattern.exec(html)) !== null) {
     const href = match[2]?.trim();
-    const label = match[3]?.replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim() || "";
+    const label =
+      match[3]
+        ?.replace(/<[^>]+>/gu, " ")
+        .replace(/\s+/gu, " ")
+        .trim() || "";
     if (!href) {
       continue;
     }
@@ -269,7 +283,8 @@ function writeArchiveToFs(FS, targetDir, zipBytes) {
   let writtenFiles = 0;
   for (const entryName of archiveEntries) {
     const normalizedEntryName = normalizeArchivePath(entryName);
-    const isDirectoryEntry = /\/$/u.test(entryName) || /\/$/u.test(normalizedEntryName);
+    const isDirectoryEntry =
+      /\/$/u.test(entryName) || /\/$/u.test(normalizedEntryName);
     const trimmedPath = trimArchiveRoot(entryName, archiveRoot);
     const relativePath = normalizeArchivePath(trimmedPath);
 
@@ -282,7 +297,10 @@ function writeArchiveToFs(FS, targetDir, zipBytes) {
     }
 
     if (isDirectoryEntry) {
-      ensureDirSync(FS, `${targetDir}/${relativePath}`.replace(/\/{2,}/gu, "/"));
+      ensureDirSync(
+        FS,
+        `${targetDir}/${relativePath}`.replace(/\/{2,}/gu, "/"),
+      );
       continue;
     }
 
@@ -309,7 +327,10 @@ function pathExists(FS, path) {
 
 async function prepareEasyAdminCatalogCache(FS, persistedPath, config) {
   for (const source of EASY_ADMIN_REMOTE_SOURCES) {
-    const targetPath = `${persistedPath}/${source.relativePath}`.replace(/\/{2,}/gu, "/");
+    const targetPath = `${persistedPath}/${source.relativePath}`.replace(
+      /\/{2,}/gu,
+      "/",
+    );
     const targetDir = targetPath.split("/").slice(0, -1).join("/") || "/";
     ensureDirSync(FS, targetDir);
 
@@ -322,20 +343,41 @@ async function prepareEasyAdminCatalogCache(FS, persistedPath, config) {
 
 async function patchEasyAdminAddon(FS, persistedPath, config) {
   await prepareEasyAdminCatalogCache(FS, persistedPath, config);
-  const addonPluginPath = `${persistedPath}/src/Mvc/Controller/Plugin/Addons.php`.replace(/\/{2,}/gu, "/");
-  const addonsFormFactoryPath = `${persistedPath}/src/Service/Form/AddonsFormFactory.php`.replace(/\/{2,}/gu, "/");
+  const addonPluginPath =
+    `${persistedPath}/src/Mvc/Controller/Plugin/Addons.php`.replace(
+      /\/{2,}/gu,
+      "/",
+    );
+  const addonsFormFactoryPath =
+    `${persistedPath}/src/Service/Form/AddonsFormFactory.php`.replace(
+      /\/{2,}/gu,
+      "/",
+    );
   // This compatibility layer is intentionally specific to EasyAdmin.
   // The module hardcodes remote catalog URLs and reads them directly from PHP.
-  const moduleCacheRoot = "OMEKA_PATH . '/modules/EasyAdmin/data/playground-cache'";
+  const moduleCacheRoot =
+    "OMEKA_PATH . '/modules/EasyAdmin/data/playground-cache'";
 
   if (pathExists(FS, addonPluginPath)) {
     let raw = FS.readFile(addonPluginPath, { encoding: "utf8" });
 
     const sourceExpressionReplacements = new Map([
-      ["'https://omeka.org/add-ons/json/s_module.json'", `${moduleCacheRoot} . '/s_module.json'`],
-      ["'https://omeka.org/add-ons/json/s_theme.json'", `${moduleCacheRoot} . '/s_theme.json'`],
-      ["'https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_modules.csv'", `${moduleCacheRoot} . '/omeka_s_modules.csv'`],
-      ["'https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_themes.csv'", `${moduleCacheRoot} . '/omeka_s_themes.csv'`],
+      [
+        "'https://omeka.org/add-ons/json/s_module.json'",
+        `${moduleCacheRoot} . '/s_module.json'`,
+      ],
+      [
+        "'https://omeka.org/add-ons/json/s_theme.json'",
+        `${moduleCacheRoot} . '/s_theme.json'`,
+      ],
+      [
+        "'https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_modules.csv'",
+        `${moduleCacheRoot} . '/omeka_s_modules.csv'`,
+      ],
+      [
+        "'https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_themes.csv'",
+        `${moduleCacheRoot} . '/omeka_s_themes.csv'`,
+      ],
     ]);
     for (const [search, replace] of sourceExpressionReplacements.entries()) {
       raw = raw.split(search).join(replace);
@@ -442,7 +484,9 @@ async function resolveSource(kind, spec) {
     };
   }
 
-  throw new Error(`Unsupported addon source type "${type}" for ${kind} "${spec.name}".`);
+  throw new Error(
+    `Unsupported addon source type "${type}" for ${kind} "${spec.name}".`,
+  );
 }
 
 function getCollectionRoot(kind) {
@@ -462,7 +506,14 @@ function getPersistedAddonPath(kind, name) {
   return `${getCollectionRoot(kind)}/${name}`;
 }
 
-async function materializeAddon({ FS, kind, spec, omekaRoot, publish, config }) {
+async function materializeAddon({
+  FS,
+  kind,
+  spec,
+  omekaRoot,
+  publish,
+  config,
+}) {
   const source = await resolveSource(kind, spec);
   const persistedPath = getPersistedAddonPath(kind, spec.name);
   const manifestPath = getManifestPath(kind, spec.name);
@@ -481,11 +532,14 @@ async function materializeAddon({ FS, kind, spec, omekaRoot, publish, config }) 
 
   const existingManifest = readJsonSync(FS, manifestPath);
   const hasCachedFiles = directoryHasFiles(FS, persistedPath);
-  const cacheHit = existingManifest?.fingerprint === source.fingerprint && hasCachedFiles;
+  const cacheHit =
+    existingManifest?.fingerprint === source.fingerprint && hasCachedFiles;
 
   if (!cacheHit) {
     publish(`Fetching ${kind} "${spec.name}".`, 0.53);
-    const zipBytes = await fetchZipBytes(buildDownloadUrl(source.downloadUrl, config));
+    const zipBytes = await fetchZipBytes(
+      buildDownloadUrl(source.downloadUrl, config),
+    );
 
     publish(`Extracting ${kind} "${spec.name}".`, 0.57);
     removeNodeIfPresent(FS, persistedPath);
@@ -517,11 +571,24 @@ async function materializeAddon({ FS, kind, spec, omekaRoot, publish, config }) 
   };
 }
 
-export async function materializeBlueprintAddons({ php, blueprint, omekaRoot, publish, config }) {
+export async function materializeBlueprintAddons({
+  php,
+  blueprint,
+  omekaRoot,
+  publish,
+  config,
+}) {
   const binary = await php.binary;
   const { FS } = binary;
 
-  for (const path of [PERSIST_ADDONS_ROOT, MODULES_ROOT, THEMES_ROOT, MANIFESTS_ROOT, `${MANIFESTS_ROOT}/modules`, `${MANIFESTS_ROOT}/themes`]) {
+  for (const path of [
+    PERSIST_ADDONS_ROOT,
+    MODULES_ROOT,
+    THEMES_ROOT,
+    MANIFESTS_ROOT,
+    `${MANIFESTS_ROOT}/modules`,
+    `${MANIFESTS_ROOT}/themes`,
+  ]) {
     ensureDirSync(FS, path);
   }
 
@@ -531,25 +598,29 @@ export async function materializeBlueprintAddons({ php, blueprint, omekaRoot, pu
   };
 
   for (const moduleSpec of blueprint.modules || []) {
-    summary.modules.push(await materializeAddon({
-      FS,
-      kind: "module",
-      spec: moduleSpec,
-      omekaRoot,
-      publish,
-      config,
-    }));
+    summary.modules.push(
+      await materializeAddon({
+        FS,
+        kind: "module",
+        spec: moduleSpec,
+        omekaRoot,
+        publish,
+        config,
+      }),
+    );
   }
 
   for (const themeSpec of blueprint.themes || []) {
-    summary.themes.push(await materializeAddon({
-      FS,
-      kind: "theme",
-      spec: themeSpec,
-      omekaRoot,
-      publish,
-      config,
-    }));
+    summary.themes.push(
+      await materializeAddon({
+        FS,
+        kind: "theme",
+        spec: themeSpec,
+        omekaRoot,
+        publish,
+        config,
+      }),
+    );
   }
 
   return summary;

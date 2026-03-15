@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,10 +51,12 @@ function safeLocalPath(urlPath) {
   return absolute;
 }
 
-async function serveStatic(req, res, url) {
+async function serveStatic(_req, res, url) {
   const targetPath = safeLocalPath(url.pathname);
   if (!targetPath || !existsSync(targetPath)) {
-    send(res, 404, "Not found", { "content-type": "text/plain; charset=utf-8" });
+    send(res, 404, "Not found", {
+      "content-type": "text/plain; charset=utf-8",
+    });
     return;
   }
 
@@ -68,11 +70,15 @@ async function serveStatic(req, res, url) {
   try {
     fileStats = await stat(resolvedPath);
   } catch {
-    send(res, 404, "Not found", { "content-type": "text/plain; charset=utf-8" });
+    send(res, 404, "Not found", {
+      "content-type": "text/plain; charset=utf-8",
+    });
     return;
   }
 
-  const mime = MIME_TYPES[extname(resolvedPath).toLowerCase()] || "application/octet-stream";
+  const mime =
+    MIME_TYPES[extname(resolvedPath).toLowerCase()] ||
+    "application/octet-stream";
   res.writeHead(200, {
     "cache-control": "no-store",
     "content-length": fileStats.size,
@@ -81,19 +87,23 @@ async function serveStatic(req, res, url) {
   createReadStream(resolvedPath).pipe(res);
 }
 
-async function proxyAddon(req, res, url) {
+async function proxyAddon(_req, res, url) {
   const remoteUrl = url.searchParams.get("url") || "";
   let target;
 
   try {
     target = new URL(remoteUrl);
   } catch {
-    send(res, 400, "Invalid url", { "content-type": "text/plain; charset=utf-8" });
+    send(res, 400, "Invalid url", {
+      "content-type": "text/plain; charset=utf-8",
+    });
     return;
   }
 
   if (!["http:", "https:"].includes(target.protocol)) {
-    send(res, 400, "Unsupported protocol", { "content-type": "text/plain; charset=utf-8" });
+    send(res, 400, "Unsupported protocol", {
+      "content-type": "text/plain; charset=utf-8",
+    });
     return;
   }
 
@@ -108,14 +118,17 @@ async function proxyAddon(req, res, url) {
       },
     });
   } catch (error) {
-    send(res, 502, String(error?.message || error), { "content-type": "text/plain; charset=utf-8" });
+    send(res, 502, String(error?.message || error), {
+      "content-type": "text/plain; charset=utf-8",
+    });
     return;
   }
 
   if (!upstream.ok) {
     const body = await upstream.text().catch(() => upstream.statusText);
     send(res, upstream.status, body || upstream.statusText, {
-      "content-type": upstream.headers.get("content-type") || "text/plain; charset=utf-8",
+      "content-type":
+        upstream.headers.get("content-type") || "text/plain; charset=utf-8",
     });
     return;
   }
@@ -123,7 +136,8 @@ async function proxyAddon(req, res, url) {
   const headers = {
     "access-control-allow-origin": "*",
     "cache-control": "no-store",
-    "content-type": upstream.headers.get("content-type") || "application/octet-stream",
+    "content-type":
+      upstream.headers.get("content-type") || "application/octet-stream",
   };
   const disposition = upstream.headers.get("content-disposition");
   if (disposition) {
@@ -136,7 +150,10 @@ async function proxyAddon(req, res, url) {
 }
 
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url || "/", `http://${req.headers.host || `127.0.0.1:${port}`}`);
+  const url = new URL(
+    req.url || "/",
+    `http://${req.headers.host || `127.0.0.1:${port}`}`,
+  );
 
   if (req.method === "GET" && url.pathname === proxyPath) {
     await proxyAddon(req, res, url);
@@ -144,7 +161,9 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method !== "GET" && req.method !== "HEAD") {
-    send(res, 405, "Method not allowed", { "content-type": "text/plain; charset=utf-8" });
+    send(res, 405, "Method not allowed", {
+      "content-type": "text/plain; charset=utf-8",
+    });
     return;
   }
 
@@ -153,5 +172,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(port, "127.0.0.1", () => {
   log(`Omeka playground dev server listening on http://127.0.0.1:${port}`);
-  log(`Addon proxy available at http://127.0.0.1:${port}${proxyPath}?url=<encoded-url>`);
+  log(
+    `Addon proxy available at http://127.0.0.1:${port}${proxyPath}?url=<encoded-url>`,
+  );
 });

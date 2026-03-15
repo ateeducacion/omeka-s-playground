@@ -13,4 +13,3 @@ export function createPhpBridgeChannel(scopeId) {
 export function createWorkerRequestId() {
   return globalThis.crypto.randomUUID();
 }
-

@@ -1,11 +1,15 @@
 import { resolveConfiguredProxyUrl } from "../shared/paths.js";
 
 function normalizeHost(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeMethod(value) {
-  return String(value || "").trim().toUpperCase();
+  return String(value || "")
+    .trim()
+    .toUpperCase();
 }
 
 function parsePositiveNumber(value, fallback) {
@@ -21,24 +25,29 @@ function isAllowedHost(hostname, allowedHosts) {
 
   return allowedHosts.some((entry) => {
     const normalizedEntry = normalizeHost(entry);
-    return normalizedEntry
-      && (normalizedHost === normalizedEntry || normalizedHost.endsWith(`.${normalizedEntry}`));
+    return (
+      normalizedEntry &&
+      (normalizedHost === normalizedEntry ||
+        normalizedHost.endsWith(`.${normalizedEntry}`))
+    );
   });
 }
 
 function isConfiguredProxyUrl(url, config) {
   const proxyUrl = resolveConfiguredProxyUrl(config, globalThis.location?.href);
   return Boolean(
-    proxyUrl
-    && url.origin === proxyUrl.origin
-    && url.pathname === proxyUrl.pathname,
+    proxyUrl &&
+      url.origin === proxyUrl.origin &&
+      url.pathname === proxyUrl.pathname,
   );
 }
 
 function shouldBypassPolicy(url, config) {
-  return !["http:", "https:"].includes(url.protocol)
-    || (globalThis.location && url.origin === globalThis.location.origin)
-    || isConfiguredProxyUrl(url, config);
+  return (
+    !["http:", "https:"].includes(url.protocol) ||
+    (globalThis.location && url.origin === globalThis.location.origin) ||
+    isConfiguredProxyUrl(url, config)
+  );
 }
 
 function rebuildResponse(response, bytes) {
@@ -80,12 +89,16 @@ async function enforceMaxBytes(response, maxBytes) {
   const cloned = response.clone();
   const contentLength = Number(cloned.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-    throw new Error(`Outbound response exceeds the configured ${maxBytes} byte limit.`);
+    throw new Error(
+      `Outbound response exceeds the configured ${maxBytes} byte limit.`,
+    );
   }
 
   const bytes = await cloned.arrayBuffer();
   if (bytes.byteLength > maxBytes) {
-    throw new Error(`Outbound response exceeds the configured ${maxBytes} byte limit.`);
+    throw new Error(
+      `Outbound response exceeds the configured ${maxBytes} byte limit.`,
+    );
   }
 
   return rebuildResponse(response, bytes);
@@ -97,9 +110,10 @@ export function normalizeOutboundHttpConfig(config) {
   const allowedHosts = Array.isArray(raw.allowedHosts)
     ? raw.allowedHosts.map(normalizeHost).filter(Boolean)
     : [];
-  const allowedMethods = Array.isArray(raw.allowedMethods) && raw.allowedMethods.length > 0
-    ? raw.allowedMethods.map(normalizeMethod).filter(Boolean)
-    : ["GET", "HEAD"];
+  const allowedMethods =
+    Array.isArray(raw.allowedMethods) && raw.allowedMethods.length > 0
+      ? raw.allowedMethods.map(normalizeMethod).filter(Boolean)
+      : ["GET", "HEAD"];
 
   return {
     enabled,
@@ -122,7 +136,8 @@ export function installOutboundFetchPolicy(config) {
 
   const normalized = normalizeOutboundHttpConfig(config);
   const policyKey = JSON.stringify(normalized);
-  const originalFetch = globalThis.__omekaOriginalFetch || globalThis.fetch.bind(globalThis);
+  const originalFetch =
+    globalThis.__omekaOriginalFetch || globalThis.fetch.bind(globalThis);
 
   if (!globalThis.__omekaOriginalFetch) {
     globalThis.__omekaOriginalFetch = originalFetch;
@@ -150,7 +165,9 @@ export function installOutboundFetchPolicy(config) {
 
     const method = normalizeMethod(request.method || "GET");
     if (!normalized.allowedMethods.includes(method)) {
-      throw new Error(`Outbound HTTP method "${method}" is not allowed for ${url.hostname}.`);
+      throw new Error(
+        `Outbound HTTP method "${method}" is not allowed for ${url.hostname}.`,
+      );
     }
 
     const targetUrl = normalized.proxyAllCrossOrigin
@@ -158,7 +175,10 @@ export function installOutboundFetchPolicy(config) {
       : url;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(`Timed out after ${normalized.timeoutMs}ms.`), normalized.timeoutMs);
+    const timeout = setTimeout(
+      () => controller.abort(`Timed out after ${normalized.timeoutMs}ms.`),
+      normalized.timeoutMs,
+    );
 
     try {
       const response = await originalFetch(targetUrl, {

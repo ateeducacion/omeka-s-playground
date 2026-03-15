@@ -49,8 +49,8 @@ export default {
     }
 
     if (
-      parsedTargetUrl.protocol !== "https:"
-      && parsedTargetUrl.protocol !== "http:"
+      parsedTargetUrl.protocol !== "https:" &&
+      parsedTargetUrl.protocol !== "http:"
     ) {
       return jsonResponse(
         {

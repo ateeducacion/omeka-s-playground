@@ -60,6 +60,9 @@ make deps
 make prepare
 make bundle
 make serve
+make lint
+make format
+make test
 make clean
 make reset
 ```
@@ -244,18 +247,23 @@ If you change `outboundHttp`, `addonProxyPath`, or `addonProxyUrl`, verify both 
 - Add comments only where logic is non-obvious.
 - Keep comments short and focused on why the code exists, not what a line literally does.
 
-## Testing and Verification
+## Linting, Formatting, and Testing
 
-There is no large formal test suite in this repository today. Verification is mostly targeted.
-
-### Typical checks
+Before committing or submitting a PR, always run:
 
 ```bash
-node --check sw.js
-node --check php-worker.js
+make lint      # Run Biome linter — must pass with zero errors
+make format    # Auto-fix lint and formatting issues
+make test      # Run unit tests — all must pass
+```
+
+Biome is configured in `biome.json` and checks `src/`, `tests/`, and `scripts/`. Fix any lint errors before committing. Use `make format` to auto-fix formatting and safe lint issues.
+
+### Typical syntax checks
+
+```bash
+node --check src/shared/blueprint.js
 node --check src/runtime/bootstrap.js
-node --check src/runtime/vfs.js
-node --check src/shell/main.js
 ```
 
 ### Manual validation areas

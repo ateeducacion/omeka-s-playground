@@ -7,7 +7,12 @@ import {
 import { getDefaultRuntime, loadPlaygroundConfig } from "../shared/config.js";
 import { hasBlueprintUrlOverride, resolveRemoteUrl } from "../shared/paths.js";
 import { createShellChannel } from "../shared/protocol.js";
-import { clearScopeSession, getOrCreateScopeId, loadSessionState, saveSessionState } from "../shared/storage.js";
+import {
+  clearScopeSession,
+  getOrCreateScopeId,
+  loadSessionState,
+  saveSessionState,
+} from "../shared/storage.js";
 
 const els = {
   addressForm: document.querySelector("#address-form"),
@@ -60,7 +65,7 @@ function appendLog(message, isError = false) {
   els.logPanel.scrollTop = els.logPanel.scrollHeight;
 }
 
-function setStatus(title, detail, progress = null) {
+function setStatus(title, detail, _progress = null) {
   if (els.statusTitle) {
     els.statusTitle.textContent = title;
   }
@@ -101,7 +106,8 @@ async function ensureRuntimeServiceWorker() {
   await navigator.serviceWorker.ready;
 
   if (!navigator.serviceWorker.controller) {
-    const alreadyReloaded = window.sessionStorage.getItem(CONTROL_RELOAD_KEY) === "1";
+    const alreadyReloaded =
+      window.sessionStorage.getItem(CONTROL_RELOAD_KEY) === "1";
     if (!alreadyReloaded) {
       window.sessionStorage.setItem(CONTROL_RELOAD_KEY, "1");
       window.location.reload();
@@ -148,7 +154,10 @@ function navigateWithinRuntime(path) {
   els.address.value = currentPath;
   saveState();
 
-  if (remoteFrameBooted && postToRemote({ kind: "navigate-site", path: currentPath })) {
+  if (
+    remoteFrameBooted &&
+    postToRemote({ kind: "navigate-site", path: currentPath })
+  ) {
     appendLog(`Navigating site to ${currentPath}`);
     return;
   }
@@ -156,7 +165,7 @@ function navigateWithinRuntime(path) {
   void updateFrame();
 }
 
-function refreshWithinRuntime() {
+function _refreshWithinRuntime() {
   if (remoteFrameBooted && postToRemote({ kind: "refresh-site" })) {
     appendLog(`Refreshing ${currentPath}`);
     return;
@@ -174,7 +183,11 @@ function restartRuntime() {
   remoteFrameBooted = false;
   serviceWorkerReady = null;
   setUiLocked(true);
-  setStatus("Restarting runtime", "Reloading the runtime host, service worker, and PHP worker.", 0.08);
+  setStatus(
+    "Restarting runtime",
+    "Reloading the runtime host, service worker, and PHP worker.",
+    0.08,
+  );
   appendLog(`Restarting runtime for ${currentRuntimeId}`);
   // Force a fresh remote host bootstrap instead of a plain iframe page reload.
   els.frame.src = "about:blank";
@@ -221,7 +234,9 @@ function saveState(extra = {}) {
 
 function exportBlueprint() {
   const payload = exportBlueprintPayload(config, activeBlueprint);
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json",
+  });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -235,12 +250,19 @@ function updateBlueprintTextarea() {
     return;
   }
 
-  els.blueprintTextarea.value = JSON.stringify(exportBlueprintPayload(config, activeBlueprint), null, 2);
+  els.blueprintTextarea.value = JSON.stringify(
+    exportBlueprintPayload(config, activeBlueprint),
+    null,
+    2,
+  );
   els.blueprintTextarea.scrollTop = 0;
 }
 
 async function importPayload(file) {
-  const imported = parseImportedBlueprintPayload(JSON.parse(await file.text()), config);
+  const imported = parseImportedBlueprintPayload(
+    JSON.parse(await file.text()),
+    config,
+  );
 
   if (imported.type === "snapshot") {
     currentRuntimeId = imported.runtimeId || currentRuntimeId;
@@ -313,14 +335,20 @@ async function main() {
   updateBlueprintTextarea();
   const previous = loadSessionState(scopeId);
   const defaultRuntime = getDefaultRuntime(config);
-  const preferredPath = activeBlueprint?.landingPage || config.landingPath || "/";
+  const preferredPath =
+    activeBlueprint?.landingPage || config.landingPath || "/";
   const shouldForceCleanBoot = pendingCleanBoot;
-  const shouldBypassSavedLogin = config.autologin && previous?.path === "/login";
+  const shouldBypassSavedLogin =
+    config.autologin && previous?.path === "/login";
 
-  currentRuntimeId = shouldForceCleanBoot ? defaultRuntime.id : (previous?.runtimeId || defaultRuntime.id);
+  currentRuntimeId = shouldForceCleanBoot
+    ? defaultRuntime.id
+    : previous?.runtimeId || defaultRuntime.id;
   currentPath = shouldForceCleanBoot
     ? preferredPath
-    : (shouldBypassSavedLogin ? preferredPath : (previous?.path || preferredPath));
+    : shouldBypassSavedLogin
+      ? preferredPath
+      : previous?.path || preferredPath;
   els.address.value = currentPath;
 
   for (const runtime of config.runtimes) {
@@ -387,7 +415,11 @@ els.reset.addEventListener("click", () => {
   clearScopeSession(scopeId);
   pendingCleanBoot = true;
   remoteFrameBooted = false;
-  setStatus("Resetting playground", "Clearing local shell state. The runtime overlay reset is handled inside the remote host.", 0.02);
+  setStatus(
+    "Resetting playground",
+    "Clearing local shell state. The runtime overlay reset is handled inside the remote host.",
+    0.02,
+  );
   serviceWorkerReady = null;
   void updateFrame();
 });

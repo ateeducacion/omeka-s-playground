@@ -18,4 +18,3 @@ for (const path of [
 }
 
 console.log("Prepared cache, asset, and vendor directories.");
-

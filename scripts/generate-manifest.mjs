@@ -46,13 +46,19 @@ const manifest = {
     format: "omeka-vfs-image-v1",
     mountMode: "memfs-hydrate-v1",
     data: {
-      path: relative(resolve(manifestPath, ".."), dataPath).replaceAll("\\", "/"),
+      path: relative(resolve(manifestPath, ".."), dataPath).replaceAll(
+        "\\",
+        "/",
+      ),
       fileName: basename(dataPath),
       size: statSync(dataPath).size,
       sha256: sha256(dataPath),
     },
     index: {
-      path: relative(resolve(manifestPath, ".."), indexPath).replaceAll("\\", "/"),
+      path: relative(resolve(manifestPath, ".."), indexPath).replaceAll(
+        "\\",
+        "/",
+      ),
       fileName: basename(indexPath),
       size: statSync(indexPath).size,
       sha256: sha256(indexPath),

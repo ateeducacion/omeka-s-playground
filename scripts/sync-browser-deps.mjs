@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -92,8 +100,12 @@ copyPackage("php-cgi-wasm", "php-cgi-wasm");
 for (const packageName of extensionPackages) {
   copyPackage(packageName);
 }
-cpSync(resolve(repoDir, "node_modules", "@electric-sql", "pglite", "dist"), resolve(vendorDir, "pglite"), {
-  recursive: true,
-});
+cpSync(
+  resolve(repoDir, "node_modules", "@electric-sql", "pglite", "dist"),
+  resolve(vendorDir, "pglite"),
+  {
+    recursive: true,
+  },
+);
 
 console.log("Synced browser dependencies into vendor/.");
