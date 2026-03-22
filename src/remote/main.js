@@ -85,25 +85,31 @@ async function waitForPhpWorkerReady(scopeId, runtimeId, worker) {
           `Timed out while waiting for php-worker readiness for ${runtimeId}.`,
         ),
       );
-    }, 15000);
+    }, 30000);
 
-    const handleReady = (message) => {
+    const onWorkerMessage = (event) => {
+      const message = event.data;
+
+      if (message?.kind === "worker-startup-error") {
+        window.clearTimeout(timeoutId);
+        worker.removeEventListener("message", onWorkerMessage);
+        reject(
+          new Error(message.detail || "php-worker failed during startup."),
+        );
+        return;
+      }
+
       if (message?.kind !== "worker-ready") {
-        return false;
+        return;
       }
 
       if (message.scopeId !== scopeId || message.runtimeId !== runtimeId) {
-        return false;
+        return;
       }
 
       window.clearTimeout(timeoutId);
       worker.removeEventListener("message", onWorkerMessage);
       resolve();
-      return true;
-    };
-
-    const onWorkerMessage = (event) => {
-      handleReady(event.data);
     };
 
     worker.addEventListener("message", onWorkerMessage);
@@ -244,29 +250,50 @@ async function bootstrapRemote() {
     workerUrl.searchParams.set("runtime", runtime.id);
     phpWorker = new Worker(workerUrl, { type: "module" });
     phpWorker.addEventListener("error", (event) => {
-      const detail =
-        event.message || "php-worker failed before signalling readiness.";
+      const parts = [
+        event.message || "php-worker failed before signalling readiness.",
+        event.filename ? `file=${event.filename}` : "",
+        event.lineno ? `line=${event.lineno}` : "",
+      ].filter(Boolean);
+      const detail = parts.join(" | ");
       setRemoteProgress(detail);
-      emit(scopeId, {
-        kind: "error",
-        detail,
-      });
-    });
-    phpWorker.addEventListener("messageerror", () => {
-      const detail = "php-worker posted a malformed message.";
-      setRemoteProgress(detail);
-      emit(scopeId, {
-        kind: "error",
-        detail,
-      });
-    });
-    phpWorker.postMessage({
-      kind: "configure-blueprint",
-      blueprint,
-      clean: forceCleanBoot,
+      emit(scopeId, { kind: "error", detail });
     });
   }
-  await waitForPhpWorkerReady(scopeId, runtime.id, phpWorker);
+
+  // Listen to bootstrap progress from the worker via the shell channel
+  // so the loading overlay shows real-time status.
+  let readyNavigated = false;
+  const shellChannel = new BroadcastChannel(createShellChannel(scopeId));
+  shellChannel.addEventListener("message", (event) => {
+    const msg = event.data;
+    if (msg?.kind === "progress") {
+      setRemoteProgress(msg.detail, msg.progress);
+    }
+    if (msg?.kind === "error") {
+      setRemoteProgress(msg.detail);
+    }
+    if (msg?.kind === "ready") {
+      setRemoteProgress(msg.detail, 1);
+      if (msg.path && msg.path !== activePath) {
+        activePath = msg.path;
+        readyNavigated = true;
+        navigateFrame(scopeId, runtime.id, activePath);
+      }
+    }
+  });
+
+  const workerReadyPromise = waitForPhpWorkerReady(
+    scopeId,
+    runtime.id,
+    phpWorker,
+  );
+  phpWorker.postMessage({
+    kind: "configure-blueprint",
+    blueprint,
+    clean: forceCleanBoot,
+  });
+  await workerReadyPromise;
   setRemoteProgress(`php-worker ready for ${runtime.id}.`, 0.16);
 
   saveSessionState(scopeId, {
@@ -276,18 +303,9 @@ async function bootstrapRemote() {
 
   bindShellCommands(scopeId, runtime.id);
   bindFrameNavigation(scopeId, runtime.id);
-  navigateFrame(scopeId, runtime.id, requestedPath);
-  setRemoteProgress(
-    "Runtime host registered. Waiting for the PHP worker to finish bootstrap.",
-    0.18,
-  );
-
-  emit(scopeId, {
-    kind: "progress",
-    title: "Runtime host ready",
-    detail: "The embedded Omeka iframe is loading.",
-    progress: 0.18,
-  });
+  if (!readyNavigated) {
+    navigateFrame(scopeId, runtime.id, activePath);
+  }
 }
 
 bootstrapRemote().catch((error) => {
