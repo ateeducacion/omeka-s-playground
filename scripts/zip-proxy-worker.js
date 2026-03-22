@@ -60,10 +60,11 @@ export default {
       );
     }
 
-    if (!looksLikeZipUrl(parsedTargetUrl)) {
+    if (!isAllowedUrl(parsedTargetUrl)) {
       return jsonResponse(
         {
-          error: "The provided URL does not look like a ZIP download.",
+          error:
+            "The provided URL is not allowed. Only ZIP downloads and allowed API endpoints are supported.",
         },
         400,
       );
@@ -94,16 +95,22 @@ export default {
 
       applyCorsHeaders(headers);
 
-      headers.set(
-        "Content-Type",
-        headers.get("Content-Type") || "application/zip",
-      );
-
-      if (!headers.get("Content-Disposition")) {
-        headers.set(
-          "Content-Disposition",
-          `attachment; filename="${buildZipFilename(parsedTargetUrl)}"`,
-        );
+      // Only set ZIP-specific headers for actual ZIP downloads.
+      const contentType = headers.get("Content-Type") || "";
+      if (
+        parsedTargetUrl.pathname.toLowerCase().endsWith(".zip") ||
+        contentType.includes("zip") ||
+        contentType.includes("octet-stream")
+      ) {
+        if (!headers.get("Content-Type")) {
+          headers.set("Content-Type", "application/zip");
+        }
+        if (!headers.get("Content-Disposition")) {
+          headers.set(
+            "Content-Disposition",
+            `attachment; filename="${buildZipFilename(parsedTargetUrl)}"`,
+          );
+        }
       }
 
       return new Response(upstreamResponse.body, {
@@ -152,22 +159,53 @@ function jsonResponse(data, status) {
   });
 }
 
-function looksLikeZipUrl(url) {
+/**
+ * Check if a URL is allowed to be proxied.
+ * Accepts ZIP downloads and trusted API endpoints.
+ */
+function isAllowedUrl(url) {
+  const hostname = url.hostname.toLowerCase();
   const pathname = url.pathname.toLowerCase();
 
+  // ZIP downloads (existing behavior).
   if (pathname.endsWith(".zip")) {
     return true;
   }
-
   if (pathname.includes("/zip/")) {
     return true;
   }
-
   if (pathname.includes("archive/refs/heads/")) {
     return true;
   }
-
   if (pathname.includes("archive/refs/tags/")) {
+    return true;
+  }
+
+  // GitHub release asset downloads.
+  if (hostname === "github.com" && pathname.includes("/releases/download/")) {
+    return true;
+  }
+  if (hostname === "objects.githubusercontent.com") {
+    return true;
+  }
+
+  // GitHub API (JSON).
+  if (hostname === "api.github.com") {
+    return true;
+  }
+
+  // jsDelivr API and CDN (CORS-friendly mirrors).
+  if (hostname === "data.jsdelivr.com" || hostname === "cdn.jsdelivr.net") {
+    return true;
+  }
+
+  // Omeka addon catalog.
+  if (hostname === "omeka.org") {
+    return true;
+  }
+
+  // Raw GitHub content.
+  if (hostname === "raw.githubusercontent.com") {
     return true;
   }
 
