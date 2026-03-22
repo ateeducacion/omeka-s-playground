@@ -37,6 +37,22 @@ const EASY_ADMIN_REMOTE_SOURCES = [
 const GITHUB_ARCHIVE_HOSTS = new Set(["github.com", "www.github.com"]);
 const GITHUB_CODELOAD_HOST = "codeload.github.com";
 
+function getCurrentLocationHref() {
+  return (
+    globalThis.location?.href ||
+    globalThis.self?.location?.href ||
+    "http://localhost/"
+  );
+}
+
+function getCurrentOrigin() {
+  return (
+    globalThis.location?.origin ||
+    globalThis.self?.location?.origin ||
+    new URL(getCurrentLocationHref()).origin
+  );
+}
+
 function ensureDirSync(FS, path) {
   const segments = path.split("/").filter(Boolean);
   let current = "";
@@ -282,7 +298,7 @@ function isAllowedHost(hostname, allowedHosts) {
   });
 }
 
-function getDirectFetch(config) {
+function getDirectFetch() {
   const originalFetch = globalThis.__omekaOriginalFetch;
   if (typeof originalFetch === "function") {
     return originalFetch.bind(globalThis);
@@ -296,9 +312,10 @@ function getDirectFetch(config) {
 }
 
 async function fetchDirectResponse(input, config, init = {}) {
-  const baseUrl =
-    globalThis.location?.href || self.location?.href || "http://localhost/";
-  const url = input instanceof URL ? input : new URL(String(input || ""), baseUrl);
+  const url =
+    input instanceof URL
+      ? input
+      : new URL(String(input || ""), getCurrentLocationHref());
   const normalized = normalizeOutboundHttpConfig(config);
 
   if (!normalized.enabled) {
@@ -340,8 +357,7 @@ function encodeUrlPath(path) {
 }
 
 export function parseGitHubArchiveUrl(rawUrl, baseUrl) {
-  const fallbackBase =
-    baseUrl || globalThis.location?.href || self.location?.href || "http://localhost/";
+  const fallbackBase = baseUrl || getCurrentLocationHref();
   let parsed;
   try {
     parsed = new URL(String(rawUrl || ""), fallbackBase);
@@ -360,7 +376,10 @@ export function parseGitHubArchiveUrl(rawUrl, baseUrl) {
     ["heads", "tags"].includes(segments[4])
   ) {
     const ref = decodeURIComponent(
-      segments.slice(5).join("/").replace(/\.zip$/iu, ""),
+      segments
+        .slice(5)
+        .join("/")
+        .replace(/\.zip$/iu, ""),
     );
     if (!ref) {
       return null;
@@ -461,16 +480,16 @@ function buildDownloadUrl(downloadUrl, config) {
 
   let parsed;
   try {
-    parsed = new URL(rawUrl, self.location.href);
+    parsed = new URL(rawUrl, getCurrentLocationHref());
   } catch {
     return rawUrl;
   }
 
-  if (parsed.origin === self.location.origin) {
+  if (parsed.origin === getCurrentOrigin()) {
     return parsed.toString();
   }
 
-  const proxied = resolveConfiguredProxyUrl(config, self.location?.href);
+  const proxied = resolveConfiguredProxyUrl(config, getCurrentLocationHref());
   if (!proxied) {
     return parsed.toString();
   }
@@ -534,7 +553,11 @@ async function writeGitHubArchiveToFs(FS, targetDir, archive, config) {
 
   while (pendingDirs.length > 0) {
     const currentDir = pendingDirs.shift() || "";
-    const entries = await fetchGitHubDirectoryEntries(archive, currentDir, config);
+    const entries = await fetchGitHubDirectoryEntries(
+      archive,
+      currentDir,
+      config,
+    );
 
     for (const entry of entries) {
       const relativePath = normalizeArchivePath(entry?.path || "");
@@ -571,7 +594,10 @@ async function writeGitHubArchiveToFs(FS, targetDir, archive, config) {
           }),
         config,
       );
-      const targetPath = `${targetDir}/${relativePath}`.replace(/\/{2,}/gu, "/");
+      const targetPath = `${targetDir}/${relativePath}`.replace(
+        /\/{2,}/gu,
+        "/",
+      );
       const parentDir = targetPath.split("/").slice(0, -1).join("/") || "/";
       ensureDirSync(FS, parentDir);
       FS.writeFile(targetPath, fileBytes);
@@ -805,14 +831,12 @@ async function materializeAddon({
     removeNodeIfPresent(FS, persistedPath);
     ensureDirSync(FS, persistedPath);
 
-    let wroteFiles = false;
     try {
       const zipBytes = await fetchZipBytes(
         buildDownloadUrl(source.downloadUrl, config),
       );
       publish(`Extracting ${kind} "${spec.name}".`, 0.57);
       writeArchiveToFs(FS, persistedPath, zipBytes);
-      wroteFiles = true;
     } catch (error) {
       if (!source.githubArchive) {
         throw error;
@@ -827,11 +851,6 @@ async function materializeAddon({
         source.githubArchive,
         config,
       );
-      wroteFiles = true;
-    }
-
-    if (!wroteFiles) {
-      throw new Error(`Unable to materialize ${kind} "${spec.name}".`);
     }
 
     writeJsonSync(FS, manifestPath, {
