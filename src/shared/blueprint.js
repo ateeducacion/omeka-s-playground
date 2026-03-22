@@ -1,3 +1,4 @@
+import { resolveProjectUrl } from "./paths.js";
 import { SNAPSHOT_VERSION } from "./protocol.js";
 
 const BLUEPRINT_KEY_PREFIX = "omeka-playground:blueprint";
@@ -191,13 +192,8 @@ function normalizeAddonCollection(input, kind) {
 }
 
 export function getBlueprintSchemaUrl() {
-  const base =
-    typeof __APP_ROOT__ !== "undefined" ? __APP_ROOT__ : import.meta.url;
-  return new URL(
-    typeof __APP_ROOT__ !== "undefined"
-      ? "assets/blueprints/blueprint-schema.json"
-      : "../../assets/blueprints/blueprint-schema.json",
-    base,
+  return resolveProjectUrl(
+    "assets/blueprints/blueprint-schema.json",
   ).toString();
 }
 

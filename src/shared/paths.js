@@ -1,3 +1,16 @@
+/**
+ * Resolve a path relative to the project root. In the bundled worker,
+ * __APP_ROOT__ (injected by esbuild) provides the root. Outside the
+ * bundle, import.meta.url of this file (src/shared/) is two levels deep.
+ */
+export function resolveProjectUrl(assetPath) {
+  const root =
+    typeof __APP_ROOT__ !== "undefined"
+      ? __APP_ROOT__
+      : new URL("../../", import.meta.url).href;
+  return new URL(assetPath, root);
+}
+
 export function getBasePathFromPathname(pathname = "/") {
   const segments = String(pathname || "/")
     .split("/")

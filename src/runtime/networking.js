@@ -9,16 +9,12 @@
  * downloads that lack CORS headers (GitHub releases, omeka.org ZIPs, etc.).
  */
 
-import { resolveConfiguredProxyUrl } from "../shared/paths.js";
+import {
+  resolveConfiguredProxyUrl,
+  resolveProjectUrl,
+} from "../shared/paths.js";
 
-// In the bundled worker, globalThis.location.href points to /dist/php-worker.bundle.js.
-// Use __APP_ROOT__ (injected by esbuild) to get the actual project root URL.
-export const APP_LOCATION =
-  typeof __APP_ROOT__ !== "undefined"
-    ? __APP_ROOT__
-    : globalThis.location?.href ||
-      globalThis.self?.location?.href ||
-      "http://localhost/";
+export const APP_LOCATION = resolveProjectUrl("").href;
 
 /**
  * Resolve the configured proxy URL for routing cross-origin downloads.

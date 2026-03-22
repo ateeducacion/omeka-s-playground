@@ -10,8 +10,6 @@ const frameEl = document.querySelector("#remote-frame");
 const progressFillEl = document.querySelector("#progress-fill");
 const progressPercentEl = document.querySelector("#progress-percent");
 let phpWorker;
-let _activeScopeId;
-let _activeRuntimeId;
 let activePath = "/";
 let forceCleanBoot = false;
 
@@ -216,8 +214,6 @@ async function bootstrapRemote() {
   const requestedRuntimeId = url.searchParams.get("runtime");
   const requestedPath = url.searchParams.get("path") || "/";
   forceCleanBoot = url.searchParams.get("clean") === "1";
-  _activeScopeId = scopeId;
-  _activeRuntimeId = requestedRuntimeId;
   activePath = requestedPath;
   const config = await loadPlaygroundConfig();
   const blueprint = loadActiveBlueprint(scopeId);
