@@ -8,7 +8,7 @@
     "bundle": "./scripts/build-omeka-bundle.sh"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.3.14",
+    "@electric-sql/pglite": "^0.4.0",
     "fflate": "^0.8.2",
     "php-cgi-wasm": "0.0.9-alpha-32",
     "php-wasm": "0.0.9-alpha-32",
