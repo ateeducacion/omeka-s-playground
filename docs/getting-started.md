@@ -86,7 +86,7 @@ node --check php-worker.js
 Manual checks are especially important for:
 
 - first boot installation
-- reloads with persisted state
+- reload behavior (fresh install each time — ephemeral)
 - autologin into `/admin`
 - navigation within the Omeka admin
 - GitHub Pages subpath behavior

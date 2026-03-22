@@ -36,6 +36,9 @@ const EASY_ADMIN_REMOTE_SOURCES = [
 ];
 
 function getCurrentLocationHref() {
+  if (typeof __APP_ROOT__ !== "undefined") {
+    return __APP_ROOT__;
+  }
   return (
     globalThis.location?.href ||
     globalThis.self?.location?.href ||

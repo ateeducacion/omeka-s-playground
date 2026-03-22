@@ -1,18 +1,22 @@
 # Omeka S Playground
 
-> [Omeka S](https://omeka.org/s/) in the browser, powered by WebAssembly. No server required.
+<p align="center">
+  <img src="ogimage.png" alt="Omeka S Playground" width="600">
+</p>
 
-This project runs a full [Omeka S](https://omeka.org/s/) instance entirely in the browser using [php-wasm](https://github.com/nicordev/nicordev-php-wasm). The readonly Omeka core is loaded from a pre-built bundle while a writable overlay persisted in the browser handles the database, uploads, and configuration.
+[Live demo](https://ateeducacion.github.io/omeka-s-playground/) · [Documentation](docs/) · [Blueprints](docs/blueprint-json.md)
 
-[Live demo](https://ateeducacion.github.io/omeka-s-playground/) | [Documentation](https://ateeducacion.github.io/omeka-s-playground/docs/) | [Report a bug](https://github.com/ateeducacion/omeka-s-playground/issues)
+> Run a full Omeka S site in the browser — no server required.
 
-![](https://raw.githubusercontent.com/ateeducacion/omeka-s-playground/main/.github/screenshot.png)
-
----
+Omeka S Playground runs [Omeka S](https://omeka.org/s/) entirely in the browser using WebAssembly, powered by [WordPress Playground](https://github.com/WordPress/wordpress-playground)'s `@php-wasm/web` runtime. Every page load boots a fresh Omeka S instance — nothing is stored on disk and nothing leaves your browser.
 
 ## Getting Started
 
-### Quick start
+### Try it online
+
+Open the [live demo](https://ateeducacion.github.io/omeka-s-playground/) — no install needed.
+
+### Run it locally
 
 ```bash
 git clone https://github.com/ateeducacion/omeka-s-playground.git
@@ -20,49 +24,55 @@ cd omeka-s-playground
 make up
 ```
 
-Open <http://localhost:8080> and you will land on a fully installed Omeka S admin panel.
-
-Default credentials: `admin@example.com` / `password` (configurable in [`playground.config.json`](playground.config.json)).
+Then open <http://localhost:8080>.
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) >= 18 + npm
-- [Composer](https://getcomposer.org/)
-- [Node.js 18+](https://nodejs.org/) (also used by the local dev server)
-- [Git](https://git-scm.com/)
+- Node.js 18+
+- npm
+- Composer
+- Git
+
+## How It Works
+
+```text
+index.html          Shell UI (toolbar, address bar, log panel)
+  └─ remote.html    Runtime host — registers the Service Worker
+       ├─ sw.js     Intercepts requests → routes to PHP worker
+       └─ php-worker.js (bundled via esbuild)
+            └─ @php-wasm/web (WebAssembly, PHP 8.1–8.5)
+                 ├─ Omeka core in writable MEMFS  (extracted from ZIP bundle)
+                 └─ In-memory state                (SQLite + config + files in MEMFS)
+```
+
+1. The shell boots a scoped runtime host inside an iframe.
+2. The Service Worker intercepts all requests under `/playground/<scope>/<runtime>/…`.
+3. The PHP worker extracts the Omeka ZIP bundle into writable MEMFS.
+4. Omeka runs against an in-memory SQLite database — fully ephemeral, no persistence.
+5. If the PHP runtime crashes (WASM OOM / file descriptor exhaustion), the worker snapshots the DB and addon files, boots a fresh runtime, and restores state automatically.
+
+**Default credentials:** `admin@example.com` / `password` (configurable in [`playground.config.json`](playground.config.json)).
+
+### No persistence by design
+
+All state lives in memory (Emscripten MEMFS). Closing the tab destroys everything. This is intentional — the playground is meant for exploration, demos, and testing, not for storing data.
+
+### PHP version selection
+
+The settings panel (⚙️ icon) lets you switch between PHP 8.1, 8.2, 8.3 (default), 8.4, and 8.5. Changing PHP version resets the playground to a clean install.
 
 ### Make targets
 
 | Command | Description |
 |---------|-------------|
 | `make up` | Install deps, build the Omeka bundle, and serve locally |
-| `make prepare` | Install npm deps and vendor browser runtime assets |
-| `make bundle` | Fetch Omeka, run Composer, build the VFS image and manifest |
+| `make prepare` | Install npm deps, vendor browser assets, and bundle the PHP worker |
+| `make bundle` | Fetch Omeka, run Composer, build the ZIP bundle and manifest |
 | `make serve` | Start the local dev server on port 8080, including the addon download proxy |
-| `make clean` | Remove generated bundle and vendored runtime assets |
-
----
-
-## How It Works
-
-```
-index.html          Shell UI (toolbar, address bar, log panel, iframe viewport)
-  └─ remote.html    Runtime host — registers the Service Worker
-       ├─ sw.js     Intercepts requests and forwards them to the PHP worker
-       └─ php-worker.js
-            └─ php-cgi-wasm (WebAssembly)
-                 ├─ Readonly Omeka core  (assets/omeka/*.vfs.*)
-                 └─ Writable overlay     (IndexedDB — SQLite, config, files/)
-```
-
-On first boot the PHP worker automatically:
-
-1. Mounts the readonly Omeka core bundle.
-2. Writes SQLite configuration.
-3. Runs the Omeka installer programmatically.
-4. Creates the admin user.
-
-Subsequent reloads skip the install unless the bundle version changes.
+| `make test` | Run unit tests |
+| `make lint` | Check code with Biome |
+| `make format` | Auto-fix code with Biome |
+| `make clean` | Remove generated bundle, dist, and vendored runtime assets |
 
 ---
 
@@ -91,9 +101,7 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
 ```json
 {
   "$schema": "./assets/blueprints/blueprint-schema.json",
-  "debug": {
-    "enabled": true
-  },
+  "debug": { "enabled": true },
   "landingPage": "/s/demo",
   "siteOptions": {
     "title": "Demo Omeka",
@@ -103,28 +111,15 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
   "users": [
     { "username": "admin", "email": "admin@example.com", "password": "password", "role": "global_admin" }
   ],
-  "themes": [
-    {
-      "name": "Foundation",
-      "source": { "type": "omeka.org", "slug": "foundation-s" }
-    }
-  ],
   "modules": [
     { "name": "CSVImport", "state": "activate" },
-    {
-      "name": "NumericDataTypes",
-      "state": "install",
-      "source": { "type": "omeka.org", "slug": "numeric-data-types" }
-    },
     {
       "name": "Mapping",
       "state": "activate",
       "source": { "type": "url", "url": "https://example.com/Mapping.zip" }
     }
   ],
-  "itemSets": [
-    { "title": "Demo Collection" }
-  ],
+  "itemSets": [{ "title": "Demo Collection" }],
   "items": [
     {
       "title": "Landscape sample",
@@ -135,7 +130,7 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
   "site": {
     "title": "Demo Site",
     "slug": "demo",
-    "theme": "Foundation",
+    "theme": "default",
     "setAsDefault": true
   }
 }
@@ -143,51 +138,17 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
 
 The full schema is at [`assets/blueprints/blueprint-schema.json`](assets/blueprints/blueprint-schema.json).
 
-When `debug.enabled` is `true`, the playground switches that scope into a development-like Omeka/PHP mode so browser `500` responses expose more useful detail. Use it for diagnosis, not for normal demo blueprints.
-
-For embedded URL payloads, `blueprint-data` expects the JSON blueprint encoded as base64url. Standard base64 is also accepted as long as it is URL-encoded safely.
-
-Example:
-
-```text
-?blueprint-data=eyJsYW5kaW5nUGFnZSI6Ii9hZG1pbiIsInNpdGVPcHRpb25zIjp7InRpdGxlIjoiRW1iZWRkZWQgRGVtbyJ9fQ
-```
-
-Short form strings remain supported for bundled addons:
-
-```json
-{
-  "modules": ["CSVImport"],
-  "themes": ["default"]
-}
-```
-
-Remote addons are downloaded into persistent browser storage under `/persist/addons` and re-linked into Omeka on each boot. This means the readonly core bundle stays untouched while downloaded modules/themes survive reloads for the same playground scope.
-
-When running locally, the dev server exposes a same-origin addon proxy at the configured `addonProxyPath` so browser-based runtime fetches can read cross-origin ZIPs from GitHub Releases and similar hosts.
-
-In the public GitHub Pages deployment, the app uses the external ZIP proxy configured via `addonProxyUrl` instead. This is required because GitHub Pages is static-only and cannot implement `__addon_proxy__`, and direct browser fetches to GitHub/Codeload ZIP downloads are not reliable due to CORS. The current production worker is `https://zip-proxy.erseco.workers.dev/`, and its source is kept in [`scripts/zip-proxy-worker.js`](scripts/zip-proxy-worker.js). If that proxy is unavailable and the addon URL is a public GitHub archive ZIP, the runtime falls back to GitHub's contents API plus `raw.githubusercontent.com` to materialize the addon files without the proxy.
-
-The PHP runtime also supports outbound `http`/`https` stream access through VRZNO. In this app those requests are filtered by the `outboundHttp` config, which applies an allowlist and can route cross-origin traffic through the active proxy configuration.
-
----
-
-## Deployment
-
-The project deploys as a **static site** — no backend needed.
-
-A [GitHub Pages workflow](.github/workflows/pages.yml) is included and runs automatically on push to `main`. It installs dependencies, builds the Omeka bundle, renders the MkDocs site under `/docs/`, and publishes the app plus docs together.
-
 ---
 
 ## Key Technologies
 
 | Technology | Role |
 |-----------|------|
-| [php-cgi-wasm](https://www.npmjs.com/package/php-cgi-wasm) | PHP 8.3 compiled to WebAssembly |
+| [@php-wasm/web](https://github.com/WordPress/wordpress-playground) | PHP 8.1–8.5 compiled to WebAssembly (WordPress Playground runtime) |
 | [Omeka S](https://omeka.org/s/) (SQLite branch) | The digital collections platform being served |
 | [Service Workers](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API) | Intercept HTTP requests and route them to the WASM runtime |
-| [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) | Browser-persistent storage for the writable overlay |
+| [esbuild](https://esbuild.github.io/) | Bundles the PHP worker and @php-wasm dependencies |
+| [fflate](https://github.com/101arrowz/fflate) | ZIP extraction for the Omeka core bundle |
 
 The Omeka source is built from the [`feature/experimental-sqlite-support`](https://github.com/ateeducacion/omeka-s/tree/feature/experimental-sqlite-support) branch of [ateeducacion/omeka-s](https://github.com/ateeducacion/omeka-s).
 
@@ -197,16 +158,17 @@ The Omeka source is built from the [`feature/experimental-sqlite-support`](https
 
 - Remote addon installation only supports ZIP packages that are already ready to run in Omeka. Releases that require Composer, Node builds, or extra post-install steps are not supported in-browser.
 - `omeka.org` slug resolution depends on the current HTML download links on omeka.org.
-- Remote ZIP downloads need a proxy endpoint when the upstream host does not expose CORS headers. The local dev server provides a same-origin proxy for development, and the public GitHub Pages deployment uses the configured external ZIP proxy worker.
-- PHP outbound HTTP is limited by the configured `outboundHttp.allowedHosts` and `allowedMethods`. Hosts outside that policy will fail by design.
-- Browser compatibility is focused on Chromium; Firefox and Safari may need additional validation for IndexedDB and Service Worker behavior.
-- The export/import of full overlay snapshots is still being hardened.
+- Remote ZIP downloads need a proxy endpoint when the upstream host does not expose CORS headers.
+- PHP outbound HTTP is limited by the configured `outboundHttp.allowedHosts` and `allowedMethods`.
+- Browser compatibility is focused on Chromium; Firefox and Safari may need additional validation.
+- All state is ephemeral — closing the tab destroys everything.
 
 ---
 
 ## Prior Art
 
 - [WordPress Playground](https://github.com/WordPress/wordpress-playground) — the original inspiration for running a PHP CMS entirely in the browser.
+- [Moodle Playground](https://github.com/ateeducacion/moodle-playground) — sister project running Moodle in the browser with the same architecture.
 
 ---
 

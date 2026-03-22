@@ -7,6 +7,8 @@ import { saveSessionState } from "../shared/storage.js";
 const overlayEl = document.querySelector(".remote-boot__card");
 const statusEl = document.querySelector("#remote-status");
 const frameEl = document.querySelector("#remote-frame");
+const progressFillEl = document.querySelector("#progress-fill");
+const progressPercentEl = document.querySelector("#progress-percent");
 let phpWorker;
 let _activeScopeId;
 let _activeRuntimeId;
@@ -17,9 +19,18 @@ function setOverlayVisible(isVisible) {
   overlayEl?.classList.toggle("is-hidden", !isVisible);
 }
 
-function setRemoteProgress(detail, _progress = null) {
+function setRemoteProgress(detail, progress = null) {
   if (statusEl && detail) {
     statusEl.textContent = detail;
+  }
+  if (progress != null) {
+    const pct = Math.round(Math.min(1, Math.max(0, progress)) * 100);
+    if (progressFillEl) {
+      progressFillEl.style.width = `${pct}%`;
+    }
+    if (progressPercentEl) {
+      progressPercentEl.textContent = `${pct}%`;
+    }
   }
 }
 
@@ -184,6 +195,11 @@ function bindShellCommands(scopeId, runtimeId) {
 
     if (message?.kind === "refresh-site") {
       navigateFrame(scopeId, runtimeId, activePath || "/", { reload: true });
+      return;
+    }
+
+    if (message?.kind === "capture-phpinfo" && phpWorker) {
+      phpWorker.postMessage({ kind: "capture-phpinfo" });
     }
   });
 }
@@ -220,7 +236,10 @@ async function bootstrapRemote() {
   setRemoteProgress("Service Worker ready and controlling this tab.", 0.12);
 
   if (!phpWorker) {
-    const workerUrl = new URL("../../php-worker.js", import.meta.url);
+    const workerUrl = new URL(
+      "../../dist/php-worker.bundle.js",
+      import.meta.url,
+    );
     workerUrl.searchParams.set("scope", scopeId);
     workerUrl.searchParams.set("runtime", runtime.id);
     phpWorker = new Worker(workerUrl, { type: "module" });

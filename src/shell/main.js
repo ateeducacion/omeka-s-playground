@@ -17,27 +17,38 @@ import {
 const els = {
   addressForm: document.querySelector("#address-form"),
   address: document.querySelector("#address-input"),
-  adminButton: document.querySelector("#admin-button"),
   blueprintPanel: document.querySelector("#blueprint-panel"),
   blueprintTab: document.querySelector("#blueprint-tab"),
   blueprintTextarea: document.querySelector("#blueprint-textarea"),
   clearLogs: document.querySelector("#clear-logs-button"),
+  copyLogs: document.querySelector("#copy-logs-button"),
   exportButton: document.querySelector("#export-button"),
   importInput: document.querySelector("#import-input"),
   frame: document.querySelector("#site-frame"),
-  homeButton: document.querySelector("#home-button"),
   logPanel: document.querySelector("#log-panel"),
   logsPanel: document.querySelector("#logs-panel"),
   logsTab: document.querySelector("#logs-tab"),
   panelToggle: document.querySelector("#panel-toggle-button"),
+  phpInfoFrame: document.querySelector("#phpinfo-frame"),
+  phpInfoPanel: document.querySelector("#phpinfo-panel"),
+  phpInfoTab: document.querySelector("#phpinfo-tab"),
+  refreshPhpInfoButton: document.querySelector("#refresh-phpinfo-button"),
   refresh: document.querySelector("#refresh-button"),
+  homeButton: document.querySelector("#home-button"),
+  adminButton: document.querySelector("#admin-button"),
   reset: document.querySelector("#reset-button"),
-  runtime: document.querySelector("#runtime-select"),
-  settingsPanel: document.querySelector("#settings-panel"),
-  settingsTab: document.querySelector("#settings-tab"),
+  settingsButton: document.querySelector("#settings-button"),
+  settingsPopover: document.querySelector("#settings-popover"),
+  settingsOverlay: document.querySelector("#settings-overlay"),
+  settingsPhpVersion: document.querySelector("#settings-php-version"),
+  settingsApply: document.querySelector("#settings-apply"),
+  settingsCancel: document.querySelector("#settings-cancel"),
+  currentOmekaLabel: document.querySelector("#current-omeka-label"),
+  currentPhpLabel: document.querySelector("#current-php-label"),
+  currentRuntimeLabel: document.querySelector("#current-runtime-label"),
+  infoPanel: document.querySelector("#info-panel"),
+  infoTab: document.querySelector("#info-tab"),
   sidePanel: document.querySelector("#side-panel"),
-  statusDetail: document.querySelector("#status-detail"),
-  statusTitle: document.querySelector("#status-title"),
   workspace: document.querySelector("#workspace"),
 };
 
@@ -52,6 +63,7 @@ let remoteFrameBooted = false;
 let uiLocked = true;
 let remoteReloadToken = 0;
 let pendingCleanBoot = hasBlueprintUrlOverride(window.location.href);
+let latestPhpInfoHtml = "";
 const CONTROL_RELOAD_KEY = `omeka-playground:${scopeId}:sw-controlled`;
 
 function appendLog(message, isError = false) {
@@ -65,22 +77,12 @@ function appendLog(message, isError = false) {
   els.logPanel.scrollTop = els.logPanel.scrollHeight;
 }
 
-function setStatus(title, detail, _progress = null) {
-  if (els.statusTitle) {
-    els.statusTitle.textContent = title;
-  }
-
-  if (els.statusDetail) {
-    els.statusDetail.textContent = detail;
-  }
-}
-
 function setUiLocked(locked) {
   uiLocked = locked;
   els.address.disabled = locked;
   els.homeButton.disabled = locked;
   els.adminButton.disabled = locked;
-  els.runtime.disabled = locked;
+  els.refreshPhpInfoButton.disabled = locked;
   els.reset.disabled = locked;
   els.exportButton.disabled = locked;
   els.importInput.disabled = locked;
@@ -165,32 +167,13 @@ function navigateWithinRuntime(path) {
   void updateFrame();
 }
 
-function _refreshWithinRuntime() {
+// biome-ignore lint/correctness/noUnusedVariables: called via postToRemote from remote.html
+function refreshWithinRuntime() {
   if (remoteFrameBooted && postToRemote({ kind: "refresh-site" })) {
     appendLog(`Refreshing ${currentPath}`);
     return;
   }
 
-  void updateFrame();
-}
-
-function restartRuntime() {
-  if (uiLocked) {
-    return;
-  }
-
-  remoteReloadToken = Date.now();
-  remoteFrameBooted = false;
-  serviceWorkerReady = null;
-  setUiLocked(true);
-  setStatus(
-    "Restarting runtime",
-    "Reloading the runtime host, service worker, and PHP worker.",
-    0.08,
-  );
-  appendLog(`Restarting runtime for ${currentRuntimeId}`);
-  // Force a fresh remote host bootstrap instead of a plain iframe page reload.
-  els.frame.src = "about:blank";
   void updateFrame();
 }
 
@@ -202,11 +185,66 @@ function navigateAdmin() {
   navigateWithinRuntime("/admin");
 }
 
+function restartRuntime() {
+  if (uiLocked) {
+    return;
+  }
+
+  remoteReloadToken = Date.now();
+  remoteFrameBooted = false;
+  serviceWorkerReady = null;
+  setUiLocked(true);
+  appendLog(`Restarting runtime for ${currentRuntimeId}`);
+  els.frame.src = "about:blank";
+  void updateFrame();
+}
+
+function setPhpInfoContent(html = "") {
+  latestPhpInfoHtml = typeof html === "string" ? html : "";
+  if (!els.phpInfoFrame) {
+    return;
+  }
+
+  if (!latestPhpInfoHtml) {
+    els.phpInfoFrame.srcdoc = `<!doctype html><meta charset="utf-8"><style>
+      body{font:14px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:16px;color:#1f2937;background:#fff}
+      p{margin:0}
+    </style><p>No PHP diagnostics captured yet.</p>`;
+    return;
+  }
+
+  els.phpInfoFrame.srcdoc = latestPhpInfoHtml;
+}
+
+function requestPhpInfoCapture() {
+  setActivePanel("phpinfo");
+  capturePhpInfoViaWorker("manual");
+}
+
+function capturePhpInfoViaWorker(reason = "manual") {
+  if (!config) {
+    appendLog(
+      "Cannot capture PHP info before the playground configuration is loaded.",
+      true,
+    );
+    return;
+  }
+
+  appendLog(`Requesting PHP runtime diagnostics (${reason}).`);
+
+  if (els.frame?.contentWindow) {
+    els.frame.contentWindow.postMessage({ kind: "capture-phpinfo" }, "*");
+  } else {
+    appendLog("Cannot capture PHP info: remote frame not available.", true);
+  }
+}
+
 function setActivePanel(panel) {
   const panels = {
-    blueprint: [els.blueprintPanel, els.blueprintTab],
+    info: [els.infoPanel, els.infoTab],
     logs: [els.logsPanel, els.logsTab],
-    settings: [els.settingsPanel, els.settingsTab],
+    phpinfo: [els.phpInfoPanel, els.phpInfoTab],
+    blueprint: [els.blueprintPanel, els.blueprintTab],
   };
 
   for (const [panelName, [panelEl, tabEl]] of Object.entries(panels)) {
@@ -240,7 +278,7 @@ function exportBlueprint() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `omeka-playground.blueprint.json`;
+  link.download = "omeka-playground.blueprint.json";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -268,7 +306,6 @@ async function importPayload(file) {
     currentRuntimeId = imported.runtimeId || currentRuntimeId;
     currentPath = imported.path || "/";
     els.address.value = currentPath;
-    els.runtime.value = currentRuntimeId;
     saveState({ importedAt: new Date().toISOString() });
     await updateFrame();
     return;
@@ -292,11 +329,9 @@ function bindShellChannel() {
     switch (message.kind) {
       case "progress":
         setUiLocked(true);
-        setStatus(message.title, message.detail, message.progress);
         appendLog(`${message.title}: ${message.detail}`);
         break;
       case "ready":
-        setStatus("Runtime ready", message.detail || "Omeka S is ready.", 1);
         remoteFrameBooted = true;
         setUiLocked(false);
         currentPath = message.path || currentPath;
@@ -311,8 +346,17 @@ function bindShellChannel() {
       case "error":
         remoteFrameBooted = false;
         setUiLocked(false);
-        setStatus("Runtime error", message.detail);
         appendLog(message.detail, true);
+        if (!latestPhpInfoHtml) {
+          capturePhpInfoViaWorker("bootstrap-error");
+        }
+        break;
+      case "phpinfo":
+        setPhpInfoContent(message.html || "");
+        appendLog(message.detail || "Captured PHP runtime diagnostics.");
+        break;
+      case "trace":
+        appendLog(message.detail || "[trace]");
         break;
       default:
         break;
@@ -327,6 +371,82 @@ function bindServiceWorkerMessages() {
       appendLog(`[sw] ${message.detail}`);
     }
   });
+}
+
+function populateSettingsModal() {
+  if (!els.settingsPhpVersion) {
+    return;
+  }
+
+  els.settingsPhpVersion.innerHTML = "";
+  for (const runtime of config.runtimes) {
+    const option = document.createElement("option");
+    option.value = runtime.id;
+    option.textContent = runtime.label;
+    els.settingsPhpVersion.append(option);
+  }
+  els.settingsPhpVersion.value = currentRuntimeId;
+}
+
+function updateCurrentVersionLabels() {
+  if (els.currentOmekaLabel) {
+    els.currentOmekaLabel.textContent =
+      config.omekaVersion || config.bundleVersion || "-";
+  }
+  if (els.currentPhpLabel) {
+    const runtime = config.runtimes.find((r) => r.id === currentRuntimeId);
+    els.currentPhpLabel.textContent = runtime
+      ? runtime.label
+      : currentRuntimeId;
+  }
+  if (els.currentRuntimeLabel) {
+    els.currentRuntimeLabel.textContent = currentRuntimeId;
+  }
+}
+
+function openSettingsPopover() {
+  if (!els.settingsPopover) {
+    return;
+  }
+  populateSettingsModal();
+  els.settingsPopover.classList.add("is-open");
+  els.settingsOverlay.classList.add("is-open");
+  els.settingsOverlay.setAttribute("aria-hidden", "false");
+  els.settingsButton.setAttribute("aria-expanded", "true");
+  const firstInput = els.settingsPopover.querySelector("select");
+  if (firstInput) {
+    firstInput.focus();
+  }
+}
+
+function closeSettingsPopover() {
+  if (!els.settingsPopover) {
+    return;
+  }
+  els.settingsPopover.classList.remove("is-open");
+  els.settingsOverlay.classList.remove("is-open");
+  els.settingsOverlay.setAttribute("aria-hidden", "true");
+  els.settingsButton.setAttribute("aria-expanded", "false");
+  els.settingsButton.focus();
+}
+
+function applySettingsAndReset() {
+  const newRuntimeId = els.settingsPhpVersion?.value;
+  closeSettingsPopover();
+
+  if (newRuntimeId === currentRuntimeId) {
+    return;
+  }
+
+  currentRuntimeId = newRuntimeId;
+  remoteFrameBooted = false;
+  appendLog(`Switching runtime to ${currentRuntimeId}`);
+  updateCurrentVersionLabels();
+  saveState({ switchedAt: new Date().toISOString() });
+  serviceWorkerReady = null;
+  pendingCleanBoot = true;
+  setPhpInfoContent("");
+  void updateFrame();
 }
 
 async function main() {
@@ -351,18 +471,43 @@ async function main() {
       : previous?.path || preferredPath;
   els.address.value = currentPath;
 
-  for (const runtime of config.runtimes) {
-    const option = document.createElement("option");
-    option.value = runtime.id;
-    option.textContent = runtime.label;
-    els.runtime.append(option);
+  updateCurrentVersionLabels();
+
+  // Settings popover event listeners
+  if (els.settingsButton) {
+    els.settingsButton.addEventListener("click", () => {
+      const isOpen = els.settingsPopover?.classList.contains("is-open");
+      if (isOpen) {
+        closeSettingsPopover();
+      } else {
+        openSettingsPopover();
+      }
+    });
   }
-  els.runtime.value = currentRuntimeId;
+  if (els.settingsOverlay) {
+    els.settingsOverlay.addEventListener("click", closeSettingsPopover);
+  }
+  if (els.settingsCancel) {
+    els.settingsCancel.addEventListener("click", closeSettingsPopover);
+  }
+  if (els.settingsApply) {
+    els.settingsApply.addEventListener("click", applySettingsAndReset);
+  }
+
+  // Close popover on Escape
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      els.settingsPopover?.classList.contains("is-open")
+    ) {
+      closeSettingsPopover();
+    }
+  });
 
   bindShellChannel();
   bindServiceWorkerMessages();
+  setPhpInfoContent("");
   setUiLocked(true);
-  setStatus("Booting runtime", "Loading shell and runtime configuration.");
   await updateFrame();
 }
 
@@ -373,59 +518,34 @@ els.refresh.addEventListener("click", () => {
 els.homeButton.addEventListener("click", navigateHome);
 els.adminButton.addEventListener("click", navigateAdmin);
 els.panelToggle.addEventListener("click", toggleSidePanel);
-els.settingsTab.addEventListener("click", () => setActivePanel("settings"));
+els.infoTab.addEventListener("click", () => setActivePanel("info"));
 els.logsTab.addEventListener("click", () => setActivePanel("logs"));
+els.phpInfoTab.addEventListener("click", () => {
+  setActivePanel("phpinfo");
+  capturePhpInfoViaWorker("tab-click");
+});
 els.blueprintTab.addEventListener("click", () => setActivePanel("blueprint"));
+els.clearLogs.addEventListener("click", () => {
+  els.logPanel.textContent = "";
+});
+els.copyLogs.addEventListener("click", () => {
+  const text = els.logPanel.textContent || "";
+  navigator.clipboard.writeText(text).then(() => {
+    const original = els.copyLogs.textContent;
+    els.copyLogs.textContent = "Copied!";
+    setTimeout(() => {
+      els.copyLogs.textContent = original;
+    }, 1200);
+  });
+});
+els.refreshPhpInfoButton.addEventListener("click", requestPhpInfoCapture);
+
 els.addressForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (uiLocked) {
     return;
   }
   navigateWithinRuntime(els.address.value || "/");
-});
-
-els.runtime.addEventListener("change", () => {
-  if (uiLocked) {
-    return;
-  }
-  currentRuntimeId = els.runtime.value;
-  remoteFrameBooted = false;
-  appendLog(`Switching runtime to ${currentRuntimeId}`);
-  saveState({ switchedAt: new Date().toISOString() });
-  serviceWorkerReady = null;
-  void updateFrame();
-});
-
-els.address.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter") {
-    return;
-  }
-
-  event.preventDefault();
-  if (uiLocked) {
-    return;
-  }
-  navigateWithinRuntime(els.address.value || "/");
-});
-
-els.reset.addEventListener("click", () => {
-  if (uiLocked) {
-    return;
-  }
-  clearScopeSession(scopeId);
-  pendingCleanBoot = true;
-  remoteFrameBooted = false;
-  setStatus(
-    "Resetting playground",
-    "Clearing local shell state. The runtime overlay reset is handled inside the remote host.",
-    0.02,
-  );
-  serviceWorkerReady = null;
-  void updateFrame();
-});
-
-els.clearLogs.addEventListener("click", () => {
-  els.logPanel.textContent = "";
 });
 
 els.exportButton.addEventListener("click", () => {
@@ -435,11 +555,8 @@ els.exportButton.addEventListener("click", () => {
   exportBlueprint();
 });
 
-els.importInput.addEventListener("change", async (event) => {
-  if (uiLocked) {
-    return;
-  }
-  const [file] = event.target.files || [];
+els.importInput.addEventListener("change", async () => {
+  const file = els.importInput.files?.[0];
   if (!file) {
     return;
   }
@@ -448,13 +565,25 @@ els.importInput.addEventListener("change", async (event) => {
     await importPayload(file);
     appendLog(`Imported configuration from ${file.name}`);
   } catch (error) {
-    appendLog(String(error?.message || error), true);
+    appendLog(String(error?.stack || error?.message || error), true);
   } finally {
     els.importInput.value = "";
   }
 });
 
+els.reset.addEventListener("click", () => {
+  if (uiLocked) {
+    return;
+  }
+  clearScopeSession(scopeId);
+  pendingCleanBoot = true;
+  remoteFrameBooted = false;
+  serviceWorkerReady = null;
+  setPhpInfoContent("");
+  void updateFrame();
+});
+
 main().catch((error) => {
+  setUiLocked(false);
   appendLog(String(error?.stack || error?.message || error), true);
-  setStatus("Failed to start shell", String(error?.message || error), 0);
 });

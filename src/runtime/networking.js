@@ -1,5 +1,13 @@
 import { resolveConfiguredProxyUrl } from "../shared/paths.js";
 
+// In the bundled worker, globalThis.location.href points to /dist/php-worker.bundle.js,
+// which breaks relative proxy path resolution. Use __APP_ROOT__ (injected by esbuild)
+// to get the actual project root URL.
+const APP_LOCATION =
+  typeof __APP_ROOT__ !== "undefined"
+    ? __APP_ROOT__
+    : globalThis.location?.href;
+
 function normalizeHost(value) {
   return String(value || "")
     .trim()
@@ -34,7 +42,7 @@ function isAllowedHost(hostname, allowedHosts) {
 }
 
 function isConfiguredProxyUrl(url, config) {
-  const proxyUrl = resolveConfiguredProxyUrl(config, globalThis.location?.href);
+  const proxyUrl = resolveConfiguredProxyUrl(config, APP_LOCATION);
   return Boolean(
     proxyUrl &&
       url.origin === proxyUrl.origin &&
@@ -59,7 +67,7 @@ function rebuildResponse(response, bytes) {
 }
 
 function buildProxiedUrl(targetUrl, config) {
-  const proxied = resolveConfiguredProxyUrl(config, globalThis.location?.href);
+  const proxied = resolveConfiguredProxyUrl(config, APP_LOCATION);
   if (!proxied) {
     return targetUrl;
   }

@@ -38,28 +38,37 @@
     "password": "password",
     "email": "admin@example.com"
   },
+  "omekaVersion": "4.2.0",
   "runtimes": [
     {
-      "id": "php83-cgi",
-      "label": "PHP 8.3 CGI",
-      "phpVersionLabel": "8.3",
-      "assetBase": "./vendor",
-      "cgiWasmPath": "./vendor/php-cgi-wasm",
-      "sharedLibs": [
-        "dom",
-        "gd",
-        "iconv",
-        "intl",
-        "libxml",
-        "sqlite",
-        "simplexml",
-        "zlib",
-        "zip",
-        "mbstring",
-        "openssl",
-        "phar"
-      ],
+      "id": "php81",
+      "label": "PHP 8.1",
+      "phpVersion": "8.1",
+      "default": false
+    },
+    {
+      "id": "php82",
+      "label": "PHP 8.2",
+      "phpVersion": "8.2",
+      "default": false
+    },
+    {
+      "id": "php83",
+      "label": "PHP 8.3",
+      "phpVersion": "8.3",
       "default": true
+    },
+    {
+      "id": "php84",
+      "label": "PHP 8.4",
+      "phpVersion": "8.4",
+      "default": false
+    },
+    {
+      "id": "php85",
+      "label": "PHP 8.5",
+      "phpVersion": "8.5",
+      "default": false
     }
   ]
 }
