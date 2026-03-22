@@ -3,30 +3,6 @@
   "defaultBlueprintUrl": "./assets/blueprints/default.blueprint.json",
   "addonProxyPath": "/__addon_proxy__",
   "addonProxyUrl": "https://zip-proxy.erseco.workers.dev/",
-  "outboundHttp": {
-    "enabled": true,
-    "allowedHosts": [
-      "localhost",
-      "127.0.0.1",
-      "omeka.org",
-      "api.github.com",
-      "raw.githubusercontent.com",
-      "github.com",
-      "codeload.github.com",
-      "objects.githubusercontent.com",
-      "data.jsdelivr.com",
-      "cdn.jsdelivr.net",
-      "zip-proxy.erseco.workers.dev"
-    ],
-    "allowedMethods": [
-      "GET",
-      "HEAD"
-    ],
-    "proxyAllCrossOrigin": true,
-    "timeoutMs": 30000,
-    "maxBytes": 52428800,
-    "probeUrl": "https://omeka.org/add-ons/json/s_module.json"
-  },
   "siteTitle": "Omeka S Playground",
   "landingPath": "/admin",
   "locale": "en_US",

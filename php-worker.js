@@ -5,7 +5,6 @@ import {
 } from "./src/shared/protocol.js";
 import { bootstrapOmeka, PLAYGROUND_DB_PATH } from "./src/runtime/bootstrap.js";
 import { createPhpRuntime } from "./src/runtime/php-loader.js";
-import { installOutboundFetchPolicy } from "./src/runtime/networking.js";
 import {
   isFatalWasmError,
   isSafeToReplay,
@@ -23,7 +22,6 @@ let requestQueue = Promise.resolve();
 let activeBlueprint = null;
 let forceCleanBoot = false;
 
-// --- Runtime rotation state ---
 const MAX_REACTIVE_RESTARTS = 20;
 const MIN_REQUESTS_BEFORE_RESTART = 10;
 let requestCount = 0;
@@ -116,7 +114,6 @@ async function getRuntimeState() {
 
   runtimeStatePromise = (async () => {
     const config = await loadPlaygroundConfig();
-    installOutboundFetchPolicy(config);
     const runtime =
       config.runtimes.find((entry) => entry.id === runtimeId) ||
       config.runtimes[0];
