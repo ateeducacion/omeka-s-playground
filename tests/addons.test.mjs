@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { parseGitHubArchiveUrl } from "../src/runtime/addons.js";
+import { parseGitHubArchiveUrl } from "../src/shared/github.js";
 
 describe("parseGitHubArchiveUrl", () => {
   it("parses GitHub archive branch URLs with nested branch names", () => {

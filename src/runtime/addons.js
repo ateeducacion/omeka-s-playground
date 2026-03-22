@@ -1,4 +1,5 @@
 import { unzipSync } from "../../vendor/fflate/esm/browser.js";
+import { parseGitHubArchiveUrl } from "../shared/github.js";
 import { resolveConfiguredProxyUrl } from "../shared/paths.js";
 import { normalizeOutboundHttpConfig } from "./networking.js";
 
@@ -33,9 +34,6 @@ const EASY_ADMIN_REMOTE_SOURCES = [
     relativePath: `${EASY_ADMIN_CACHE_DIR}/omeka_s_selections.csv`,
   },
 ];
-
-const GITHUB_ARCHIVE_HOSTS = new Set(["github.com", "www.github.com"]);
-const GITHUB_CODELOAD_HOST = "codeload.github.com";
 
 function getCurrentLocationHref() {
   return (
@@ -354,68 +352,6 @@ function encodeUrlPath(path) {
     .filter((segment) => segment.length > 0)
     .map((segment) => encodeURIComponent(segment))
     .join("/");
-}
-
-export function parseGitHubArchiveUrl(rawUrl, baseUrl) {
-  const fallbackBase = baseUrl || getCurrentLocationHref();
-  let parsed;
-  try {
-    parsed = new URL(String(rawUrl || ""), fallbackBase);
-  } catch {
-    return null;
-  }
-
-  const hostname = normalizeHost(parsed.hostname);
-  const segments = parsed.pathname.split("/").filter(Boolean);
-
-  if (
-    GITHUB_ARCHIVE_HOSTS.has(hostname) &&
-    segments.length >= 6 &&
-    segments[2] === "archive" &&
-    segments[3] === "refs" &&
-    ["heads", "tags"].includes(segments[4])
-  ) {
-    const ref = decodeURIComponent(
-      segments
-        .slice(5)
-        .join("/")
-        .replace(/\.zip$/iu, ""),
-    );
-    if (!ref) {
-      return null;
-    }
-
-    return {
-      owner: segments[0],
-      repo: segments[1],
-      refType: segments[4],
-      ref,
-      sourceUrl: parsed.toString(),
-    };
-  }
-
-  if (
-    hostname === GITHUB_CODELOAD_HOST &&
-    segments.length >= 6 &&
-    segments[2] === "zip" &&
-    segments[3] === "refs" &&
-    ["heads", "tags"].includes(segments[4])
-  ) {
-    const ref = decodeURIComponent(segments.slice(5).join("/"));
-    if (!ref) {
-      return null;
-    }
-
-    return {
-      owner: segments[0],
-      repo: segments[1],
-      refType: segments[4],
-      ref,
-      sourceUrl: parsed.toString(),
-    };
-  }
-
-  return null;
 }
 
 function buildGitHubContentsApiUrl({ owner, repo, ref, path = "" }) {
