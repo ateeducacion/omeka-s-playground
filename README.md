@@ -166,7 +166,7 @@ Remote addons are downloaded into persistent browser storage under `/persist/add
 
 When running locally, the dev server exposes a same-origin addon proxy at the configured `addonProxyPath` so browser-based runtime fetches can read cross-origin ZIPs from GitHub Releases and similar hosts.
 
-In the public GitHub Pages deployment, the app uses the external ZIP proxy configured via `addonProxyUrl` instead. This is required because GitHub Pages is static-only and cannot implement `__addon_proxy__`, and direct browser fetches to GitHub/Codeload ZIP downloads are not reliable due to CORS. The current production worker is `https://zip-proxy.erseco.workers.dev/`, and its source is kept in [`scripts/zip-proxy-worker.js`](scripts/zip-proxy-worker.js).
+In the public GitHub Pages deployment, the app uses the external ZIP proxy configured via `addonProxyUrl` instead. This is required because GitHub Pages is static-only and cannot implement `__addon_proxy__`, and direct browser fetches to GitHub/Codeload ZIP downloads are not reliable due to CORS. The current production worker is `https://zip-proxy.erseco.workers.dev/`, and its source is kept in [`scripts/zip-proxy-worker.js`](scripts/zip-proxy-worker.js). If that proxy is unavailable and the addon URL is a public GitHub archive ZIP, the runtime falls back to GitHub's contents API plus `raw.githubusercontent.com` to materialize the addon files without the proxy.
 
 The PHP runtime also supports outbound `http`/`https` stream access through VRZNO. In this app those requests are filtered by the `outboundHttp` config, which applies an allowlist and can route cross-origin traffic through the active proxy configuration.
 

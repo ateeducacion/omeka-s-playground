@@ -1,5 +1,6 @@
 import { unzipSync } from "../../vendor/fflate/esm/browser.js";
 import { resolveConfiguredProxyUrl } from "../shared/paths.js";
+import { normalizeOutboundHttpConfig } from "./networking.js";
 
 export const PERSIST_ADDONS_ROOT = "/persist/addons";
 const MODULES_ROOT = `${PERSIST_ADDONS_ROOT}/modules`;
@@ -32,6 +33,9 @@ const EASY_ADMIN_REMOTE_SOURCES = [
     relativePath: `${EASY_ADMIN_CACHE_DIR}/omeka_s_selections.csv`,
   },
 ];
+
+const GITHUB_ARCHIVE_HOSTS = new Set(["github.com", "www.github.com"]);
+const GITHUB_CODELOAD_HOST = "codeload.github.com";
 
 function ensureDirSync(FS, path) {
   const segments = path.split("/").filter(Boolean);
@@ -240,7 +244,208 @@ async function resolveOmekaOrgSource(kind, source) {
 }
 
 async function fetchZipBytes(url) {
-  const response = await fetch(url, { cache: "no-store" });
+  let response;
+  try {
+    response = await fetch(url, { cache: "no-store" });
+  } catch (error) {
+    throw new Error(
+      `Unable to download ${url}: ${error?.message || String(error)}`,
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(`Unable to download ${url}: ${response.status}`);
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+function normalizeHost(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function isAllowedHost(hostname, allowedHosts) {
+  const normalizedHost = normalizeHost(hostname);
+  if (!normalizedHost) {
+    return false;
+  }
+
+  return allowedHosts.some((entry) => {
+    const normalizedEntry = normalizeHost(entry);
+    return (
+      normalizedEntry &&
+      (normalizedHost === normalizedEntry ||
+        normalizedHost.endsWith(`.${normalizedEntry}`))
+    );
+  });
+}
+
+function getDirectFetch(config) {
+  const originalFetch = globalThis.__omekaOriginalFetch;
+  if (typeof originalFetch === "function") {
+    return originalFetch.bind(globalThis);
+  }
+
+  if (typeof globalThis.fetch === "function") {
+    return globalThis.fetch.bind(globalThis);
+  }
+
+  throw new Error("Fetch is not available in this runtime.");
+}
+
+async function fetchDirectResponse(input, config, init = {}) {
+  const baseUrl =
+    globalThis.location?.href || self.location?.href || "http://localhost/";
+  const url = input instanceof URL ? input : new URL(String(input || ""), baseUrl);
+  const normalized = normalizeOutboundHttpConfig(config);
+
+  if (!normalized.enabled) {
+    throw new Error(`Outbound HTTP is disabled for ${url.hostname}.`);
+  }
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error(`Unsupported outbound protocol "${url.protocol}".`);
+  }
+
+  if (!isAllowedHost(url.hostname, normalized.allowedHosts)) {
+    throw new Error(`Outbound HTTP host "${url.hostname}" is not allowed.`);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(`Timed out after ${normalized.timeoutMs}ms.`),
+    normalized.timeoutMs,
+  );
+
+  try {
+    return await getDirectFetch()(url.toString(), {
+      ...init,
+      cache: init.cache || "no-store",
+      redirect: init.redirect || "follow",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function encodeUrlPath(path) {
+  return String(path || "")
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+export function parseGitHubArchiveUrl(rawUrl, baseUrl) {
+  const fallbackBase =
+    baseUrl || globalThis.location?.href || self.location?.href || "http://localhost/";
+  let parsed;
+  try {
+    parsed = new URL(String(rawUrl || ""), fallbackBase);
+  } catch {
+    return null;
+  }
+
+  const hostname = normalizeHost(parsed.hostname);
+  const segments = parsed.pathname.split("/").filter(Boolean);
+
+  if (
+    GITHUB_ARCHIVE_HOSTS.has(hostname) &&
+    segments.length >= 6 &&
+    segments[2] === "archive" &&
+    segments[3] === "refs" &&
+    ["heads", "tags"].includes(segments[4])
+  ) {
+    const ref = decodeURIComponent(
+      segments.slice(5).join("/").replace(/\.zip$/iu, ""),
+    );
+    if (!ref) {
+      return null;
+    }
+
+    return {
+      owner: segments[0],
+      repo: segments[1],
+      refType: segments[4],
+      ref,
+      sourceUrl: parsed.toString(),
+    };
+  }
+
+  if (
+    hostname === GITHUB_CODELOAD_HOST &&
+    segments.length >= 6 &&
+    segments[2] === "zip" &&
+    segments[3] === "refs" &&
+    ["heads", "tags"].includes(segments[4])
+  ) {
+    const ref = decodeURIComponent(segments.slice(5).join("/"));
+    if (!ref) {
+      return null;
+    }
+
+    return {
+      owner: segments[0],
+      repo: segments[1],
+      refType: segments[4],
+      ref,
+      sourceUrl: parsed.toString(),
+    };
+  }
+
+  return null;
+}
+
+function buildGitHubContentsApiUrl({ owner, repo, ref, path = "" }) {
+  const encodedPath = encodeUrlPath(path);
+  const pathname = encodedPath
+    ? `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`
+    : `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents`;
+  const url = new URL(pathname, "https://api.github.com");
+  url.searchParams.set("ref", ref);
+  return url;
+}
+
+function buildRawGitHubUrl({ owner, repo, ref, path }) {
+  const encodedRef = encodeUrlPath(ref);
+  const encodedPath = encodeUrlPath(path);
+  return new URL(
+    `${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodedRef}/${encodedPath}`,
+    "https://raw.githubusercontent.com/",
+  );
+}
+
+async function fetchGitHubDirectoryEntries(archive, path, config) {
+  const response = await fetchDirectResponse(
+    buildGitHubContentsApiUrl({
+      owner: archive.owner,
+      repo: archive.repo,
+      ref: archive.ref,
+      path,
+    }),
+    config,
+    {
+      headers: {
+        Accept: "application/vnd.github+json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Unable to read GitHub repository contents for ${archive.owner}/${archive.repo}@${archive.ref}: ${response.status}`,
+    );
+  }
+
+  const payload = await response.json();
+  return Array.isArray(payload) ? payload : [payload];
+}
+
+async function fetchDirectBytes(url, config) {
+  const response = await fetchDirectResponse(url, config);
   if (!response.ok) {
     throw new Error(`Unable to download ${url}: ${response.status}`);
   }
@@ -318,6 +523,64 @@ function writeArchiveToFs(FS, targetDir, zipBytes) {
 
   if (!writtenFiles) {
     throw new Error("Archive did not contain any installable files.");
+  }
+}
+
+async function writeGitHubArchiveToFs(FS, targetDir, archive, config) {
+  ensureDirSync(FS, targetDir);
+
+  let writtenFiles = 0;
+  const pendingDirs = [""];
+
+  while (pendingDirs.length > 0) {
+    const currentDir = pendingDirs.shift() || "";
+    const entries = await fetchGitHubDirectoryEntries(archive, currentDir, config);
+
+    for (const entry of entries) {
+      const relativePath = normalizeArchivePath(entry?.path || "");
+      if (isSkippableArchivePath(relativePath) || !relativePath) {
+        continue;
+      }
+
+      if (isUnsafeArchivePath(relativePath)) {
+        throw new Error(`Repository contains unsafe path "${relativePath}".`);
+      }
+
+      if (entry.type === "dir") {
+        ensureDirSync(
+          FS,
+          `${targetDir}/${relativePath}`.replace(/\/{2,}/gu, "/"),
+        );
+        pendingDirs.push(relativePath);
+        continue;
+      }
+
+      if (entry.type !== "file") {
+        throw new Error(
+          `Unsupported GitHub repository entry type "${entry.type}" for "${relativePath}".`,
+        );
+      }
+
+      const fileBytes = await fetchDirectBytes(
+        entry.download_url ||
+          buildRawGitHubUrl({
+            owner: archive.owner,
+            repo: archive.repo,
+            ref: archive.ref,
+            path: relativePath,
+          }),
+        config,
+      );
+      const targetPath = `${targetDir}/${relativePath}`.replace(/\/{2,}/gu, "/");
+      const parentDir = targetPath.split("/").slice(0, -1).join("/") || "/";
+      ensureDirSync(FS, parentDir);
+      FS.writeFile(targetPath, fileBytes);
+      writtenFiles += 1;
+    }
+  }
+
+  if (!writtenFiles) {
+    throw new Error("GitHub repository did not contain any installable files.");
   }
 }
 
@@ -468,6 +731,7 @@ async function resolveSource(kind, spec) {
       type,
       fingerprint: `url:${downloadUrl}`,
       downloadUrl,
+      githubArchive: parseGitHubArchiveUrl(downloadUrl),
       pageUrl: null,
       slug: null,
     };
@@ -479,6 +743,7 @@ async function resolveSource(kind, spec) {
       type,
       fingerprint: `omeka.org:${kind}:${resolved.slug}:${resolved.downloadUrl}`,
       downloadUrl: resolved.downloadUrl,
+      githubArchive: parseGitHubArchiveUrl(resolved.downloadUrl),
       pageUrl: resolved.pageUrl,
       slug: resolved.slug,
     };
@@ -537,14 +802,38 @@ async function materializeAddon({
 
   if (!cacheHit) {
     publish(`Fetching ${kind} "${spec.name}".`, 0.53);
-    const zipBytes = await fetchZipBytes(
-      buildDownloadUrl(source.downloadUrl, config),
-    );
-
-    publish(`Extracting ${kind} "${spec.name}".`, 0.57);
     removeNodeIfPresent(FS, persistedPath);
     ensureDirSync(FS, persistedPath);
-    writeArchiveToFs(FS, persistedPath, zipBytes);
+
+    let wroteFiles = false;
+    try {
+      const zipBytes = await fetchZipBytes(
+        buildDownloadUrl(source.downloadUrl, config),
+      );
+      publish(`Extracting ${kind} "${spec.name}".`, 0.57);
+      writeArchiveToFs(FS, persistedPath, zipBytes);
+      wroteFiles = true;
+    } catch (error) {
+      if (!source.githubArchive) {
+        throw error;
+      }
+
+      publish(`Fetching ${kind} "${spec.name}" directly from GitHub.`, 0.57);
+      removeNodeIfPresent(FS, persistedPath);
+      ensureDirSync(FS, persistedPath);
+      await writeGitHubArchiveToFs(
+        FS,
+        persistedPath,
+        source.githubArchive,
+        config,
+      );
+      wroteFiles = true;
+    }
+
+    if (!wroteFiles) {
+      throw new Error(`Unable to materialize ${kind} "${spec.name}".`);
+    }
+
     writeJsonSync(FS, manifestPath, {
       name: spec.name,
       kind,
