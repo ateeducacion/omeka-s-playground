@@ -1,4 +1,7 @@
-const CONFIG_URL = new URL("../../playground.config.json", import.meta.url);
+const CONFIG_URL =
+  typeof __APP_ROOT__ !== "undefined"
+    ? new URL("playground.config.json", __APP_ROOT__)
+    : new URL("../../playground.config.json", import.meta.url);
 
 let configPromise;
 

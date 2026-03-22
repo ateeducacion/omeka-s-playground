@@ -191,9 +191,13 @@ function normalizeAddonCollection(input, kind) {
 }
 
 export function getBlueprintSchemaUrl() {
+  const base =
+    typeof __APP_ROOT__ !== "undefined" ? __APP_ROOT__ : import.meta.url;
   return new URL(
-    "../../assets/blueprints/blueprint-schema.json",
-    import.meta.url,
+    typeof __APP_ROOT__ !== "undefined"
+      ? "assets/blueprints/blueprint-schema.json"
+      : "../../assets/blueprints/blueprint-schema.json",
+    base,
   ).toString();
 }
 
