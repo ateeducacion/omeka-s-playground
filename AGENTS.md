@@ -69,15 +69,17 @@ make reset
 
 ### Important Scripts
 
-- `npm run sync-browser-deps`: vendors browser runtime dependencies
+- `npm run sync-browser-deps`: vendors browser runtime dependencies (fflate)
 - `npm run prepare-runtime`: prepares the PHP runtime assets
+- `npm run build-worker`: bundles php-worker.js via esbuild into `dist/php-worker.bundle.js`
 - `npm run bundle`: fetches/builds Omeka and generates the readonly bundle
 - `make serve`: runs the local Node dev server, including the addon proxy endpoint for remote blueprint ZIP downloads
 
 ### Generated Assets
 
-- `assets/omeka/`: readonly runtime bundle files (`.vfs.bin`, index, metadata)
+- `assets/omeka/`: readonly runtime bundle files (`.zip`)
 - `assets/manifests/`: generated bundle manifests
+- `dist/`: esbuild-bundled worker and `@php-wasm` WASM binaries
 
 Do not hand-edit generated bundle artifacts unless the task is specifically about the build output.
 
@@ -93,10 +95,12 @@ index.html
      -> remote.html
         -> src/remote/main.js
            -> sw.js
-              -> php-worker.js
+              -> php-worker.js (bundled via esbuild into dist/)
+                 -> src/runtime/php-loader.js (@php-wasm/web)
+                 -> src/runtime/php-compat.js (API wrapper)
                  -> src/runtime/bootstrap.js
                  -> src/runtime/vfs.js
-                 -> php-cgi-wasm
+                 -> src/runtime/crash-recovery.js
 ```
 
 Responsibilities:
@@ -110,9 +114,20 @@ Responsibilities:
   - Maps unscoped/static vs scoped/runtime requests
   - Rewrites redirects and HTML links for GitHub Pages subpaths
 - `php-worker.js`
-  - Owns the `php-cgi-wasm` instance for a scope
+  - Owns the `@php-wasm` PHP instance for a scope
   - Boots Omeka and serves HTTP requests through the bridge
-  - Applies the outbound HTTP policy used by VRZNO-backed `http`/`https` PHP stream access
+  - Applies the outbound HTTP policy
+  - Handles crash recovery and runtime rotation
+- `src/runtime/php-loader.js`
+  - Creates the PHP runtime via `@php-wasm/web` loadWebRuntime
+  - Deferred initialization pattern (call refresh() before use)
+- `src/runtime/php-compat.js`
+  - Wraps the raw `@php-wasm` PHP instance with the API expected by bootstrap/addons
+  - Handles request/response conversion, cookie jar, static file serving
+- `src/runtime/crash-recovery.js`
+  - Detects fatal WASM errors (memory access, unreachable, resource exhaustion)
+  - Snapshots DB/addon files before runtime destruction
+  - Restores state onto fresh runtime
 - `src/runtime/bootstrap.js`
   - Prepares storage
   - Installs Omeka when needed
@@ -129,16 +144,17 @@ Responsibilities:
 
 This project no longer copies the entire Omeka tree into persistent storage on every boot.
 
-Current model:
+Current model (fully ephemeral — all state lives in Emscripten MEMFS):
 
 - Readonly core: hydrated into in-memory FS under `/www/omeka`
-- Mutable state: persisted under `/persist`
-- Remote blueprint addons: persisted under `/persist/addons` and symlinked into `/www/omeka/modules` or `/www/omeka/themes` at boot
+- Mutable state: in-memory under `/persist` (not persisted to IndexedDB/OPFS)
+- Remote blueprint addons: stored under `/persist/addons` and symlinked into `/www/omeka/modules` or `/www/omeka/themes` at boot
 - Uploads: stored under `/persist/mutable/files`
-- Database/config/session data: stored in the persistent overlay
+- Database/config/session data: stored in the mutable overlay
+- Crash recovery: DB and addon files are snapshotted from JS heap before runtime destruction and restored onto fresh runtimes
 
-This split is intentional and is one of the main performance optimizations in the repo.
-Avoid reintroducing boot-time file-by-file copies of the full Omeka core into IndexedDB.
+Closing the tab destroys all state. This is by design — fresh install on each page load.
+Avoid reintroducing boot-time file-by-file copies of the full Omeka core into persistent storage.
 
 ### Bundle and Manifest
 
@@ -147,8 +163,8 @@ The Omeka bundle is built by the scripts in `scripts/`.
 Relevant files:
 
 - `scripts/build-omeka-bundle.sh`
-- `scripts/build-vfs-image.mjs`
 - `scripts/generate-manifest.mjs`
+- `lib/omeka-loader.js`
 - `src/runtime/manifest.js`
 
 If you change the bundle structure, also update manifest generation and runtime loading together.
@@ -269,7 +285,7 @@ node --check src/runtime/bootstrap.js
 ### Manual validation areas
 
 - First boot install
-- Reload with persisted state
+- Reload behavior (fresh install each time — ephemeral)
 - Autologin flow to `/admin`
 - Navigation inside Omeka admin
 - GitHub Pages subpath behavior
@@ -282,7 +298,10 @@ If a change touches routing or HTML rewriting, prefer checking real browser beha
 - `index.html`: shell UI
 - `remote.html`: runtime host page
 - `sw.js`: service worker routing and HTML/link rewriting
-- `php-worker.js`: PHP worker bridge and boot lifecycle
+- `php-worker.js`: PHP worker bridge, boot lifecycle, and crash recovery
+- `src/runtime/php-loader.js`: creates PHP runtime via `@php-wasm/web`
+- `src/runtime/php-compat.js`: wraps `@php-wasm` API for compatibility with bootstrap/addons
+- `src/runtime/crash-recovery.js`: WASM crash detection, DB snapshot/restore
 - `playground.config.json`: runtime defaults
 - `src/runtime/bootstrap.js`: installation, config, blueprint application, autologin
 - `src/runtime/vfs.js`: readonly core bundle mounting
@@ -290,13 +309,14 @@ If a change touches routing or HTML rewriting, prefer checking real browser beha
 - `src/shared/protocol.js`: shell/worker protocol definitions
 - `src/shared/storage.js`: browser persistence helpers
 - `src/styles/app.css`: shell styling
+- `scripts/esbuild.worker.mjs`: bundles php-worker.js into dist/
 - `Makefile`: common local workflow
 
 ## Common Pitfalls
 
 - Do not assume the app is hosted at `/`; production runs in a subdirectory.
 - Do not assume Omeka-generated links are plain text; some are HTML-escaped.
-- Do not assume PHP can open raw sockets to the internet; outbound HTTP is expected to flow through VRZNO/fetch and the configured allowlist/proxy policy.
+- Do not assume PHP can open raw sockets to the internet; outbound HTTP flows through the browser's fetch API and the configured allowlist/proxy policy.
 - Do not move the entire core into persistent storage unless explicitly required.
 - Do not break the separation between readonly core and mutable overlay.
 - Do not forget that service worker changes often require a hard refresh or worker reset to verify.

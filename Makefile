@@ -39,6 +39,7 @@ deps:
 prepare: deps
 	npm run sync-browser-deps
 	npm run prepare-runtime
+	npm run build-worker
 
 bundle: prepare
 	OMEKA_REF=$(OMEKA_REF) OMEKA_REF_BRANCH=$(OMEKA_REF_BRANCH) npm run bundle
@@ -51,6 +52,7 @@ up: bundle serve
 clean:
 	rm -rf .cache
 	rm -rf vendor
+	rm -rf dist
 	rm -rf assets/omeka/*
 	rm -rf assets/manifests/*
 	touch assets/omeka/.gitkeep assets/manifests/.gitkeep

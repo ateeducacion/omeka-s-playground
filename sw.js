@@ -7,7 +7,7 @@ const STATIC_PREFIXES = [
   "/assets/",
   "/src/",
   "/vendor/",
-  "/php-worker.js",
+  "/dist/",
   "/sw.js",
   "/remote.html",
   "/index.html",
@@ -58,13 +58,6 @@ function buildErrorResponse(message, status = 500) {
       },
     },
   );
-}
-
-async function broadcastToClients(message) {
-  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-  for (const client of clients) {
-    client.postMessage(message);
-  }
 }
 
 function ensureBridge(scopeId) {
@@ -368,11 +361,6 @@ self.addEventListener("fetch", (event) => {
     }
 
     const forwardedUrl = new URL(requestPath, `${url.origin}/`);
-
-    await broadcastToClients({
-      kind: "sw-debug",
-      detail: `Intercepting ${event.request.method} ${url.pathname}`,
-    });
 
     const response = await forwardToPhpWorker({
       request: buildPhpRequest(event.request, forwardedUrl),

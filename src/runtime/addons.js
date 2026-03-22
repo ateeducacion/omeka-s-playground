@@ -1,7 +1,6 @@
 import { unzipSync } from "../../vendor/fflate/esm/browser.js";
 import { parseGitHubArchiveUrl } from "../shared/github.js";
-import { resolveConfiguredProxyUrl } from "../shared/paths.js";
-import { normalizeOutboundHttpConfig } from "./networking.js";
+import { APP_LOCATION, resolveProxyUrl } from "./networking.js";
 
 export const PERSIST_ADDONS_ROOT = "/persist/addons";
 const MODULES_ROOT = `${PERSIST_ADDONS_ROOT}/modules`;
@@ -29,27 +28,9 @@ const EASY_ADMIN_REMOTE_SOURCES = [
     url: "https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/master/_data/omeka_s_selections.csv",
     relativePath: `${EASY_ADMIN_CACHE_DIR}/omeka_s_selections.csv`,
   },
-  {
-    url: "https://raw.githubusercontent.com/Daniel-KM/UpgradeToOmekaS/refs/heads/master/_data/omeka_s_selections.csv",
-    relativePath: `${EASY_ADMIN_CACHE_DIR}/omeka_s_selections.csv`,
-  },
 ];
 
-function getCurrentLocationHref() {
-  return (
-    globalThis.location?.href ||
-    globalThis.self?.location?.href ||
-    "http://localhost/"
-  );
-}
-
-function getCurrentOrigin() {
-  return (
-    globalThis.location?.origin ||
-    globalThis.self?.location?.origin ||
-    new URL(getCurrentLocationHref()).origin
-  );
-}
+const APP_ORIGIN = new URL(APP_LOCATION).origin;
 
 function ensureDirSync(FS, path) {
   const segments = path.split("/").filter(Boolean);
@@ -257,10 +238,10 @@ async function resolveOmekaOrgSource(kind, source) {
   };
 }
 
-async function fetchZipBytes(url) {
+async function fetchBytes(url) {
   let response;
   try {
-    response = await fetch(url, { cache: "no-store" });
+    response = await fetch(String(url), { cache: "no-store" });
   } catch (error) {
     throw new Error(
       `Unable to download ${url}: ${error?.message || String(error)}`,
@@ -274,76 +255,13 @@ async function fetchZipBytes(url) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-function normalizeHost(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
-}
-
-function isAllowedHost(hostname, allowedHosts) {
-  const normalizedHost = normalizeHost(hostname);
-  if (!normalizedHost) {
-    return false;
-  }
-
-  return allowedHosts.some((entry) => {
-    const normalizedEntry = normalizeHost(entry);
-    return (
-      normalizedEntry &&
-      (normalizedHost === normalizedEntry ||
-        normalizedHost.endsWith(`.${normalizedEntry}`))
-    );
+async function fetchJson(url, init = {}) {
+  const response = await fetch(String(url), {
+    ...init,
+    cache: init.cache || "no-store",
+    redirect: init.redirect || "follow",
   });
-}
-
-function getDirectFetch() {
-  const originalFetch = globalThis.__omekaOriginalFetch;
-  if (typeof originalFetch === "function") {
-    return originalFetch.bind(globalThis);
-  }
-
-  if (typeof globalThis.fetch === "function") {
-    return globalThis.fetch.bind(globalThis);
-  }
-
-  throw new Error("Fetch is not available in this runtime.");
-}
-
-async function fetchDirectResponse(input, config, init = {}) {
-  const url =
-    input instanceof URL
-      ? input
-      : new URL(String(input || ""), getCurrentLocationHref());
-  const normalized = normalizeOutboundHttpConfig(config);
-
-  if (!normalized.enabled) {
-    throw new Error(`Outbound HTTP is disabled for ${url.hostname}.`);
-  }
-
-  if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error(`Unsupported outbound protocol "${url.protocol}".`);
-  }
-
-  if (!isAllowedHost(url.hostname, normalized.allowedHosts)) {
-    throw new Error(`Outbound HTTP host "${url.hostname}" is not allowed.`);
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(`Timed out after ${normalized.timeoutMs}ms.`),
-    normalized.timeoutMs,
-  );
-
-  try {
-    return await getDirectFetch()(url.toString(), {
-      ...init,
-      cache: init.cache || "no-store",
-      redirect: init.redirect || "follow",
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return response;
 }
 
 function encodeUrlPath(path) {
@@ -373,15 +291,14 @@ function buildRawGitHubUrl({ owner, repo, ref, path }) {
   );
 }
 
-async function fetchGitHubDirectoryEntries(archive, path, config) {
-  const response = await fetchDirectResponse(
+async function fetchGitHubDirectoryEntries(archive, path) {
+  const response = await fetchJson(
     buildGitHubContentsApiUrl({
       owner: archive.owner,
       repo: archive.repo,
       ref: archive.ref,
       path,
     }),
-    config,
     {
       headers: {
         Accept: "application/vnd.github+json",
@@ -399,16 +316,59 @@ async function fetchGitHubDirectoryEntries(archive, path, config) {
   return Array.isArray(payload) ? payload : [payload];
 }
 
-async function fetchDirectBytes(url, config) {
-  const response = await fetchDirectResponse(url, config);
-  if (!response.ok) {
-    throw new Error(`Unable to download ${url}: ${response.status}`);
+/**
+ * Install an addon from a GitHub repo via jsDelivr CDN.
+ * jsDelivr mirrors GitHub repos and serves files with CORS headers,
+ * avoiding both the GitHub API rate limit and the need for a proxy.
+ */
+async function writeJsDelivrArchiveToFs(FS, targetDir, archive) {
+  const pkg = `gh/${archive.owner}/${archive.repo}@${archive.ref}`;
+  const listUrl = `https://data.jsdelivr.com/v1/packages/${pkg}?structure=flat`;
+
+  const listResponse = await fetch(listUrl);
+  if (!listResponse.ok) {
+    throw new Error(
+      `jsDelivr listing failed for ${pkg}: ${listResponse.status}`,
+    );
   }
 
-  return new Uint8Array(await response.arrayBuffer());
+  const listing = await listResponse.json();
+  const files = listing.files || [];
+  if (files.length === 0) {
+    throw new Error(`No files found for ${pkg} on jsDelivr.`);
+  }
+
+  ensureDirSync(FS, targetDir);
+  const cdnBase = `https://cdn.jsdelivr.net/${pkg}`;
+  let written = 0;
+
+  for (const file of files) {
+    const filePath = file.name;
+    if (!filePath || filePath.endsWith("/")) {
+      continue;
+    }
+
+    const fullPath = `${targetDir}${filePath}`.replace(/\/{2,}/gu, "/");
+    const parentDir = fullPath.substring(0, fullPath.lastIndexOf("/"));
+    if (parentDir && parentDir !== targetDir) {
+      ensureDirSync(FS, parentDir);
+    }
+
+    const fileResponse = await fetch(`${cdnBase}${filePath}`);
+    if (!fileResponse.ok) {
+      continue;
+    }
+
+    FS.writeFile(fullPath, new Uint8Array(await fileResponse.arrayBuffer()));
+    written += 1;
+  }
+
+  if (!written) {
+    throw new Error(`No files written from jsDelivr for ${pkg}.`);
+  }
 }
 
-function buildDownloadUrl(downloadUrl, config) {
+function buildDownloadUrl(downloadUrl, proxyBaseUrl) {
   const rawUrl = String(downloadUrl || "").trim();
   if (!rawUrl) {
     return rawUrl;
@@ -416,19 +376,20 @@ function buildDownloadUrl(downloadUrl, config) {
 
   let parsed;
   try {
-    parsed = new URL(rawUrl, getCurrentLocationHref());
+    parsed = new URL(rawUrl, APP_LOCATION);
   } catch {
     return rawUrl;
   }
 
-  if (parsed.origin === getCurrentOrigin()) {
+  if (parsed.origin === APP_ORIGIN) {
     return parsed.toString();
   }
 
-  const proxied = resolveConfiguredProxyUrl(config, getCurrentLocationHref());
-  if (!proxied) {
+  if (!proxyBaseUrl) {
     return parsed.toString();
   }
+
+  const proxied = new URL(proxyBaseUrl.toString());
   proxied.searchParams.set("url", parsed.toString());
   return proxied.toString();
 }
@@ -481,7 +442,7 @@ function writeArchiveToFs(FS, targetDir, zipBytes) {
   }
 }
 
-async function writeGitHubArchiveToFs(FS, targetDir, archive, config) {
+async function writeGitHubArchiveToFs(FS, targetDir, archive) {
   ensureDirSync(FS, targetDir);
 
   let writtenFiles = 0;
@@ -489,11 +450,7 @@ async function writeGitHubArchiveToFs(FS, targetDir, archive, config) {
 
   while (pendingDirs.length > 0) {
     const currentDir = pendingDirs.shift() || "";
-    const entries = await fetchGitHubDirectoryEntries(
-      archive,
-      currentDir,
-      config,
-    );
+    const entries = await fetchGitHubDirectoryEntries(archive, currentDir);
 
     for (const entry of entries) {
       const relativePath = normalizeArchivePath(entry?.path || "");
@@ -520,7 +477,7 @@ async function writeGitHubArchiveToFs(FS, targetDir, archive, config) {
         );
       }
 
-      const fileBytes = await fetchDirectBytes(
+      const fileBytes = await fetchBytes(
         entry.download_url ||
           buildRawGitHubUrl({
             owner: archive.owner,
@@ -528,7 +485,6 @@ async function writeGitHubArchiveToFs(FS, targetDir, archive, config) {
             ref: archive.ref,
             path: relativePath,
           }),
-        config,
       );
       const targetPath = `${targetDir}/${relativePath}`.replace(
         /\/{2,}/gu,
@@ -550,7 +506,7 @@ function pathExists(FS, path) {
   return FS.analyzePath(path)?.exists || false;
 }
 
-async function prepareEasyAdminCatalogCache(FS, persistedPath, config) {
+async function prepareEasyAdminCatalogCache(FS, persistedPath, proxyBaseUrl) {
   for (const source of EASY_ADMIN_REMOTE_SOURCES) {
     const targetPath = `${persistedPath}/${source.relativePath}`.replace(
       /\/{2,}/gu,
@@ -560,14 +516,16 @@ async function prepareEasyAdminCatalogCache(FS, persistedPath, config) {
     ensureDirSync(FS, targetDir);
 
     if (!pathExists(FS, targetPath)) {
-      const bytes = await fetchZipBytes(buildDownloadUrl(source.url, config));
+      const bytes = await fetchBytes(
+        buildDownloadUrl(source.url, proxyBaseUrl),
+      );
       FS.writeFile(targetPath, bytes);
     }
   }
 }
 
-async function patchEasyAdminAddon(FS, persistedPath, config) {
-  await prepareEasyAdminCatalogCache(FS, persistedPath, config);
+async function patchEasyAdminAddon(FS, persistedPath, proxyBaseUrl) {
+  await prepareEasyAdminCatalogCache(FS, persistedPath, proxyBaseUrl);
   const addonPluginPath =
     `${persistedPath}/src/Mvc/Controller/Plugin/Addons.php`.replace(
       /\/{2,}/gu,
@@ -739,7 +697,7 @@ async function materializeAddon({
   spec,
   omekaRoot,
   publish,
-  config,
+  proxyBaseUrl,
 }) {
   const source = await resolveSource(kind, spec);
   const persistedPath = getPersistedAddonPath(kind, spec.name);
@@ -768,25 +726,29 @@ async function materializeAddon({
     ensureDirSync(FS, persistedPath);
 
     try {
-      const zipBytes = await fetchZipBytes(
-        buildDownloadUrl(source.downloadUrl, config),
+      const zipBytes = await fetchBytes(
+        buildDownloadUrl(source.downloadUrl, proxyBaseUrl),
       );
       publish(`Extracting ${kind} "${spec.name}".`, 0.57);
       writeArchiveToFs(FS, persistedPath, zipBytes);
-    } catch (error) {
+    } catch (zipError) {
       if (!source.githubArchive) {
-        throw error;
+        throw zipError;
       }
 
-      publish(`Fetching ${kind} "${spec.name}" directly from GitHub.`, 0.57);
-      removeNodeIfPresent(FS, persistedPath);
-      ensureDirSync(FS, persistedPath);
-      await writeGitHubArchiveToFs(
-        FS,
-        persistedPath,
-        source.githubArchive,
-        config,
-      );
+      // Fallback 1: jsDelivr CDN (free, CORS-enabled, no rate limits)
+      try {
+        publish(`Fetching ${kind} "${spec.name}" via jsDelivr CDN.`, 0.55);
+        removeNodeIfPresent(FS, persistedPath);
+        ensureDirSync(FS, persistedPath);
+        await writeJsDelivrArchiveToFs(FS, persistedPath, source.githubArchive);
+      } catch {
+        // Fallback 2: GitHub Contents API (rate-limited, last resort)
+        publish(`Fetching ${kind} "${spec.name}" via GitHub API.`, 0.57);
+        removeNodeIfPresent(FS, persistedPath);
+        ensureDirSync(FS, persistedPath);
+        await writeGitHubArchiveToFs(FS, persistedPath, source.githubArchive);
+      }
     }
 
     writeJsonSync(FS, manifestPath, {
@@ -800,7 +762,7 @@ async function materializeAddon({
 
   if (kind === "module" && spec.name === "EasyAdmin") {
     publish(`Applying EasyAdmin-specific catalog compatibility patch.`, 0.58);
-    await patchEasyAdminAddon(FS, persistedPath, config);
+    await patchEasyAdminAddon(FS, persistedPath, proxyBaseUrl);
   }
 
   ensureAddonMount(FS, mountPath, persistedPath);
@@ -824,6 +786,7 @@ export async function materializeBlueprintAddons({
 }) {
   const binary = await php.binary;
   const { FS } = binary;
+  const proxyBaseUrl = resolveProxyUrl(config);
 
   for (const path of [
     PERSIST_ADDONS_ROOT,
@@ -849,7 +812,7 @@ export async function materializeBlueprintAddons({
         spec: moduleSpec,
         omekaRoot,
         publish,
-        config,
+        proxyBaseUrl,
       }),
     );
   }
@@ -862,7 +825,7 @@ export async function materializeBlueprintAddons({
         spec: themeSpec,
         omekaRoot,
         publish,
-        config,
+        proxyBaseUrl,
       }),
     );
   }

@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, relative, resolve } from "node:path";
+import { relative, resolve } from "node:path";
 
 function parseArgs(argv) {
   const args = {};
@@ -28,11 +28,11 @@ function sha256(path) {
 
 const args = parseArgs(process.argv.slice(2));
 const manifestPath = resolve(args.manifest);
-const dataPath = resolve(args.imageData);
-const indexPath = resolve(args.imageIndex);
+const bundlePath = resolve(args.bundle);
+const bundleStat = statSync(bundlePath);
 
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   generatedAt: new Date().toISOString(),
   channel: args.channel,
   release: args.release,
@@ -41,28 +41,14 @@ const manifest = {
     branch: args.sourceBranch,
     commit: args.sourceCommit,
   },
-  runtimeVersion: args.runtimeVersion,
-  vfs: {
-    format: "omeka-vfs-image-v1",
-    mountMode: "memfs-hydrate-v1",
-    data: {
-      path: relative(resolve(manifestPath, ".."), dataPath).replaceAll(
-        "\\",
-        "/",
-      ),
-      fileName: basename(dataPath),
-      size: statSync(dataPath).size,
-      sha256: sha256(dataPath),
-    },
-    index: {
-      path: relative(resolve(manifestPath, ".."), indexPath).replaceAll(
-        "\\",
-        "/",
-      ),
-      fileName: basename(indexPath),
-      size: statSync(indexPath).size,
-      sha256: sha256(indexPath),
-    },
+  bundle: {
+    format: "zip",
+    path: relative(resolve(manifestPath, ".."), bundlePath).replaceAll(
+      "\\",
+      "/",
+    ),
+    size: bundleStat.size,
+    sha256: sha256(bundlePath),
     fileCount: Number(args.fileCount || 0),
   },
 };

@@ -1218,7 +1218,7 @@ export async function bootstrapOmeka({
   }
 
   publish("Mounting readonly Omeka core bundle.", 0.4);
-  await mountReadonlyCore(php, manifest, { root: OMEKA_ROOT });
+  await mountReadonlyCore(php, manifest, { root: OMEKA_ROOT, publish });
   await linkMutableFilesDir(php);
 
   publish("Preparing blueprint modules and themes.", 0.52);

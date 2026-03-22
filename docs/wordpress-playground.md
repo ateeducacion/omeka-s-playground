@@ -2,14 +2,14 @@
 
 ## What WordPress Playground means here
 
-This repository does **not** embed WordPress itself. Instead, it applies the same browser-executed PHP pattern popularized by WordPress Playground to **Omeka S**.
+This repository does **not** embed WordPress itself. Instead, it uses WordPress Playground's `@php-wasm/web` runtime to run **Omeka S** entirely in the browser.
 
 That means WordPress Playground matters here in two ways:
 
 1. **Conceptually**: it is the reference architecture for browser-native PHP application bootstrapping.
-2. **Practically**: it informs how this repository handles runtime setup, persistent state, blueprints, and contributor workflows.
+2. **Practically**: it provides the PHP WASM runtime, and informs how this repository handles runtime setup, ephemeral state, blueprints, and contributor workflows.
 
-If you know WordPress Playground already, the mental model is similar: a readonly application image is loaded into a browser-based PHP runtime, while mutable state is kept separately and can be rebuilt from a blueprint.
+If you know WordPress Playground already, the mental model is similar: an application ZIP bundle is extracted into writable MEMFS, bootstrapped from a blueprint, and served through a service worker.
 
 ## How the project uses the Playground model
 
@@ -21,44 +21,52 @@ index.html
      -> remote.html
         -> src/remote/main.js
            -> sw.js
-              -> php-worker.js
+              -> php-worker.js (bundled via esbuild into dist/)
+                 -> src/runtime/php-loader.js (@php-wasm/web)
+                 -> src/runtime/php-compat.js (API wrapper)
                  -> src/runtime/bootstrap.js
-                 -> src/runtime/vfs.js
-                 -> php-cgi-wasm
+                 -> src/runtime/vfs.js (ZIP extraction)
+                 -> src/runtime/crash-recovery.js
 ```
 
 The main WordPress Playground-style patterns are:
 
-- **Browser PHP runtime** using `php-cgi-wasm`
+- **Browser PHP runtime** using `@php-wasm/web` and `@php-wasm/universal`
+- **Multiple PHP versions** (8.1, 8.2, 8.3, 8.4, 8.5) selectable from the UI
 - **Service-worker routing** so same-origin browser requests can be served by the in-browser PHP process
-- **Readonly core + writable overlay** to avoid copying the whole application tree on every boot
+- **ZIP bundle extraction** into writable MEMFS at boot
 - **Portable blueprint input** to describe initial state declaratively
+- **Crash recovery** that snapshots DB and addons before WASM crashes
 
 ## Initialization lifecycle
 
-On a clean scope, the runtime:
+On each page load, the runtime:
 
-1. loads the prebuilt Omeka bundle from `assets/omeka/`
-2. mounts it under `/www/omeka`
-3. prepares persistent writable storage under `/persist`
+1. downloads and extracts the Omeka ZIP bundle from `assets/omeka/`
+2. writes all files into `/www/omeka` in MEMFS
+3. prepares writable directories under `/persist`
 4. writes database and local configuration
 5. installs Omeka if needed
 6. applies the active blueprint
 7. logs in automatically when `autologin` is enabled
 
-On later reloads, the runtime reuses persisted state unless the bundle version or requested clean-boot conditions require a reset.
+All state is ephemeral — closing the tab destroys everything. Each page load boots a fresh instance.
 
 ## What depends on the Playground model
 
 The following areas depend directly on this architecture:
 
 - `sw.js`: maps browser requests into the scoped runtime and rewrites HTML responses for the Pages subpath
-- `php-worker.js`: owns the PHP worker lifecycle
+- `php-worker.js`: owns the PHP worker lifecycle and crash recovery
+- `src/runtime/php-loader.js`: creates PHP runtime via `@php-wasm/web`
+- `src/runtime/php-compat.js`: wraps the @php-wasm API for Omeka's bootstrap
 - `src/runtime/bootstrap.js`: applies the blueprint and installs Omeka
-- `src/runtime/vfs.js`: mounts the readonly bundle image
+- `src/runtime/vfs.js`: extracts the ZIP bundle into MEMFS
+- `src/runtime/crash-recovery.js`: WASM crash detection, DB snapshot/restore
+- `lib/omeka-loader.js`: downloads and caches the ZIP bundle
 - `src/shared/blueprint.js`: normalizes blueprint input before boot
 
-When contributors change any of those areas, they should think in Playground terms: immutable core, mutable overlay, and idempotent boot steps.
+When contributors change any of those areas, they should think in Playground terms: ephemeral MEMFS, ZIP extraction, and idempotent boot steps.
 
 ## Working locally and in the browser
 
@@ -70,10 +78,11 @@ When contributors change any of those areas, they should think in Playground ter
 
 ### Browser behavior
 
-- Each scope gets its own persisted state.
-- Importing a blueprint triggers a clean boot for that scope.
+- All state is ephemeral (MEMFS). Closing the tab destroys everything.
+- Importing a blueprint triggers a clean boot.
 - The shell UI stores session state such as the active path and runtime selection.
-- Runtime navigation happens inside the iframe, while the **Docs** menu entry opens published documentation in a separate tab.
+- The settings panel (⚙️) allows switching PHP versions.
+- Runtime navigation happens inside the iframe, while **Home**, **Admin**, and **Docs** buttons are in the toolbar.
 
 ## Constraints and caveats
 
@@ -82,8 +91,8 @@ These are the main project-specific constraints contributors should keep in mind
 - The public deployment runs under the GitHub Pages subpath `/omeka-s-playground`, not `/`.
 - Omeka-generated HTML may contain escaped URLs, so routing and rewriting logic must stay conservative.
 - Remote addon ZIP downloads often need the configured proxy because many upstream hosts do not provide CORS headers suitable for browser fetches.
-- The project intentionally avoids copying the entire Omeka core into persistent storage; reintroducing that would hurt startup performance.
 - Browser compatibility is focused on Chromium-class browsers first.
+- The `@php-wasm` `__private__dont__use` API is used for low-level FS access; pin package versions.
 
 ## Practical workflows
 
@@ -93,7 +102,7 @@ Edit `assets/blueprints/default.blueprint.json`, then reload with a clean scope 
 
 ### Debug install-time issues
 
-Set `debug.enabled` to `true` in the blueprint, reproduce the clean boot, and inspect shell logs plus browser console output.
+Set `debug.enabled` to `true` in the blueprint, reproduce the clean boot, and inspect shell logs plus the PHP Info tab.
 
 ### Add a module or theme
 
