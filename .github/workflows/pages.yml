@@ -50,24 +50,23 @@ jobs:
 
       - name: Assemble Pages artifact
         run: |
-          rm -rf dist
-          mkdir -p dist/docs
-          rsync -a ./ ./dist/ \
+          mkdir -p _site/docs _site/dist
+          rsync -a ./ ./_site/ \
             --exclude ".git/" \
             --exclude ".github/" \
             --exclude ".venv/" \
             --exclude ".cache/" \
-            --exclude "dist/" \
+            --exclude "_site/" \
             --exclude "docs/" \
             --exclude "node_modules/" \
             --exclude "site/"
-          mkdocs build --strict --site-dir dist/docs
-          touch dist/.nojekyll
+          mkdocs build --strict --site-dir _site/docs
+          touch _site/.nojekyll
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: dist
+          path: _site
 
   deploy:
     environment:
