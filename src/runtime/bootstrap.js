@@ -4,6 +4,7 @@ import {
 } from "../shared/blueprint.js";
 import { materializeBlueprintAddons } from "./addons.js";
 import { buildManifestState, fetchManifest } from "./manifest.js";
+import { resolveProxyUrl } from "./networking.js";
 import { mountReadonlyCore } from "./vfs.js";
 
 const encoder = new TextEncoder();
@@ -37,6 +38,8 @@ function buildLocalConfig(config) {
   const debugEnabled = config.debug?.enabled === true;
 
   return `<?php
+${debugEnabled ? "ini_set('display_errors', '1');" : ""}
+
 $thumbnailerAlias = extension_loaded('gd')
     ? 'Omeka\\\\File\\\\Thumbnailer\\\\Gd'
     : 'Omeka\\\\File\\\\Thumbnailer\\\\NoThumbnail';
@@ -148,16 +151,13 @@ return [
     'media_ingesters' => [
         'factories' => [
             'playground_cached_file' => function ($services) {
-                $config = $services->get('Config');
-                $basePath = isset($config['file_store']['local']['base_path'])
-                    ? $config['file_store']['local']['base_path']
-                    : (defined('OMEKA_PATH') ? OMEKA_PATH . '/files' : '/persist/mutable/files');
-                return new class ($basePath) implements \\Omeka\\Media\\Ingester\\IngesterInterface {
-                    private $basePath;
+                $tempFileFactory = $services->get('Omeka\\\\File\\\\TempFileFactory');
+                return new class ($tempFileFactory) implements \\Omeka\\Media\\Ingester\\IngesterInterface {
+                    private $tempFileFactory;
 
-                    public function __construct($basePath)
+                    public function __construct($tempFileFactory)
                     {
-                        $this->basePath = $basePath;
+                        $this->tempFileFactory = $tempFileFactory;
                     }
 
                     public function getLabel()
@@ -179,64 +179,29 @@ return [
                             return;
                         }
 
-                        $sourceName = isset($data['playground_cached_name']) && $data['playground_cached_name'] !== ''
-                            ? (string) $data['playground_cached_name']
-                            : basename($cachedPath);
+                        $tempFile = $this->tempFileFactory->build();
 
-                        if (!array_key_exists('o:source', $data)) {
-                            $media->setSource($sourceName);
-                        }
-
-                        // Detect MIME type from extension or content.
-                        $ext = strtolower(pathinfo($sourceName, PATHINFO_EXTENSION));
-                        $mimeMap = [
-                            'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
-                            'png' => 'image/png', 'gif' => 'image/gif',
-                            'pdf' => 'application/pdf', 'zip' => 'application/zip',
-                            'elpx' => 'application/zip', 'mp4' => 'video/mp4',
-                            'mp3' => 'audio/mpeg', 'svg' => 'image/svg+xml',
-                            'json' => 'application/json', 'txt' => 'text/plain',
-                        ];
-                        $mediaType = isset($mimeMap[$ext]) ? $mimeMap[$ext] : 'application/octet-stream';
-                        if (function_exists('mime_content_type')) {
-                            $detected = @mime_content_type($cachedPath);
-                            if ($detected) {
-                                $mediaType = $detected;
-                            }
-                        }
-
-                        // Generate storage filename from SHA-1 hash + extension.
-                        $hash = sha1_file($cachedPath);
-                        $storageFilename = $hash . ($ext ? '.' . $ext : '');
-
-                        // Copy directly to the files/original directory.
-                        // This avoids rename() across mount points which fails in php-wasm.
-                        $originalDir = $this->basePath . '/original';
-                        if (!is_dir($originalDir)) {
-                            @mkdir($originalDir, 0755, true);
-                        }
-                        $destPath = $originalDir . '/' . $storageFilename;
-
-                        if (!@copy($cachedPath, $destPath)) {
-                            // Fallback: read + write (rename/copy may fail across mounts).
-                            $content = @file_get_contents($cachedPath);
-                            if ($content === false) {
-                                $errorStore->addError('playground_cached_path', 'Unable to read cached file.');
+                        try {
+                            if (!@copy($cachedPath, $tempFile->getTempPath())) {
+                                $errorStore->addError('playground_cached_path', sprintf('Unable to copy cached file "%s" into Omeka temp storage.', $cachedPath));
                                 return;
                             }
-                            if (@file_put_contents($destPath, $content) === false) {
-                                $errorStore->addError('playground_cached_path', 'Unable to write file to storage.');
-                                return;
+
+                            $sourceName = isset($data['playground_cached_name']) && $data['playground_cached_name'] !== ''
+                                ? (string) $data['playground_cached_name']
+                                : basename($cachedPath);
+
+                            $tempFile->setSourceName($sourceName);
+                            if (!array_key_exists('o:source', $data)) {
+                                $media->setSource($sourceName);
+                            }
+
+                            $tempFile->mediaIngestFile($media, $request, $errorStore);
+                        } finally {
+                            if (file_exists($tempFile->getTempPath())) {
+                                $tempFile->delete();
                             }
                         }
-
-                        // Set media entity properties directly.
-                        $media->setFilename($storageFilename);
-                        $media->setMediaType($mediaType);
-                        $media->setSha256(hash_file('sha256', $destPath));
-                        $media->setSize(filesize($destPath));
-                        $media->setHasOriginal(true);
-                        $media->setHasThumbnails(false);
                     }
 
                     public function form(\\Laminas\\View\\Renderer\\PhpRenderer $view, array $options = [])
@@ -268,6 +233,9 @@ error_reporting(E_ALL);
   return `<?php
 // Generated by Omeka S Playground.
 // This prepend file carries runtime shims needed by the php-wasm environment.
+
+define('OMEKA_PLAYGROUND', true);
+define('OMEKA_PLAYGROUND_PROXY_URL', '${phpString(resolveProxyUrl(config) || "")}');
 
 if (!defined('FILEINFO_MIME_TYPE')) {
     define('FILEINFO_MIME_TYPE', 16);
@@ -561,8 +529,8 @@ $describeThrowable = function (Throwable $e) use ($flattenErrors) {
   return $parts ? implode(' | ', $parts) : get_class($e);
 };
 
-$ensureCoreVocabulary = function () use ($searchOne, $propertyIdByTerm, $apiManager, &$warnings, $debug) {
-  if ($propertyIdByTerm('dcterms:title')) {
+$ensureCoreVocabulary = function () use ($searchOne, $apiManager, &$warnings, $debug) {
+  if ($searchOne('properties', ['term' => 'dcterms:title'])) {
     $debug('Dublin Core vocabulary already available.');
     return;
   }

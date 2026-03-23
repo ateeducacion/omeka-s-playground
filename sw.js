@@ -240,6 +240,12 @@ function rewriteHtmlAttributeUrl(rawValue, { origin, scopeId, runtimeId }) {
     return decodedValue;
   }
 
+  // Skip relative URLs (not starting with "/") — they resolve correctly
+  // relative to the document's own URL and must not be rewritten.
+  if (!decodedValue.startsWith("/")) {
+    return decodedValue;
+  }
+
   try {
     const absolute = new URL(decodedValue, origin);
     if (absolute.origin !== origin) {
