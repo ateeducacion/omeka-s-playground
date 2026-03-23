@@ -148,13 +148,16 @@ return [
     'media_ingesters' => [
         'factories' => [
             'playground_cached_file' => function ($services) {
-                $tempFileFactory = $services->get('Omeka\\\\File\\\\TempFileFactory');
-                return new class ($tempFileFactory) implements \\Omeka\\Media\\Ingester\\IngesterInterface {
-                    private $tempFileFactory;
+                $config = $services->get('Config');
+                $basePath = isset($config['file_store']['local']['base_path'])
+                    ? $config['file_store']['local']['base_path']
+                    : (defined('OMEKA_PATH') ? OMEKA_PATH . '/files' : '/persist/mutable/files');
+                return new class ($basePath) implements \\Omeka\\Media\\Ingester\\IngesterInterface {
+                    private $basePath;
 
-                    public function __construct($tempFileFactory)
+                    public function __construct($basePath)
                     {
-                        $this->tempFileFactory = $tempFileFactory;
+                        $this->basePath = $basePath;
                     }
 
                     public function getLabel()
@@ -176,27 +179,64 @@ return [
                             return;
                         }
 
-                        $tempFile = $this->tempFileFactory->build();
+                        $sourceName = isset($data['playground_cached_name']) && $data['playground_cached_name'] !== ''
+                            ? (string) $data['playground_cached_name']
+                            : basename($cachedPath);
 
-                        try {
-                            if (!@copy($cachedPath, $tempFile->getTempPath())) {
-                                $errorStore->addError('playground_cached_path', sprintf('Unable to copy cached file "%s" into Omeka temp storage.', $cachedPath));
+                        if (!array_key_exists('o:source', $data)) {
+                            $media->setSource($sourceName);
+                        }
+
+                        // Detect MIME type from extension or content.
+                        $ext = strtolower(pathinfo($sourceName, PATHINFO_EXTENSION));
+                        $mimeMap = [
+                            'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
+                            'png' => 'image/png', 'gif' => 'image/gif',
+                            'pdf' => 'application/pdf', 'zip' => 'application/zip',
+                            'elpx' => 'application/zip', 'mp4' => 'video/mp4',
+                            'mp3' => 'audio/mpeg', 'svg' => 'image/svg+xml',
+                            'json' => 'application/json', 'txt' => 'text/plain',
+                        ];
+                        $mediaType = isset($mimeMap[$ext]) ? $mimeMap[$ext] : 'application/octet-stream';
+                        if (function_exists('mime_content_type')) {
+                            $detected = @mime_content_type($cachedPath);
+                            if ($detected) {
+                                $mediaType = $detected;
+                            }
+                        }
+
+                        // Generate storage filename from SHA-1 hash + extension.
+                        $hash = sha1_file($cachedPath);
+                        $storageFilename = $hash . ($ext ? '.' . $ext : '');
+
+                        // Copy directly to the files/original directory.
+                        // This avoids rename() across mount points which fails in php-wasm.
+                        $originalDir = $this->basePath . '/original';
+                        if (!is_dir($originalDir)) {
+                            @mkdir($originalDir, 0755, true);
+                        }
+                        $destPath = $originalDir . '/' . $storageFilename;
+
+                        if (!@copy($cachedPath, $destPath)) {
+                            // Fallback: read + write (rename/copy may fail across mounts).
+                            $content = @file_get_contents($cachedPath);
+                            if ($content === false) {
+                                $errorStore->addError('playground_cached_path', 'Unable to read cached file.');
                                 return;
                             }
-
-                            $sourceName = isset($data['playground_cached_name']) && $data['playground_cached_name'] !== ''
-                                ? (string) $data['playground_cached_name']
-                                : basename($cachedPath);
-
-                            $tempFile->setSourceName($sourceName);
-                            if (!array_key_exists('o:source', $data)) {
-                                $media->setSource($sourceName);
+                            if (@file_put_contents($destPath, $content) === false) {
+                                $errorStore->addError('playground_cached_path', 'Unable to write file to storage.');
+                                return;
                             }
-
-                            $tempFile->mediaIngestFile($media, $request, $errorStore);
-                        } finally {
-                            $tempFile->delete();
                         }
+
+                        // Set media entity properties directly.
+                        $media->setFilename($storageFilename);
+                        $media->setMediaType($mediaType);
+                        $media->setSha256(hash_file('sha256', $destPath));
+                        $media->setSize(filesize($destPath));
+                        $media->setHasOriginal(true);
+                        $media->setHasThumbnails(false);
                     }
 
                     public function form(\\Laminas\\View\\Renderer\\PhpRenderer $view, array $options = [])
