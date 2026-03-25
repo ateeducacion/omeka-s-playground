@@ -14,7 +14,7 @@
     "fflate": "^0.8.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.8",
+    "@biomejs/biome": "^2.4.9",
     "esbuild": "^0.25.0"
   }
 }
