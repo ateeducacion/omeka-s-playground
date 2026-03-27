@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { execFile } from "node:child_process";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -113,23 +114,28 @@ async function proxyAddon(_req, res, url) {
   try {
     upstream = await fetch(target, {
       redirect: "follow",
-      headers: {
-        "user-agent": "omeka-s-playground-dev-server",
-      },
+      headers: { "user-agent": "omeka-s-playground-dev-server" },
     });
-  } catch (error) {
-    send(res, 502, String(error?.message || error), {
-      "content-type": "text/plain; charset=utf-8",
-    });
-    return;
+  } catch {
+    upstream = null;
   }
 
-  if (!upstream.ok) {
-    const body = await upstream.text().catch(() => upstream.statusText);
-    send(res, upstream.status, body || upstream.statusText, {
-      "content-type":
-        upstream.headers.get("content-type") || "text/plain; charset=utf-8",
-    });
+  // Some hosts (e.g. GitLab/Cloudflare) reject Node.js fetch via TLS
+  // fingerprinting. Fall back to curl which is not fingerprinted.
+  if (!upstream?.ok) {
+    try {
+      const bytes = await fetchWithCurl(target.toString());
+      send(res, 200, bytes, {
+        "access-control-allow-origin": "*",
+        "cache-control": "no-store",
+        "content-type": "application/octet-stream",
+        "content-length": String(bytes.length),
+      });
+    } catch (error) {
+      send(res, 502, String(error?.message || error), {
+        "content-type": "text/plain; charset=utf-8",
+      });
+    }
     return;
   }
 
@@ -147,6 +153,20 @@ async function proxyAddon(_req, res, url) {
   const bytes = Buffer.from(await upstream.arrayBuffer());
   headers["content-length"] = String(bytes.length);
   send(res, 200, bytes, headers);
+}
+
+function fetchWithCurl(url) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "curl",
+      ["-fsSL", "--max-time", "60", "--max-filesize", "52428800", url],
+      { encoding: "buffer", maxBuffer: 52_428_800 },
+      (error, stdout) => {
+        if (error) reject(new Error(`curl failed: ${error.message}`));
+        else resolve(stdout);
+      },
+    );
+  });
 }
 
 const server = createServer(async (req, res) => {
