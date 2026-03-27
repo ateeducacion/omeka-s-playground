@@ -619,6 +619,15 @@ $settings->set('installation_title', '${config.siteTitle}');
 $settings->set('locale', '${config.locale}');
 $settings->set('time_zone', '${config.timezone}');
 
+// Initialize MVC controller context so module install hooks
+// can use controller plugins (Url, Messenger, etc.)
+$mvcEvent = $application->getMvcEvent();
+$playgroundController = new class extends \\Laminas\\Mvc\\Controller\\AbstractActionController {
+    public function indexAction() { return []; }
+};
+$playgroundController->setEvent($mvcEvent);
+$serviceManager->get('ControllerPluginManager')->setController($playgroundController);
+
 foreach (($blueprint['modules'] ?? []) as $moduleSpec) {
   $moduleName = trim((string) ($moduleSpec['name'] ?? ''));
   if ($moduleName === '') {
