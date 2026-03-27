@@ -1,7 +1,7 @@
 # Omeka S Playground
 
 <p align="center">
-  <img src="ogimage.png" alt="Omeka S Playground" width="600">
+  <img src=".github/screenshot.png" alt="Omeka S Playground" width="600">
 </p>
 
 [Live demo](https://ateeducacion.github.io/omeka-s-playground/) · [Documentation](docs/) · [Blueprints](docs/blueprint-json.md)
