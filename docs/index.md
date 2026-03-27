@@ -1,7 +1,7 @@
 # Omeka S Playground
 
 <p align="center">
-  <img src="../ogimage.png" alt="Omeka S Playground" width="600">
+  <img src="../.github/screenshot.png" alt="Omeka S Playground" width="600">
 </p>
 
 Omeka S Playground runs a full Omeka S 4.2.0 instance in the browser with WebAssembly, powered by [WordPress Playground](https://github.com/WordPress/wordpress-playground)'s `@php-wasm/web` runtime. No server required — every page load boots a fresh, ephemeral Omeka S instance.
