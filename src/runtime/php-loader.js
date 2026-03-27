@@ -59,11 +59,27 @@ export function createPhpRuntime(
         "session.save_path": "/persist/mutable/session",
         upload_tmp_dir: "/tmp",
         "date.timezone": "UTC",
+        // OPcache tuning — use in-memory file cache with a high file limit
+        // and no timestamp checks (the readonly bundle never changes within
+        // a session), so PHP avoids recompiling on every request.
+        "opcache.enable": "1",
+        "opcache.file_cache": "/internal/shared/opcache",
+        "opcache.file_cache_only": "1",
+        "opcache.max_accelerated_files": "10000",
+        "opcache.memory_consumption": "128",
+        "opcache.interned_strings_buffer": "32",
+        "opcache.validate_timestamps": "0",
+        "opcache.file_cache_consistency_checks": "0",
       });
 
       // Write preload dir for WP Playground's internal preload mechanism
       try {
         FS.mkdirTree("/internal/shared/preload");
+      } catch {
+        /* exists */
+      }
+      try {
+        FS.mkdirTree("/internal/shared/opcache");
       } catch {
         /* exists */
       }

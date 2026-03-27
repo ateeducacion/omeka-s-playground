@@ -1,4 +1,6 @@
 import {
+  buildDefaultBlueprint,
+  clearActiveBlueprint,
   exportBlueprintPayload,
   parseImportedBlueprintPayload,
   resolveBlueprintForShell,
@@ -61,7 +63,7 @@ let serviceWorkerReady = null;
 let activeBlueprint;
 let remoteFrameBooted = false;
 let uiLocked = true;
-let remoteReloadToken = 0;
+const remoteReloadToken = 0;
 let pendingCleanBoot = hasBlueprintUrlOverride(window.location.href);
 let latestPhpInfoHtml = "";
 const CONTROL_RELOAD_KEY = `omeka-playground:${scopeId}:sw-controlled`;
@@ -185,20 +187,6 @@ function navigateAdmin() {
   navigateWithinRuntime("/admin");
 }
 
-function restartRuntime() {
-  if (uiLocked) {
-    return;
-  }
-
-  remoteReloadToken = Date.now();
-  remoteFrameBooted = false;
-  serviceWorkerReady = null;
-  setUiLocked(true);
-  appendLog(`Restarting runtime for ${currentRuntimeId}`);
-  els.frame.src = "about:blank";
-  void updateFrame();
-}
-
 function setPhpInfoContent(html = "") {
   latestPhpInfoHtml = typeof html === "string" ? html : "";
   if (!els.phpInfoFrame) {
@@ -207,13 +195,33 @@ function setPhpInfoContent(html = "") {
 
   if (!latestPhpInfoHtml) {
     els.phpInfoFrame.srcdoc = `<!doctype html><meta charset="utf-8"><style>
-      body{font:14px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:16px;color:#1f2937;background:#fff}
+      html,body{height:100%}
+      body{margin:0;font:14px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:16px;color:#1f2937;background:#fff;box-sizing:border-box}
       p{margin:0}
     </style><p>No PHP diagnostics captured yet.</p>`;
     return;
   }
 
-  els.phpInfoFrame.srcdoc = latestPhpInfoHtml;
+  const responsivePhpInfoHtml = latestPhpInfoHtml.replace(
+    "</head>",
+    `<style>
+      html,body{height:100%}
+      body{margin:0;padding:12px;box-sizing:border-box;overflow:auto;background:#fff;color:#222;font-family:sans-serif}
+      .center{width:100%}
+      .center table{width:100%;max-width:100%;margin:1em auto;text-align:left}
+      table{border-collapse:collapse;border:0;width:100%;max-width:100%;box-shadow:0 1px 3px rgba(0,0,0,.12);table-layout:auto}
+      td,th{border:1px solid #666;font-size:75%;vertical-align:baseline;padding:4px 5px}
+      th{position:sticky;top:0;background:inherit}
+      .e{width:28%;min-width:180px}
+      .v{max-width:none;overflow-wrap:anywhere;word-break:break-word}
+      hr{width:100%;max-width:100%}
+      img{max-width:100%;height:auto}
+      pre{white-space:pre-wrap;overflow-wrap:anywhere}
+      h1,h2{scroll-margin-top:12px}
+    </style></head>`,
+  );
+
+  els.phpInfoFrame.srcdoc = responsivePhpInfoHtml;
 }
 
 function requestPhpInfoCapture() {
@@ -512,7 +520,7 @@ async function main() {
 }
 
 els.refresh.addEventListener("click", () => {
-  restartRuntime();
+  navigateWithinRuntime(currentPath);
 });
 
 els.homeButton.addEventListener("click", navigateHome);
@@ -576,6 +584,15 @@ els.reset.addEventListener("click", () => {
     return;
   }
   clearScopeSession(scopeId);
+  // Clear the imported blueprint unless it was supplied via URL parameter,
+  // so a plain reset boots without any previously loaded blueprint.
+  if (!hasBlueprintUrlOverride(window.location.href)) {
+    clearActiveBlueprint(scopeId);
+    activeBlueprint = buildDefaultBlueprint(config);
+    updateBlueprintTextarea();
+  }
+  currentPath = activeBlueprint?.landingPage || config.landingPath || "/";
+  els.address.value = currentPath;
   pendingCleanBoot = true;
   remoteFrameBooted = false;
   serviceWorkerReady = null;
