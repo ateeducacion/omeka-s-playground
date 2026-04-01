@@ -1,8 +1,7 @@
-// Cloudflare Worker used by the public GitHub Pages deployment.
-// We keep this source in-repo because the static site cannot serve /__addon_proxy__,
-// and remote GitHub ZIP downloads are not reliable via direct browser fetches due to CORS.
-// Production uses https://zip-proxy.erseco.workers.dev/ while local development keeps
-// using the same-origin proxy from scripts/dev-server.mjs.
+// Shared Cloudflare Worker for omeka-s-playground and facturascripts-playground.
+// Proxies allowed URLs with CORS headers for PHP WASM networking (tcpOverFetch).
+// Production: https://zip-proxy.erseco.workers.dev/
+// Local development uses the same-origin proxy from scripts/dev-server.mjs.
 
 export default {
   async fetch(request) {
@@ -64,19 +63,25 @@ export default {
       return jsonResponse(
         {
           error:
-            "The provided URL is not allowed. Only ZIP downloads and allowed API endpoints are supported.",
+            "The provided URL is not allowed. Only trusted hosts and ZIP downloads are supported.",
         },
         400,
       );
     }
 
     try {
+      const acceptHeader = isFacturaScriptsPluginPage(parsedTargetUrl)
+        ? "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8"
+        : looksLikeZipUrl(parsedTargetUrl)
+          ? "application/zip, application/octet-stream;q=0.9, */*;q=0.8"
+          : "*/*";
+
       const upstreamResponse = await fetch(parsedTargetUrl.toString(), {
         method: "GET",
         redirect: "follow",
         headers: {
           "User-Agent": "zip-proxy-worker",
-          Accept: "application/zip, application/octet-stream;q=0.9, */*;q=0.8",
+          Accept: acceptHeader,
         },
       });
 
@@ -95,22 +100,24 @@ export default {
 
       applyCorsHeaders(headers);
 
-      // Only set ZIP-specific headers for actual ZIP downloads.
-      const contentType = headers.get("Content-Type") || "";
+      headers.set(
+        "Content-Type",
+        headers.get("Content-Type") ||
+          (looksLikeZipUrl(parsedTargetUrl)
+            ? "application/zip"
+            : isFacturaScriptsPluginPage(parsedTargetUrl)
+              ? "text/html; charset=utf-8"
+              : "application/octet-stream"),
+      );
+
       if (
-        parsedTargetUrl.pathname.toLowerCase().endsWith(".zip") ||
-        contentType.includes("zip") ||
-        contentType.includes("octet-stream")
+        !headers.get("Content-Disposition") &&
+        looksLikeZipUrl(parsedTargetUrl)
       ) {
-        if (!headers.get("Content-Type")) {
-          headers.set("Content-Type", "application/zip");
-        }
-        if (!headers.get("Content-Disposition")) {
-          headers.set(
-            "Content-Disposition",
-            `attachment; filename="${buildZipFilename(parsedTargetUrl)}"`,
-          );
-        }
+        headers.set(
+          "Content-Disposition",
+          `attachment; filename="${buildZipFilename(parsedTargetUrl)}"`,
+        );
       }
 
       return new Response(upstreamResponse.body, {
@@ -121,7 +128,7 @@ export default {
     } catch (error) {
       return jsonResponse(
         {
-          error: "Failed to fetch remote ZIP file.",
+          error: "Failed to fetch remote resource.",
           details: error.message,
         },
         502,
@@ -136,7 +143,8 @@ function corsHeaders() {
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Accept",
     "Access-Control-Expose-Headers":
-      "Content-Disposition, Content-Type, Content-Length",
+      "Content-Disposition, Content-Type, Content-Length, X-Playground-Cors-Proxy",
+    "X-Playground-Cors-Proxy": "true",
     "Access-Control-Max-Age": "86400",
   };
 }
@@ -160,56 +168,65 @@ function jsonResponse(data, status) {
 }
 
 /**
- * Check if a URL is allowed to be proxied.
- * Accepts ZIP downloads and trusted API endpoints.
+ * Trusted hosts and URL patterns allowed by the proxy.
+ * Combines hosts from omeka-s-playground and facturascripts-playground.
  */
 function isAllowedUrl(url) {
   const hostname = url.hostname.toLowerCase();
   const pathname = url.pathname.toLowerCase();
 
-  // ZIP downloads (existing behavior).
-  if (pathname.endsWith(".zip")) {
-    return true;
-  }
-  if (pathname.includes("/zip/")) {
-    return true;
-  }
-  if (pathname.includes("archive/refs/heads/")) {
-    return true;
-  }
-  if (pathname.includes("archive/refs/tags/")) {
-    return true;
-  }
+  // ZIP download patterns (any host).
+  if (pathname.endsWith(".zip")) return true;
+  if (pathname.includes("/zip/")) return true;
+  if (pathname.includes("archive/refs/heads/")) return true;
+  if (pathname.includes("archive/refs/tags/")) return true;
 
-  // GitHub release asset downloads.
-  if (hostname === "github.com" && pathname.includes("/releases/download/")) {
-    return true;
-  }
-  if (hostname === "objects.githubusercontent.com") {
-    return true;
-  }
+  // GitHub.
+  if (hostname === "github.com") return true;
+  if (hostname === "codeload.github.com") return true;
+  if (hostname === "objects.githubusercontent.com") return true;
+  if (hostname === "raw.githubusercontent.com") return true;
+  if (hostname === "api.github.com") return true;
 
-  // GitHub API (JSON).
-  if (hostname === "api.github.com") {
-    return true;
-  }
+  // GitLab.
+  if (hostname === "gitlab.com") return true;
 
-  // jsDelivr API and CDN (CORS-friendly mirrors).
-  if (hostname === "data.jsdelivr.com" || hostname === "cdn.jsdelivr.net") {
-    return true;
-  }
+  // jsDelivr CDN and API.
+  if (hostname === "cdn.jsdelivr.net") return true;
+  if (hostname === "data.jsdelivr.com") return true;
 
   // Omeka addon catalog.
-  if (hostname === "omeka.org") {
-    return true;
-  }
+  if (hostname === "omeka.org") return true;
 
-  // Raw GitHub content.
-  if (hostname === "raw.githubusercontent.com") {
-    return true;
-  }
+  // FacturaScripts.
+  if (hostname === "facturascripts.com") return true;
+
+  // FacturaScripts plugin page (HTML scraping).
+  if (isFacturaScriptsPluginPage(url)) return true;
+
+  // FacturaScripts build downloads.
+  if (/\/downloadbuild\/\d+\/(stable|beta)$/u.test(pathname)) return true;
 
   return false;
+}
+
+function looksLikeZipUrl(url) {
+  const pathname = url.pathname.toLowerCase();
+
+  if (pathname.endsWith(".zip")) return true;
+  if (pathname.includes("/zip/")) return true;
+  if (pathname.includes("archive/refs/heads/")) return true;
+  if (pathname.includes("archive/refs/tags/")) return true;
+  if (/\/downloadbuild\/\d+\/(stable|beta)$/u.test(pathname)) return true;
+
+  return false;
+}
+
+function isFacturaScriptsPluginPage(url) {
+  return (
+    url.hostname.toLowerCase() === "facturascripts.com" &&
+    /^\/plugins\/[^/]+\/?$/u.test(url.pathname)
+  );
 }
 
 function buildZipFilename(url) {
