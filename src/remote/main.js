@@ -237,6 +237,13 @@ async function bootstrapRemote() {
   await waitForServiceWorkerControl();
   setRemoteProgress("Service Worker ready and controlling this tab.", 0.12);
 
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      kind: "configure-service-worker",
+      addonProxyUrl: config.addonProxyUrl || null,
+    });
+  }
+
   if (!phpWorker) {
     const workerUrl = new URL(
       "../../dist/php-worker.bundle.js",
