@@ -3,6 +3,7 @@
   "defaultBlueprintUrl": "./assets/blueprints/default.blueprint.json",
   "addonProxyPath": "/__addon_proxy__",
   "addonProxyUrl": "https://zip-proxy.erseco.workers.dev/",
+  "phpCorsProxyUrl": "https://zip-proxy.erseco.workers.dev/?url=",
   "siteTitle": "Omeka S Playground",
   "landingPath": "/admin",
   "locale": "en_US",

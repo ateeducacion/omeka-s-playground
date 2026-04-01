@@ -1,5 +1,4 @@
 import { unzipSync } from "../../vendor/fflate/esm/browser.js";
-import { parseGitHubArchiveUrl } from "../shared/github.js";
 import { APP_LOCATION, resolveProxyUrl } from "./networking.js";
 
 export const PERSIST_ADDONS_ROOT = "/persist/addons";
@@ -255,119 +254,6 @@ async function fetchBytes(url) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-async function fetchJson(url, init = {}) {
-  const response = await fetch(String(url), {
-    ...init,
-    cache: init.cache || "no-store",
-    redirect: init.redirect || "follow",
-  });
-  return response;
-}
-
-function encodeUrlPath(path) {
-  return String(path || "")
-    .split("/")
-    .filter((segment) => segment.length > 0)
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-}
-
-function buildGitHubContentsApiUrl({ owner, repo, ref, path = "" }) {
-  const encodedPath = encodeUrlPath(path);
-  const pathname = encodedPath
-    ? `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`
-    : `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents`;
-  const url = new URL(pathname, "https://api.github.com");
-  url.searchParams.set("ref", ref);
-  return url;
-}
-
-function buildRawGitHubUrl({ owner, repo, ref, path }) {
-  const encodedRef = encodeUrlPath(ref);
-  const encodedPath = encodeUrlPath(path);
-  return new URL(
-    `${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodedRef}/${encodedPath}`,
-    "https://raw.githubusercontent.com/",
-  );
-}
-
-async function fetchGitHubDirectoryEntries(archive, path) {
-  const response = await fetchJson(
-    buildGitHubContentsApiUrl({
-      owner: archive.owner,
-      repo: archive.repo,
-      ref: archive.ref,
-      path,
-    }),
-    {
-      headers: {
-        Accept: "application/vnd.github+json",
-      },
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Unable to read GitHub repository contents for ${archive.owner}/${archive.repo}@${archive.ref}: ${response.status}`,
-    );
-  }
-
-  const payload = await response.json();
-  return Array.isArray(payload) ? payload : [payload];
-}
-
-/**
- * Install an addon from a GitHub repo via jsDelivr CDN.
- * jsDelivr mirrors GitHub repos and serves files with CORS headers,
- * avoiding both the GitHub API rate limit and the need for a proxy.
- */
-async function writeJsDelivrArchiveToFs(FS, targetDir, archive) {
-  const pkg = `gh/${archive.owner}/${archive.repo}@${archive.ref}`;
-  const listUrl = `https://data.jsdelivr.com/v1/packages/${pkg}?structure=flat`;
-
-  const listResponse = await fetch(listUrl);
-  if (!listResponse.ok) {
-    throw new Error(
-      `jsDelivr listing failed for ${pkg}: ${listResponse.status}`,
-    );
-  }
-
-  const listing = await listResponse.json();
-  const files = listing.files || [];
-  if (files.length === 0) {
-    throw new Error(`No files found for ${pkg} on jsDelivr.`);
-  }
-
-  ensureDirSync(FS, targetDir);
-  const cdnBase = `https://cdn.jsdelivr.net/${pkg}`;
-  let written = 0;
-
-  for (const file of files) {
-    const filePath = file.name;
-    if (!filePath || filePath.endsWith("/")) {
-      continue;
-    }
-
-    const fullPath = `${targetDir}${filePath}`.replace(/\/{2,}/gu, "/");
-    const parentDir = fullPath.substring(0, fullPath.lastIndexOf("/"));
-    if (parentDir && parentDir !== targetDir) {
-      ensureDirSync(FS, parentDir);
-    }
-
-    const fileResponse = await fetch(`${cdnBase}${filePath}`);
-    if (!fileResponse.ok) {
-      continue;
-    }
-
-    FS.writeFile(fullPath, new Uint8Array(await fileResponse.arrayBuffer()));
-    written += 1;
-  }
-
-  if (!written) {
-    throw new Error(`No files written from jsDelivr for ${pkg}.`);
-  }
-}
-
 function buildDownloadUrl(downloadUrl, proxyBaseUrl) {
   const rawUrl = String(downloadUrl || "").trim();
   if (!rawUrl) {
@@ -439,66 +325,6 @@ function writeArchiveToFs(FS, targetDir, zipBytes) {
 
   if (!writtenFiles) {
     throw new Error("Archive did not contain any installable files.");
-  }
-}
-
-async function writeGitHubArchiveToFs(FS, targetDir, archive) {
-  ensureDirSync(FS, targetDir);
-
-  let writtenFiles = 0;
-  const pendingDirs = [""];
-
-  while (pendingDirs.length > 0) {
-    const currentDir = pendingDirs.shift() || "";
-    const entries = await fetchGitHubDirectoryEntries(archive, currentDir);
-
-    for (const entry of entries) {
-      const relativePath = normalizeArchivePath(entry?.path || "");
-      if (isSkippableArchivePath(relativePath) || !relativePath) {
-        continue;
-      }
-
-      if (isUnsafeArchivePath(relativePath)) {
-        throw new Error(`Repository contains unsafe path "${relativePath}".`);
-      }
-
-      if (entry.type === "dir") {
-        ensureDirSync(
-          FS,
-          `${targetDir}/${relativePath}`.replace(/\/{2,}/gu, "/"),
-        );
-        pendingDirs.push(relativePath);
-        continue;
-      }
-
-      if (entry.type !== "file") {
-        throw new Error(
-          `Unsupported GitHub repository entry type "${entry.type}" for "${relativePath}".`,
-        );
-      }
-
-      const fileBytes = await fetchBytes(
-        entry.download_url ||
-          buildRawGitHubUrl({
-            owner: archive.owner,
-            repo: archive.repo,
-            ref: archive.ref,
-            path: relativePath,
-          }),
-      );
-      const targetPath = `${targetDir}/${relativePath}`.replace(
-        /\/{2,}/gu,
-        "/",
-      );
-      const parentDir = targetPath.split("/").slice(0, -1).join("/") || "/";
-      ensureDirSync(FS, parentDir);
-      FS.writeFile(targetPath, fileBytes);
-      writtenFiles += 1;
-    }
-  }
-
-  if (!writtenFiles) {
-    throw new Error("GitHub repository did not contain any installable files.");
   }
 }
 
@@ -651,7 +477,6 @@ async function resolveSource(kind, spec) {
       type,
       fingerprint: `url:${downloadUrl}`,
       downloadUrl,
-      githubArchive: parseGitHubArchiveUrl(downloadUrl),
       pageUrl: null,
       slug: null,
     };
@@ -663,7 +488,6 @@ async function resolveSource(kind, spec) {
       type,
       fingerprint: `omeka.org:${kind}:${resolved.slug}:${resolved.downloadUrl}`,
       downloadUrl: resolved.downloadUrl,
-      githubArchive: parseGitHubArchiveUrl(resolved.downloadUrl),
       pageUrl: resolved.pageUrl,
       slug: resolved.slug,
     };
@@ -725,31 +549,11 @@ async function materializeAddon({
     removeNodeIfPresent(FS, persistedPath);
     ensureDirSync(FS, persistedPath);
 
-    try {
-      const zipBytes = await fetchBytes(
-        buildDownloadUrl(source.downloadUrl, proxyBaseUrl),
-      );
-      publish(`Extracting ${kind} "${spec.name}".`, 0.57);
-      writeArchiveToFs(FS, persistedPath, zipBytes);
-    } catch (zipError) {
-      if (!source.githubArchive) {
-        throw zipError;
-      }
-
-      // Fallback 1: jsDelivr CDN (free, CORS-enabled, no rate limits)
-      try {
-        publish(`Fetching ${kind} "${spec.name}" via jsDelivr CDN.`, 0.55);
-        removeNodeIfPresent(FS, persistedPath);
-        ensureDirSync(FS, persistedPath);
-        await writeJsDelivrArchiveToFs(FS, persistedPath, source.githubArchive);
-      } catch {
-        // Fallback 2: GitHub Contents API (rate-limited, last resort)
-        publish(`Fetching ${kind} "${spec.name}" via GitHub API.`, 0.57);
-        removeNodeIfPresent(FS, persistedPath);
-        ensureDirSync(FS, persistedPath);
-        await writeGitHubArchiveToFs(FS, persistedPath, source.githubArchive);
-      }
-    }
+    const zipBytes = await fetchBytes(
+      buildDownloadUrl(source.downloadUrl, proxyBaseUrl),
+    );
+    publish(`Extracting ${kind} "${spec.name}".`, 0.57);
+    writeArchiveToFs(FS, persistedPath, zipBytes);
 
     writeJsonSync(FS, manifestPath, {
       name: spec.name,

@@ -123,6 +123,7 @@ async function getRuntimeState() {
           ? __APP_ROOT__
           : new URL("./", self.location.href).toString(),
       phpVersion: runtime.phpVersion || runtime.phpVersionLabel,
+      phpCorsProxyUrl: config.phpCorsProxyUrl || null,
     });
 
     postShell({

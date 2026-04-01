@@ -3,13 +3,37 @@ import {
   PHP,
   setPhpIniEntries,
 } from "@php-wasm/universal";
-import { loadWebRuntime } from "@php-wasm/web";
+import {
+  certificateToPEM,
+  generateCertificate,
+  loadWebRuntime,
+} from "@php-wasm/web";
 import { OMEKA_ROOT } from "./bootstrap.js";
 import { wrapPhpInstance } from "./php-compat.js";
 
 const PERSIST_ROOT = "/persist";
 const TEMP_ROOT = "/tmp";
 const DEFAULT_PHP_VERSION = "8.3";
+
+const TCP_OVER_FETCH_CA_PATH = "/internal/shared/playground-ca.pem";
+let cachedTcpOverFetchCaPromise = null;
+
+async function getTcpOverFetchOptions(corsProxyUrl) {
+  if (!cachedTcpOverFetchCaPromise) {
+    cachedTcpOverFetchCaPromise = generateCertificate({
+      subject: {
+        commonName: "Omeka S Playground CA",
+        organizationName: "Omeka S Playground",
+        countryName: "ES",
+      },
+      basicConstraints: { ca: true },
+    });
+  }
+  return {
+    CAroot: await cachedTcpOverFetchCaPromise,
+    ...(corsProxyUrl ? { corsProxyUrl } : {}),
+  };
+}
 
 /**
  * Create the primary PHP CGI runtime for serving Omeka requests.
@@ -20,15 +44,18 @@ const DEFAULT_PHP_VERSION = "8.3";
  */
 export function createPhpRuntime(
   _runtime,
-  { appBaseUrl, phpVersion, webRoot } = {},
+  { appBaseUrl, phpVersion, webRoot, corsProxyUrl, phpCorsProxyUrl } = {},
 ) {
   const resolvedPhpVersion = phpVersion || DEFAULT_PHP_VERSION;
   let wrapped = null;
 
   const deferred = {
     async refresh() {
+      const resolvedCorsProxyUrl = corsProxyUrl ?? phpCorsProxyUrl ?? null;
+      const tcpOverFetch = await getTcpOverFetchOptions(resolvedCorsProxyUrl);
       const runtimeId = await loadWebRuntime(resolvedPhpVersion, {
         withIntl: true,
+        tcpOverFetch,
       });
       const php = new PHP(runtimeId);
       const FS = php[__private__dont__use].FS;
@@ -50,6 +77,11 @@ export function createPhpRuntime(
         /* exists */
       }
 
+      php.writeFile(
+        TCP_OVER_FETCH_CA_PATH,
+        `${certificateToPEM(tcpOverFetch.CAroot.certificate)}\n`,
+      );
+
       // Apply php.ini settings
       await setPhpIniEntries(php, {
         memory_limit: "256M",
@@ -59,6 +91,8 @@ export function createPhpRuntime(
         "session.save_path": "/persist/mutable/session",
         upload_tmp_dir: "/tmp",
         "date.timezone": "UTC",
+        "openssl.cafile": TCP_OVER_FETCH_CA_PATH,
+        "curl.cainfo": TCP_OVER_FETCH_CA_PATH,
         // OPcache tuning — use in-memory file cache with a high file limit
         // and no timestamp checks (the readonly bundle never changes within
         // a session), so PHP avoids recompiling on every request.
