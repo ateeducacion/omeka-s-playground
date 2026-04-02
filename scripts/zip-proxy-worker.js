@@ -12,10 +12,10 @@ export default {
       });
     }
 
-    if (request.method !== "GET") {
+    if (request.method !== "GET" && request.method !== "HEAD") {
       return jsonResponse(
         {
-          error: "Method not allowed. Only GET is supported.",
+          error: "Method not allowed. Only GET and HEAD are supported.",
         },
         405,
       );
@@ -140,7 +140,7 @@ export default {
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
     "Access-Control-Allow-Headers": "*",
     "Access-Control-Expose-Headers":
       "Content-Disposition, Content-Type, Content-Length, X-Playground-Cors-Proxy",
