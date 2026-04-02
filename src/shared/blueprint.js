@@ -461,22 +461,25 @@ export async function resolveBlueprintForShell(scopeId, config) {
   }
 
   const url = new URL(window.location.href);
-  const blueprintDataParam = url.searchParams.get("blueprint-data");
-  if (blueprintDataParam) {
-    const payload = parseBlueprintDataParam(blueprintDataParam, config);
+
+  // 1. ?blueprint= (inline base64/JSON — primary, matches moodle-playground)
+  const blueprintParam = url.searchParams.get("blueprint");
+  if (blueprintParam) {
+    const payload = parseBlueprintDataParam(blueprintParam, config);
     saveActiveBlueprint(scopeId, payload);
     return payload;
   }
 
-  const blueprintParam = url.searchParams.get("blueprint");
-  if (blueprintParam) {
+  // 2. ?blueprint-url= (remote URL — primary, matches moodle-playground)
+  const blueprintUrlParam = url.searchParams.get("blueprint-url");
+  if (blueprintUrlParam) {
     const response = await fetch(
-      new URL(blueprintParam, window.location.href),
+      new URL(blueprintUrlParam, window.location.href),
       { cache: "no-store" },
     );
     if (!response.ok) {
       throw new Error(
-        `Unable to load blueprint from ${blueprintParam}: ${response.status}`,
+        `Unable to load blueprint from ${blueprintUrlParam}: ${response.status}`,
       );
     }
     const payload = normalizeBlueprint(await response.json(), config);
@@ -484,10 +487,17 @@ export async function resolveBlueprintForShell(scopeId, config) {
     return payload;
   }
 
-  const stored = loadActiveBlueprint(scopeId);
-  if (stored) {
-    return normalizeBlueprint(stored, config);
+  // 3. ?blueprint-data= (legacy alias for ?blueprint=, kept for backward compat)
+  const blueprintDataParam = url.searchParams.get("blueprint-data");
+  if (blueprintDataParam) {
+    console.warn("[blueprint] ?blueprint-data= is deprecated, use ?blueprint= instead.");
+    const payload = parseBlueprintDataParam(blueprintDataParam, config);
+    saveActiveBlueprint(scopeId, payload);
+    return payload;
   }
+
+  // sessionStorage blueprints are not reloaded on bare URL navigations —
+  // the ephemeral runtime should boot clean.
 
   if (config.defaultBlueprintUrl) {
     const response = await fetch(
