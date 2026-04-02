@@ -462,9 +462,26 @@ export async function resolveBlueprintForShell(scopeId, config) {
 
   const url = new URL(window.location.href);
 
-  // 1. ?blueprint= (inline base64/JSON — primary, matches moodle-playground)
+  // 1. ?blueprint= (inline base64/JSON, or remote URL for backward compat)
   const blueprintParam = url.searchParams.get("blueprint");
   if (blueprintParam) {
+    const looksLikeUrl =
+      blueprintParam.startsWith("http://") ||
+      blueprintParam.startsWith("https://");
+    if (looksLikeUrl) {
+      const response = await fetch(
+        new URL(blueprintParam, window.location.href),
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        throw new Error(
+          `Unable to load blueprint from ${blueprintParam}: ${response.status}`,
+        );
+      }
+      const payload = normalizeBlueprint(await response.json(), config);
+      saveActiveBlueprint(scopeId, payload);
+      return payload;
+    }
     const payload = parseBlueprintDataParam(blueprintParam, config);
     saveActiveBlueprint(scopeId, payload);
     return payload;
