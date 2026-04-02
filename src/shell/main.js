@@ -4,7 +4,6 @@ import {
   exportBlueprintPayload,
   parseImportedBlueprintPayload,
   resolveBlueprintForShell,
-  saveActiveBlueprint,
 } from "../shared/blueprint.js";
 import { getDefaultRuntime, loadPlaygroundConfig } from "../shared/config.js";
 import { hasBlueprintUrlOverride, resolveRemoteUrl } from "../shared/paths.js";
@@ -319,14 +318,15 @@ async function importPayload(file) {
     return;
   }
 
-  activeBlueprint = imported.blueprint;
-  saveActiveBlueprint(scopeId, activeBlueprint);
-  pendingCleanBoot = true;
-  currentPath = activeBlueprint.landingPage || config.landingPath || "/";
-  els.address.value = currentPath;
-  updateBlueprintTextarea();
-  saveState({ importedBlueprintAt: new Date().toISOString() });
-  await updateFrame();
+  // Encode blueprint into URL and reload for clean WASM runtime
+  const encoded = btoa(
+    unescape(encodeURIComponent(JSON.stringify(imported.blueprint))),
+  );
+  const url = new URL(window.location.href);
+  url.searchParams.set("blueprint", encoded);
+  url.searchParams.delete("blueprint-url");
+  url.searchParams.delete("blueprint-data");
+  window.location.href = url.toString();
 }
 
 function bindShellChannel() {

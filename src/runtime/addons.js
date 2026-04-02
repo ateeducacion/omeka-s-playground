@@ -247,6 +247,18 @@ async function fetchBytes(url) {
     );
   }
 
+  // Retry once on transient CDN/proxy errors
+  if (!response.ok && (response.status === 502 || response.status === 503)) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      response = await fetch(String(url), { cache: "no-store" });
+    } catch (error) {
+      throw new Error(
+        `Unable to download ${url}: ${error?.message || String(error)}`,
+      );
+    }
+  }
+
   if (!response.ok) {
     throw new Error(`Unable to download ${url}: ${response.status}`);
   }

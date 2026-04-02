@@ -51,7 +51,9 @@ export function hasBlueprintUrlOverride(locationLike = window.location.href) {
         );
 
   return (
-    url.searchParams.has("blueprint") || url.searchParams.has("blueprint-data")
+    url.searchParams.has("blueprint") ||
+    url.searchParams.has("blueprint-url") ||
+    url.searchParams.has("blueprint-data")
   );
 }
 
