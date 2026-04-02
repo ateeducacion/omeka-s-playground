@@ -490,7 +490,9 @@ export async function resolveBlueprintForShell(scopeId, config) {
   // 3. ?blueprint-data= (legacy alias for ?blueprint=, kept for backward compat)
   const blueprintDataParam = url.searchParams.get("blueprint-data");
   if (blueprintDataParam) {
-    console.warn("[blueprint] ?blueprint-data= is deprecated, use ?blueprint= instead.");
+    console.warn(
+      "[blueprint] ?blueprint-data= is deprecated, use ?blueprint= instead.",
+    );
     const payload = parseBlueprintDataParam(blueprintDataParam, config);
     saveActiveBlueprint(scopeId, payload);
     return payload;

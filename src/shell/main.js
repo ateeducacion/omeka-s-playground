@@ -319,7 +319,9 @@ async function importPayload(file) {
   }
 
   // Encode blueprint into URL and reload for clean WASM runtime
-  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(imported.blueprint))));
+  const encoded = btoa(
+    unescape(encodeURIComponent(JSON.stringify(imported.blueprint))),
+  );
   const url = new URL(window.location.href);
   url.searchParams.set("blueprint", encoded);
   url.searchParams.delete("blueprint-url");
