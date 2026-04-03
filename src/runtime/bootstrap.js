@@ -2,7 +2,7 @@ import {
   buildEffectivePlaygroundConfig,
   normalizeBlueprint,
 } from "../shared/blueprint.js";
-import { materializeBlueprintAddons } from "./addons.js";
+import { materializeBlueprintAddons, mountPersistedAddons } from "./addons.js";
 import { buildManifestState, fetchManifest } from "./manifest.js";
 import { resolveProxyUrl } from "./networking.js";
 import { mountReadonlyCore } from "./vfs.js";
@@ -136,9 +136,6 @@ return [
                             return 'ImageMagick is not available in the browser playground. Thumbnail generation uses GD when available and otherwise falls back to no thumbnails.';
                         }
                         if (str_contains($command, $this->browserPhpCliPath)) {
-                            // Delegate to the real exec() — the php-wasm spawn
-                            // handler intercepts proc_open/exec for PHP commands
-                            // and runs them in-process on the same WASM runtime.
                             $output = [];
                             $exitCode = 0;
                             exec($command . ' 2>&1', $output, $exitCode);
@@ -1199,24 +1196,19 @@ async function appendPhpIniOverrides(php, config) {
   );
 }
 
-export async function bootstrapOmeka({
+export async function prepareOmekaRuntimeFilesystem({
   blueprint,
-  clean = false,
   config,
   php,
-  publish,
+  publish = () => {},
   runtimeId,
+  mountPersistedAddonsOnly = false,
 }) {
   const normalizedBlueprint = normalizeBlueprint(blueprint, config);
   const effectiveConfig = buildEffectivePlaygroundConfig(
     config,
     normalizedBlueprint,
   );
-
-  if (clean) {
-    publish("Resetting persisted runtime state.", 0.16);
-    await resetPersistedState(php);
-  }
 
   publish("Preparing PHP filesystem layout.", 0.2);
   await ensureMutableLayout(php);
@@ -1228,6 +1220,56 @@ export async function bootstrapOmeka({
     runtimeId,
     effectiveConfig.bundleVersion,
   );
+
+  publish("Mounting readonly Omeka core bundle.", 0.4);
+  await mountReadonlyCore(php, manifest, { root: OMEKA_ROOT, publish });
+  await linkMutableFilesDir(php);
+
+  publish("Writing SQLite and local config overrides.", 0.6);
+  await php.writeFile(
+    `${OMEKA_ROOT}/config/database.ini`,
+    encoder.encode(buildDatabaseIni()),
+  );
+  await php.writeFile(
+    `${OMEKA_ROOT}/config/local.config.php`,
+    encoder.encode(buildLocalConfig(effectiveConfig)),
+  );
+  await appendPhpIniOverrides(php, effectiveConfig);
+
+  if (mountPersistedAddonsOnly) {
+    publish("Mounting persisted addons.", 0.62);
+    await mountPersistedAddons({ php, omekaRoot: OMEKA_ROOT });
+  }
+
+  return {
+    effectiveConfig,
+    manifest,
+    manifestState,
+    normalizedBlueprint,
+  };
+}
+
+export async function bootstrapOmeka({
+  blueprint,
+  clean = false,
+  config,
+  php,
+  publish,
+  runtimeId,
+}) {
+  if (clean) {
+    publish("Resetting persisted runtime state.", 0.16);
+    await resetPersistedState(php);
+  }
+
+  const { effectiveConfig, manifest, manifestState, normalizedBlueprint } =
+    await prepareOmekaRuntimeFilesystem({
+      blueprint,
+      config,
+      php,
+      publish,
+      runtimeId,
+    });
   const savedState = await readJson(php, PLAYGROUND_CONFIG_PATH);
 
   if (
@@ -1239,11 +1281,6 @@ export async function bootstrapOmeka({
     await safeUnlink(php, PLAYGROUND_DB_PATH);
     await safeUnlink(php, PLAYGROUND_CONFIG_PATH);
   }
-
-  publish("Mounting readonly Omeka core bundle.", 0.4);
-  await mountReadonlyCore(php, manifest, { root: OMEKA_ROOT, publish });
-  await linkMutableFilesDir(php);
-
   publish("Preparing blueprint modules and themes.", 0.52);
   const addonsState = await materializeBlueprintAddons({
     php,
@@ -1259,17 +1296,6 @@ export async function bootstrapOmeka({
     blueprint: normalizedBlueprint,
     publish,
   });
-
-  publish("Writing SQLite and local config overrides.", 0.6);
-  await php.writeFile(
-    `${OMEKA_ROOT}/config/database.ini`,
-    encoder.encode(buildDatabaseIni()),
-  );
-  await php.writeFile(
-    `${OMEKA_ROOT}/config/local.config.php`,
-    encoder.encode(buildLocalConfig(effectiveConfig)),
-  );
-  await appendPhpIniOverrides(php, effectiveConfig);
   await php.writeFile(
     `${OMEKA_ROOT}/playground-probe.php`,
     encoder.encode(buildProbeScript()),
