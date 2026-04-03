@@ -18,7 +18,6 @@
 import { createSpawnHandler } from "@php-wasm/util";
 
 const MAX_SPAWN_DEPTH = 3;
-let currentSpawnDepth = 0;
 
 /**
  * Paths that are recognized as a PHP binary in this playground environment.
@@ -55,6 +54,10 @@ function isAllowedPhpBinary(bin) {
  * @returns {Function} Async callback matching the createSpawnHandler() signature.
  */
 function buildSpawnProgram(php) {
+  // Track recursion depth per-handler (each PHP instance gets its own
+  // counter via the closure, avoiding shared state across workers).
+  let spawnDepth = 0;
+
   return async (command, processApi, _options) => {
     const [bin, ...args] = command;
 
@@ -62,13 +65,15 @@ function buildSpawnProgram(php) {
       processApi.stderr(
         `Command not available in browser playground: ${bin}\n`,
       );
-      // Allow PHP to read the stderr data before exiting
+      // @php-wasm streams are asynchronous: the 1ms yield lets the
+      // Emscripten event loop flush pipe data to PHP before the child
+      // process signals exit and closes the file descriptors.
       await new Promise((resolve) => setTimeout(resolve, 1));
       processApi.exit(127);
       return;
     }
 
-    if (currentSpawnDepth >= MAX_SPAWN_DEPTH) {
+    if (spawnDepth >= MAX_SPAWN_DEPTH) {
       processApi.stderr(
         `Spawn depth limit reached (${MAX_SPAWN_DEPTH}). Recursive proc_open calls are not supported.\n`,
       );
@@ -82,6 +87,11 @@ function buildSpawnProgram(php) {
     //   php /path/to/script.php --arg1 --arg2
     //   php -d setting=value /path/to/script.php
     //   php /www/omeka/application/omeka jobs:dispatch  (no .php extension)
+    //
+    // The heuristic: skip flags (starting with "-"), then accept .php files
+    // or absolute paths (starting with "/") that are not ini overrides
+    // (containing "=", like -d foo=bar). This covers Omeka's CLI entry
+    // point at /www/omeka/application/omeka which has no .php extension.
     const scriptPath = args.find(
       (arg) =>
         !arg.startsWith("-") &&
@@ -94,7 +104,7 @@ function buildSpawnProgram(php) {
       const dashRIndex = args.indexOf("-r");
       if (dashRIndex >= 0 && args[dashRIndex + 1]) {
         const code = args[dashRIndex + 1];
-        currentSpawnDepth++;
+        spawnDepth++;
         try {
           const result = await php.run({ code: `<?php ${code}` });
           if (result.text) {
@@ -110,7 +120,7 @@ function buildSpawnProgram(php) {
           await new Promise((resolve) => setTimeout(resolve, 1));
           processApi.exit(1);
         } finally {
-          currentSpawnDepth--;
+          spawnDepth--;
         }
         return;
       }
@@ -123,9 +133,13 @@ function buildSpawnProgram(php) {
       return;
     }
 
-    currentSpawnDepth++;
+    spawnDepth++;
     try {
-      // Build $_SERVER['argv'] for the spawned script
+      // Build $_SERVER variables for the spawned script.
+      // argv is JSON-encoded because @php-wasm's $_SERVER entries are
+      // strings; PHP's actual $argv global is populated separately by
+      // the WASM runtime from the command line, but providing the
+      // JSON string in $_SERVER lets bootstrap code inspect it if needed.
       const argv = [bin, ...args];
 
       const result = await php.run({
@@ -156,7 +170,7 @@ function buildSpawnProgram(php) {
       await new Promise((resolve) => setTimeout(resolve, 1));
       processApi.exit(1);
     } finally {
-      currentSpawnDepth--;
+      spawnDepth--;
     }
   };
 }
