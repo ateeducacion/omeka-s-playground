@@ -47,6 +47,30 @@ function isAllowedPhpBinary(bin) {
 }
 
 /**
+ * Map of PHP CLI built-in flags to inline PHP code that emulates
+ * their output.  Only flags that Omeka S actually uses are listed.
+ */
+const PHP_VERSION_CODE =
+  '<?php echo "PHP " . phpversion() . " (cli) (php-wasm)" . PHP_EOL;';
+const CLI_BUILTIN_FLAGS = new Map([
+  ["--version", PHP_VERSION_CODE],
+  ["-v", PHP_VERSION_CODE],
+]);
+
+/**
+ * If `args` consists exclusively of a recognized PHP built-in flag
+ * (e.g. `--version`), return the inline PHP code that emulates it.
+ * Returns `null` otherwise.
+ */
+function getCliBuiltinCode(args) {
+  // Only match when there is exactly one arg and it is a known flag.
+  if (args.length !== 1) {
+    return null;
+  }
+  return CLI_BUILTIN_FLAGS.get(args[0]) ?? null;
+}
+
+/**
  * Build the spawn handler callback that will be wrapped by createSpawnHandler().
  *
  * @param {object} php - The raw @php-wasm/universal PHP instance (not the
@@ -107,6 +131,32 @@ function buildSpawnProgram(php) {
         spawnDepth++;
         try {
           const result = await php.run({ code: `<?php ${code}` });
+          if (result.text) {
+            processApi.stdout(result.text);
+          }
+          if (result.errors) {
+            processApi.stderr(result.errors);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          processApi.exit(result.exitCode ?? 0);
+        } catch (err) {
+          processApi.stderr(`PHP execution error: ${err.message}\n`);
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          processApi.exit(1);
+        } finally {
+          spawnDepth--;
+        }
+        return;
+      }
+
+      // Handle PHP CLI built-in flags that don't require a script path.
+      // Omeka's SystemInfoController runs `php --version` to report the
+      // runtime version on /admin/system-info.
+      const cliCode = getCliBuiltinCode(args);
+      if (cliCode) {
+        spawnDepth++;
+        try {
+          const result = await php.run({ code: cliCode });
           if (result.text) {
             processApi.stdout(result.text);
           }
@@ -190,6 +240,7 @@ export async function registerSpawnHandler(php) {
 
 export {
   buildSpawnProgram,
+  getCliBuiltinCode,
   isAllowedPhpBinary,
   MAX_SPAWN_DEPTH,
   PHP_BIN_ALLOWLIST,
