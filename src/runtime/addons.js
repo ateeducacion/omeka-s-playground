@@ -1,4 +1,8 @@
 import { unzipSync } from "../../vendor/fflate/esm/browser.js";
+import {
+  patchEasyAdminGitLabArchiveFallback,
+  patchEasyAdminSqliteSessionSupport,
+} from "./easyadmin-patches.js";
 import { APP_LOCATION, resolveProxyUrl } from "./networking.js";
 
 export const PERSIST_ADDONS_ROOT = "/persist/addons";
@@ -419,6 +423,8 @@ async function patchEasyAdminAddon(FS, persistedPath, proxyBaseUrl) {
       "    protected function fileGetContents($url): ?string\n    {\n        $uri = new HttpUri($url);\n        $this->httpClient->reset();\n        $this->httpClient->setUri($uri);\n        try {\n            $response = $this->httpClient->send();\n            $response = $response->isOk() ? $response->getBody() : null;\n        } catch (RuntimeException $e) {\n            $response = null;\n        }\n",
       "    protected function fileGetContents($url): ?string\n    {\n        if (!preg_match('~^https?://~i', (string) $url)) {\n            $response = @file_get_contents($url) ?: null;\n        } else {\n            $uri = new HttpUri($url);\n            $this->httpClient->reset();\n            $this->httpClient->setUri($uri);\n            try {\n                $response = $this->httpClient->send();\n                $response = $response->isOk() ? $response->getBody() : null;\n            } catch (RuntimeException $e) {\n                $response = null;\n            }\n        }\n",
     );
+    raw = patchEasyAdminGitLabArchiveFallback(raw);
+    raw = patchEasyAdminSqliteSessionSupport(raw);
 
     FS.writeFile(addonPluginPath, raw, { encoding: "utf8" });
   }
@@ -434,6 +440,36 @@ async function patchEasyAdminAddon(FS, persistedPath, proxyBaseUrl) {
       `@file_get_contents(${moduleCacheRoot} . '/omeka_s_selections.csv')`,
     );
     FS.writeFile(addonsFormFactoryPath, raw, { encoding: "utf8" });
+  }
+
+  const cronTasksPath = `${persistedPath}/src/Job/CronTasks.php`.replace(
+    /\/{2,}/gu,
+    "/",
+  );
+  if (pathExists(FS, cronTasksPath)) {
+    const raw = patchEasyAdminSqliteSessionSupport(
+      FS.readFile(cronTasksPath, { encoding: "utf8" }),
+    );
+    FS.writeFile(cronTasksPath, raw, { encoding: "utf8" });
+  }
+
+  const dbSessionPath = `${persistedPath}/src/Job/DbSession.php`.replace(
+    /\/{2,}/gu,
+    "/",
+  );
+  if (pathExists(FS, dbSessionPath)) {
+    const raw = patchEasyAdminSqliteSessionSupport(
+      FS.readFile(dbSessionPath, { encoding: "utf8" }),
+    );
+    FS.writeFile(dbSessionPath, raw, { encoding: "utf8" });
+  }
+
+  const modulePhpPath = `${persistedPath}/Module.php`.replace(/\/{2,}/gu, "/");
+  if (pathExists(FS, modulePhpPath)) {
+    const raw = patchEasyAdminSqliteSessionSupport(
+      FS.readFile(modulePhpPath, { encoding: "utf8" }),
+    );
+    FS.writeFile(modulePhpPath, raw, { encoding: "utf8" });
   }
 }
 
