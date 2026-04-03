@@ -212,14 +212,16 @@ function parseDownloadLink(html, pageUrl) {
   return null;
 }
 
-async function resolveOmekaOrgSource(kind, source) {
+async function resolveOmekaOrgSource(kind, source, proxyBaseUrl) {
   const slug = String(source.slug || "").trim();
   if (!slug) {
     throw new Error(`Missing omeka.org slug for ${kind}.`);
   }
 
   const pageUrl = buildPageUrl(kind, slug);
-  const response = await fetch(pageUrl, { cache: "no-store" });
+  const response = await fetch(buildDownloadUrl(pageUrl, proxyBaseUrl), {
+    cache: "no-store",
+  });
   if (!response.ok) {
     throw new Error(`Unable to load ${pageUrl}: ${response.status}`);
   }
@@ -467,7 +469,7 @@ function ensureAddonMount(FS, targetPath, sourcePath) {
   copyTreeSync(FS, sourcePath, targetPath);
 }
 
-async function resolveSource(kind, spec) {
+async function resolveSource(kind, spec, proxyBaseUrl) {
   const type = spec.source?.type || "bundled";
   if (type === "bundled") {
     return {
@@ -495,7 +497,11 @@ async function resolveSource(kind, spec) {
   }
 
   if (type === "omeka.org") {
-    const resolved = await resolveOmekaOrgSource(kind, spec.source || {});
+    const resolved = await resolveOmekaOrgSource(
+      kind,
+      spec.source || {},
+      proxyBaseUrl,
+    );
     return {
       type,
       fingerprint: `omeka.org:${kind}:${resolved.slug}:${resolved.downloadUrl}`,
@@ -527,6 +533,35 @@ function getPersistedAddonPath(kind, name) {
   return `${getCollectionRoot(kind)}/${name}`;
 }
 
+export async function mountPersistedAddons({ php, omekaRoot }) {
+  const binary = await php.binary;
+  const { FS } = binary;
+
+  for (const kind of ["module", "theme"]) {
+    const collectionRoot = getCollectionRoot(kind);
+    if (!pathExists(FS, collectionRoot)) {
+      continue;
+    }
+
+    const mountRoot = getMountRoot(omekaRoot, kind);
+    ensureDirSync(FS, mountRoot);
+
+    for (const entry of FS.readdir(collectionRoot)) {
+      if (entry === "." || entry === "..") {
+        continue;
+      }
+
+      const sourcePath = `${collectionRoot}/${entry}`.replace(/\/{2,}/gu, "/");
+      if (!isDirectoryManifest(FS, sourcePath)) {
+        continue;
+      }
+
+      const targetPath = `${mountRoot}/${entry}`.replace(/\/{2,}/gu, "/");
+      ensureAddonMount(FS, targetPath, sourcePath);
+    }
+  }
+}
+
 async function materializeAddon({
   FS,
   kind,
@@ -535,7 +570,7 @@ async function materializeAddon({
   publish,
   proxyBaseUrl,
 }) {
-  const source = await resolveSource(kind, spec);
+  const source = await resolveSource(kind, spec, proxyBaseUrl);
   const persistedPath = getPersistedAddonPath(kind, spec.name);
   const manifestPath = getManifestPath(kind, spec.name);
   const mountPath = `${getMountRoot(omekaRoot, kind)}/${spec.name}`;

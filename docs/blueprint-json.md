@@ -112,6 +112,14 @@ The most important top-level properties are:
 }
 ```
 
+## Example file for Common + EasyAdmin
+
+There is a ready-to-copy example at:
+
+`blueprint-sample.json`
+
+That sample installs `Common` first and then `EasyAdmin`. It is the better file to reuse here because it is already tracked as a real project sample, so the documentation should point at it instead of duplicating a second near-identical blueprint under `docs/`.
+
 ## How to write and maintain it well
 
 ### Keep it readable

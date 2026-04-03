@@ -4,6 +4,7 @@ import {
   createShellChannel,
 } from "./src/shared/protocol.js";
 import { bootstrapOmeka, PLAYGROUND_DB_PATH } from "./src/runtime/bootstrap.js";
+import { executeCliCommandInRuntime } from "./src/runtime/cli-runtime.js";
 import { createPhpRuntime } from "./src/runtime/php-loader.js";
 import {
   isFatalWasmError,
@@ -117,13 +118,27 @@ async function getRuntimeState() {
     const runtime =
       config.runtimes.find((entry) => entry.id === runtimeId) ||
       config.runtimes[0];
+    const appBaseUrl =
+      typeof __APP_ROOT__ !== "undefined"
+        ? __APP_ROOT__
+        : new URL("./", self.location.href).toString();
+    let stateRef = null;
+    const cliExecutor = async (commandSpec, spawnOptions) =>
+      executeCliCommandInRuntime({
+        appBaseUrl,
+        blueprint: activeBlueprint,
+        commandSpec,
+        config,
+        mainPhp: stateRef.php,
+        runtime,
+        runtimeId,
+        spawnOptions,
+      });
     const php = createPhpRuntime(runtime, {
-      appBaseUrl:
-        typeof __APP_ROOT__ !== "undefined"
-          ? __APP_ROOT__
-          : new URL("./", self.location.href).toString(),
+      appBaseUrl,
       phpVersion: runtime.phpVersion || runtime.phpVersionLabel,
       phpCorsProxyUrl: config.phpCorsProxyUrl || null,
+      cliExecutor,
     });
 
     postShell({
@@ -134,6 +149,7 @@ async function getRuntimeState() {
     });
 
     await php.refresh();
+    stateRef = { appBaseUrl, config, php, runtime };
 
     // Restore saved snapshot if recovering from a crash
     if (snapshot.hasPendingRestore) {
@@ -179,7 +195,7 @@ async function getRuntimeState() {
         config.landingPath,
     });
 
-    return { php };
+    return stateRef;
   })();
 
   return runtimeStatePromise;
