@@ -19,16 +19,16 @@
       "name": "Common",
       "state": "activate",
       "source": {
-        "type": "url",
-        "url": "https://github.com/Daniel-KM/Omeka-S-module-Common/releases/download/3.4.80/Common-3.4.80.zip"
+        "type": "omeka.org",
+        "slug": "Common"
       }
     },
     {
       "name": "EasyAdmin",
       "state": "activate",
       "source": {
-        "type": "url",
-        "url": "https://github.com/Daniel-KM/Omeka-S-module-EasyAdmin/releases/download/3.4.42/EasyAdmin-3.4.42.zip"
+        "type": "omeka.org",
+        "slug": "EasyAdmin"
       }
     }
   ],

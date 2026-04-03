@@ -45,7 +45,14 @@ async function getTcpOverFetchOptions(corsProxyUrl) {
  */
 export function createPhpRuntime(
   _runtime,
-  { appBaseUrl, phpVersion, webRoot, corsProxyUrl, phpCorsProxyUrl } = {},
+  {
+    appBaseUrl,
+    phpVersion,
+    webRoot,
+    corsProxyUrl,
+    phpCorsProxyUrl,
+    cliExecutor,
+  } = {},
 ) {
   const resolvedPhpVersion = phpVersion || DEFAULT_PHP_VERSION;
   let wrapped = null;
@@ -119,9 +126,11 @@ export function createPhpRuntime(
         /* exists */
       }
 
-      // Register the spawn handler so proc_open/exec calls from PHP
-      // are intercepted and handled in-process for allowed commands.
-      await registerSpawnHandler(php);
+      if (typeof cliExecutor === "function") {
+        // Only the primary request runtime gets a spawn handler. CLI runtimes
+        // are short-lived and should not recursively spawn more PHP processes.
+        await registerSpawnHandler(php, cliExecutor);
+      }
 
       const absoluteUrl = (appBaseUrl || "http://localhost:8080").replace(
         /\/$/u,
