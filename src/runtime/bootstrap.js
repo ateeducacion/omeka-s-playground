@@ -132,11 +132,17 @@ return [
                     public function execute($command)
                     {
                         $command = (string) $command;
-                        if (str_contains($command, $this->browserPhpCliPath)) {
-                            return 'PHP CLI is not available in the browser playground. Omeka background jobs run synchronously in this runtime.';
-                        }
                         if (str_contains($command, $this->browserImageMagickPath)) {
                             return 'ImageMagick is not available in the browser playground. Thumbnail generation uses GD when available and otherwise falls back to no thumbnails.';
+                        }
+                        if (str_contains($command, $this->browserPhpCliPath)) {
+                            // Delegate to the real exec() — the php-wasm spawn
+                            // handler intercepts proc_open/exec for PHP commands
+                            // and runs them in-process on the same WASM runtime.
+                            $output = [];
+                            $exitCode = 0;
+                            exec($command . ' 2>&1', $output, $exitCode);
+                            return implode(PHP_EOL, $output);
                         }
                         return false;
                     }
