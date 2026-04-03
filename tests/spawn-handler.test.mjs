@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildSpawnProgram,
+  getCliBuiltinCode,
   isAllowedPhpBinary,
   MAX_SPAWN_DEPTH,
   PHP_BIN_ALLOWLIST,
@@ -170,14 +171,48 @@ describe("buildSpawnProgram", () => {
     assert.equal(api.collected.stdout, "hello");
   });
 
-  it("rejects commands without a .php script path or -r flag", async () => {
+  it("handles php --version via CLI builtin emulation", async () => {
+    const mockPhp = {
+      run: async ({ code }) => ({
+        text: code.includes("phpversion") ? "PHP 8.3.0 (cli) (php-wasm)\n" : "",
+        errors: "",
+        exitCode: 0,
+      }),
+    };
+    const program = buildSpawnProgram(mockPhp);
+    const api = createMockProcessApi();
+
+    await program(["php", "--version"], api, {});
+
+    assert.equal(api.collected.exitCode, 0);
+    assert.ok(api.collected.stdout.includes("PHP"));
+  });
+
+  it("handles php -v via CLI builtin emulation", async () => {
+    const mockPhp = {
+      run: async ({ code }) => ({
+        text: code.includes("phpversion") ? "PHP 8.3.0 (cli) (php-wasm)\n" : "",
+        errors: "",
+        exitCode: 0,
+      }),
+    };
+    const program = buildSpawnProgram(mockPhp);
+    const api = createMockProcessApi();
+
+    await program(["/playground/php-wasm/php", "-v"], api, {});
+
+    assert.equal(api.collected.exitCode, 0);
+    assert.ok(api.collected.stdout.includes("PHP"));
+  });
+
+  it("rejects commands without a script, -r flag, or builtin flag", async () => {
     const mockPhp = {
       run: async () => ({ text: "", errors: "", exitCode: 0 }),
     };
     const program = buildSpawnProgram(mockPhp);
     const api = createMockProcessApi();
 
-    await program(["php", "--version"], api, {});
+    await program(["php", "--some-unknown-flag"], api, {});
 
     assert.equal(api.collected.exitCode, 1);
     assert.ok(api.collected.stderr.includes("No PHP script path found"));
@@ -232,5 +267,32 @@ describe("buildSpawnProgram", () => {
 
     assert.equal(api.collected.exitCode, 0);
     assert.ok(api.collected.stderr.includes("Warning: something went wrong"));
+  });
+});
+
+describe("getCliBuiltinCode", () => {
+  it("returns PHP code for --version", () => {
+    const code = getCliBuiltinCode(["--version"]);
+    assert.ok(code);
+    assert.ok(code.includes("phpversion"));
+  });
+
+  it("returns PHP code for -v", () => {
+    const code = getCliBuiltinCode(["-v"]);
+    assert.ok(code);
+    assert.ok(code.includes("phpversion"));
+  });
+
+  it("returns null for unknown flags", () => {
+    assert.equal(getCliBuiltinCode(["--help"]), null);
+    assert.equal(getCliBuiltinCode(["--info"]), null);
+  });
+
+  it("returns null when multiple args are present", () => {
+    assert.equal(getCliBuiltinCode(["--version", "--extra"]), null);
+  });
+
+  it("returns null for empty args", () => {
+    assert.equal(getCliBuiltinCode([]), null);
   });
 });
