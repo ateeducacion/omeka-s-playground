@@ -9,3 +9,4 @@ assets/omeka/*
 !assets/omeka/.gitkeep
 assets/manifests/*
 !assets/manifests/.gitkeep
+.omc/
