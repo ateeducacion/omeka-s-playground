@@ -84,3 +84,44 @@ Good docs changes in this repository should:
 - describe the actual implementation, not generic Playground theory
 - include concrete file paths
 - explain both the feature and the safest way to maintain it
+
+## PHP CLI spawn handler
+
+The playground registers a **spawn handler** on the `@php-wasm` runtime so
+that PHP's `proc_open()` / `exec()` calls are intercepted in JavaScript and
+handled in-process rather than silently failing.
+
+### What works
+
+- **PHP CLI commands** — commands whose binary is `php` or an absolute path
+  ending in `/php` are executed in the same WASM runtime via `php.run()`.
+  This enables Omeka's `Omeka\Stdlib\Cli::execute()` to run PHP scripts
+  such as the job dispatcher (`application/omeka jobs:dispatch`).
+- **Inline code** via `php -r "..."` is also supported.
+- **stdout / stderr / exit code** are captured and propagated back to the
+  calling PHP code.
+
+### What is still limited
+
+| Area | Status | Reason |
+|---|---|---|
+| Background jobs | Synchronous | The dispatch strategy remains `Synchronous`. The spawn handler runs PHP scripts in the same single-threaded WASM instance, so true async dispatch is not possible. |
+| ImageMagick (`convert`) | Blocked | No WASM ImageMagick binary is available. Thumbnails use GD or fall back to no-thumbnail mode. |
+| Arbitrary binaries | Blocked | Only PHP binaries from the allowlist are permitted. Unknown commands receive exit code 127. |
+| Recursive spawns | Depth-limited | A re-entrant guard (`MAX_SPAWN_DEPTH = 3`) prevents infinite recursion when a spawned PHP script itself calls `exec()`. |
+| True parallelism | Not supported | All spawned commands execute synchronously in the same WASM instance. There is no subprocess isolation. |
+
+### Security model
+
+The spawn handler uses a **binary allowlist** (`PHP_BIN_ALLOWLIST` in
+`src/runtime/spawn-handler.js`). Commands not on the list are rejected
+with a descriptive stderr message and exit code 127. The ImageMagick
+guard in the `Omeka\Cli` override (`src/runtime/bootstrap.js`) is
+checked first, before the command reaches `exec()`.
+
+### Key files
+
+- `src/runtime/spawn-handler.js` — handler registration, allowlist, in-process execution
+- `src/runtime/php-loader.js` — calls `registerSpawnHandler()` after PHP init
+- `src/runtime/bootstrap.js` — `Omeka\Cli` override delegates PHP commands to `exec()`
+- `tests/spawn-handler.test.mjs` — unit tests for allowlist and spawn logic

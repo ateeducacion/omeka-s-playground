@@ -10,6 +10,7 @@ import {
 } from "@php-wasm/web";
 import { OMEKA_ROOT } from "./bootstrap.js";
 import { wrapPhpInstance } from "./php-compat.js";
+import { registerSpawnHandler } from "./spawn-handler.js";
 
 const PERSIST_ROOT = "/persist";
 const TEMP_ROOT = "/tmp";
@@ -117,6 +118,10 @@ export function createPhpRuntime(
       } catch {
         /* exists */
       }
+
+      // Register the spawn handler so proc_open/exec calls from PHP
+      // are intercepted and handled in-process for allowed commands.
+      await registerSpawnHandler(php);
 
       const absoluteUrl = (appBaseUrl || "http://localhost:8080").replace(
         /\/$/u,
