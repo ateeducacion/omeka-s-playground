@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import {
   patchEasyAdminGitLabArchiveFallback,
   patchEasyAdminSqliteSessionSupport,
-} from "../src/runtime/addons.js";
+} from "../src/runtime/easyadmin-patches.js";
 import { parseGitHubArchiveUrl } from "../src/shared/github.js";
 
 describe("parseGitHubArchiveUrl", () => {
