@@ -9,7 +9,7 @@
     "bundle": "./scripts/build-omeka-bundle.sh"
   },
   "dependencies": {
-    "@php-wasm/universal": "^3.1.18",
+    "@php-wasm/universal": "^3.1.20",
     "@php-wasm/web": "^3.1.19",
     "fflate": "^0.8.2"
   },
