@@ -1,5 +1,6 @@
 import { loadActiveBlueprint } from "../shared/blueprint.js";
-import { getDefaultRuntime, loadPlaygroundConfig } from "../shared/config.js";
+import { loadPlaygroundConfig } from "../shared/config.js";
+import { resolveRuntimeConfig } from "../shared/omeka-versions.js";
 import { buildScopedSitePath } from "../shared/paths.js";
 import { createShellChannel } from "../shared/protocol.js";
 import { saveSessionState } from "../shared/storage.js";
@@ -217,9 +218,9 @@ async function bootstrapRemote() {
   activePath = requestedPath;
   const config = await loadPlaygroundConfig();
   const blueprint = loadActiveBlueprint(scopeId);
-  const runtime =
-    config.runtimes.find((entry) => entry.id === requestedRuntimeId) ||
-    getDefaultRuntime(config);
+  const runtime = resolveRuntimeConfig(config, {
+    runtimeId: requestedRuntimeId,
+  });
   setOverlayVisible(true);
 
   setRemoteProgress(

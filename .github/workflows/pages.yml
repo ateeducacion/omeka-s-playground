@@ -42,8 +42,8 @@ jobs:
       - name: Prepare runtime assets
         run: make prepare
 
-      - name: Build Omeka bundle
-        run: make bundle
+      - name: Build Omeka bundles (all supported versions)
+        run: make bundle-all
 
       - name: Install docs dependencies
         run: python -m pip install -r requirements-docs.txt

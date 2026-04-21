@@ -1199,6 +1199,7 @@ async function appendPhpIniOverrides(php, config) {
 export async function prepareOmekaRuntimeFilesystem({
   blueprint,
   config,
+  omekaVersion,
   php,
   publish = () => {},
   runtimeId,
@@ -1214,7 +1215,7 @@ export async function prepareOmekaRuntimeFilesystem({
   await ensureMutableLayout(php);
 
   publish("Loading Omeka readonly bundle manifest.", 0.28);
-  const manifest = await fetchManifest();
+  const manifest = await fetchManifest({ omekaVersion });
   const manifestState = buildManifestState(
     manifest,
     runtimeId,
@@ -1253,6 +1254,7 @@ export async function bootstrapOmeka({
   blueprint,
   clean = false,
   config,
+  omekaVersion,
   php,
   publish,
   runtimeId,
@@ -1266,6 +1268,7 @@ export async function bootstrapOmeka({
     await prepareOmekaRuntimeFilesystem({
       blueprint,
       config,
+      omekaVersion,
       php,
       publish,
       runtimeId,

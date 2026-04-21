@@ -1,5 +1,11 @@
 import { loadPlaygroundConfig } from "./src/shared/config.js";
 import {
+  DEFAULT_OMEKA_VERSION,
+  parseRuntimeId,
+  resolveRuntimeConfig,
+  resolveVersions,
+} from "./src/shared/omeka-versions.js";
+import {
   createPhpBridgeChannel,
   createShellChannel,
 } from "./src/shared/protocol.js";
@@ -115,9 +121,21 @@ async function getRuntimeState() {
 
   runtimeStatePromise = (async () => {
     const config = await loadPlaygroundConfig();
-    const runtime =
-      config.runtimes.find((entry) => entry.id === runtimeId) ||
-      config.runtimes[0];
+    const parsedRuntime = parseRuntimeId(runtimeId);
+    const resolvedSelection = resolveVersions({
+      runtimeId,
+      phpVersion: parsedRuntime?.phpVersion,
+      omekaVersion: parsedRuntime?.omekaVersion,
+    });
+    const runtime = resolveRuntimeConfig(config, {
+      runtimeId,
+      phpVersion: resolvedSelection.phpVersion,
+      omekaVersion: resolvedSelection.omekaVersion,
+    });
+    const omekaVersion =
+      runtime?.omekaVersion ||
+      resolvedSelection.omekaVersion ||
+      DEFAULT_OMEKA_VERSION;
     const appBaseUrl =
       typeof __APP_ROOT__ !== "undefined"
         ? __APP_ROOT__
@@ -136,7 +154,10 @@ async function getRuntimeState() {
       });
     const php = createPhpRuntime(runtime, {
       appBaseUrl,
-      phpVersion: runtime.phpVersion || runtime.phpVersionLabel,
+      phpVersion:
+        runtime.phpVersion ||
+        runtime.phpVersionLabel ||
+        resolvedSelection.phpVersion,
       phpCorsProxyUrl: config.phpCorsProxyUrl || null,
       cliExecutor,
     });
@@ -177,6 +198,7 @@ async function getRuntimeState() {
         config,
         blueprint: activeBlueprint,
         clean: forceCleanBoot,
+        omekaVersion,
         php,
         publish,
         runtimeId,

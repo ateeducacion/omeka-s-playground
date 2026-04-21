@@ -72,13 +72,24 @@ make reset
 - `npm run sync-browser-deps`: vendors browser runtime dependencies (fflate)
 - `npm run prepare-runtime`: prepares the PHP runtime assets
 - `npm run build-worker`: bundles php-worker.js via esbuild into `dist/php-worker.bundle.js`
-- `npm run bundle`: fetches/builds Omeka and generates the readonly bundle
+- `npm run bundle`: fetches/builds Omeka for a single version (selected via the `OMEKA_VERSION` env var) and generates the readonly bundle + per-version manifest
+- `make bundle-all`: builds bundles for every supported Omeka version
 - `make serve`: runs the local Node dev server, including the addon proxy endpoint for remote blueprint ZIP downloads
+
+### Supported Omeka versions
+
+Supported versions are declared in `src/shared/omeka-versions.js` and consumed by:
+
+- the build scripts (to select the git branch or release ZIP to fetch)
+- the browser runtime (to pick the correct manifest URL at boot)
+- the shell UI (to render the version dropdown in Settings)
+
+Add a new version by appending an entry to `OMEKA_VERSIONS` (with a `source.type` of either `git` or `release-zip`) and adding a matching target in the `Makefile`.
 
 ### Generated Assets
 
-- `assets/omeka/`: readonly runtime bundle files (`.zip`)
-- `assets/manifests/`: generated bundle manifests
+- `assets/omeka/<version>/`: readonly runtime bundle files (`.zip`), one directory per supported Omeka version (e.g. `4.1.1`, `4.2.0`).
+- `assets/manifests/<version>.json`: generated bundle manifest per Omeka version. `latest.json` is written for the default version as a backward-compat alias.
 - `dist/`: esbuild-bundled worker and `@php-wasm` WASM binaries
 
 Do not hand-edit generated bundle artifacts unless the task is specifically about the build output.

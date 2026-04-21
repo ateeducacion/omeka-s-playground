@@ -15,36 +15,23 @@
     "password": "password",
     "email": "admin@example.com"
   },
-  "omekaVersion": "4.2.0",
+  "defaults": {
+    "phpVersion": "8.3",
+    "omekaVersion": "4.2.0"
+  },
   "runtimes": [
     {
-      "id": "php81",
-      "label": "PHP 8.1",
-      "phpVersion": "8.1",
-      "default": false
-    },
-    {
-      "id": "php82",
-      "label": "PHP 8.2",
-      "phpVersion": "8.2",
-      "default": false
-    },
-    {
-      "id": "php83",
-      "label": "PHP 8.3",
+      "id": "php83-omeka420",
+      "label": "PHP 8.3 + Omeka S 4.2.0",
       "phpVersion": "8.3",
+      "omekaVersion": "4.2.0",
       "default": true
     },
     {
-      "id": "php84",
-      "label": "PHP 8.4",
-      "phpVersion": "8.4",
-      "default": false
-    },
-    {
-      "id": "php85",
-      "label": "PHP 8.5",
-      "phpVersion": "8.5",
+      "id": "php83-omeka411",
+      "label": "PHP 8.3 + Omeka S 4.1.1",
+      "phpVersion": "8.3",
+      "omekaVersion": "4.1.1",
       "default": false
     }
   ]
