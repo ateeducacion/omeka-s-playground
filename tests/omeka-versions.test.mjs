@@ -199,10 +199,7 @@ describe("resolveRuntimeConfig", () => {
     assert.equal(resolved.id, "php85-omeka420");
     assert.equal(resolved.phpVersion, "8.5");
     assert.equal(resolved.omekaVersion, "4.2.0");
-    assert.equal(
-      resolved.label,
-      "PHP 8.5 + Omeka S 4.2.0 (experimental SQLite)",
-    );
+    assert.equal(resolved.label, "PHP 8.5 + Omeka S 4.2.0");
   });
 
   it("returns null when the config has no runtimes", () => {

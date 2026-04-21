@@ -17,14 +17,15 @@ export const OMEKA_VERSIONS = [
     bundleDir: "4.1.1",
     phpVersions: ["8.1", "8.2", "8.3", "8.4", "8.5"],
     source: {
-      type: "release-zip",
-      url: "https://github.com/omeka/omeka-s/releases/download/v4.1.1/omeka-s-4.1.1.zip",
+      type: "git",
+      repository: "https://github.com/ateeducacion/omeka-s.git",
+      branch: "feature/experimental-sqlite-support-4.1.1",
     },
     default: false,
   },
   {
     version: "4.2.0",
-    label: "Omeka S 4.2.0 (experimental SQLite)",
+    label: "Omeka S 4.2.0",
     slug: "4.2.0",
     manifestFile: "4.2.0.json",
     bundleDir: "4.2.0",
