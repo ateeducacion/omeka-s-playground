@@ -27,7 +27,7 @@ MANIFEST_DIR=${MANIFEST_DIR:-"$REPO_DIR/assets/manifests"}
 # build script, the browser runtime, and the shell UI all share a single
 # source of truth for supported versions.
 VERSION_REQUEST=${OMEKA_VERSION:-}
-META_JSON=$(node --input-type=module -e "
+META_JSON=$(VERSION_REQUEST="${VERSION_REQUEST}" node --input-type=module -e "
   import('${REPO_DIR}/src/shared/omeka-versions.js').then((m) => {
     const requested = process.env.VERSION_REQUEST || '';
     const resolved = requested ? m.resolveOmekaVersion(requested) : m.DEFAULT_OMEKA_VERSION;
@@ -41,7 +41,7 @@ META_JSON=$(node --input-type=module -e "
     console.error(err?.stack || String(err));
     process.exit(1);
   });
-" VERSION_REQUEST="${VERSION_REQUEST}")
+")
 
 get_meta() {
   printf '%s' "$META_JSON" | node -e "
