@@ -31,16 +31,20 @@ const manifestPath = resolve(args.manifest);
 const bundlePath = resolve(args.bundle);
 const bundleStat = statSync(bundlePath);
 
+const source = {
+  repository: args.sourceRepository,
+  branch: args.sourceBranch,
+};
+if (args.sourceCommit) {
+  source.commit = args.sourceCommit;
+}
+
 const manifest = {
   schemaVersion: 2,
   generatedAt: new Date().toISOString(),
   channel: args.channel,
   release: args.release,
-  source: {
-    repository: args.sourceRepository,
-    branch: args.sourceBranch,
-    commit: args.sourceCommit,
-  },
+  source,
   bundle: {
     format: "zip",
     path: relative(resolve(manifestPath, ".."), bundlePath).replaceAll(

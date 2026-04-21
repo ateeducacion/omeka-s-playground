@@ -5,7 +5,16 @@ import {
   parseImportedBlueprintPayload,
   resolveBlueprintForShell,
 } from "../shared/blueprint.js";
-import { getDefaultRuntime, loadPlaygroundConfig } from "../shared/config.js";
+import { loadPlaygroundConfig } from "../shared/config.js";
+import {
+  DEFAULT_OMEKA_VERSION,
+  DEFAULT_PHP_VERSION,
+  getCompatiblePhpVersions,
+  getOmekaVersionMetadata,
+  OMEKA_VERSIONS,
+  parseQueryParams,
+  resolveRuntimeSelection,
+} from "../shared/omeka-versions.js";
 import { hasBlueprintUrlOverride, resolveRemoteUrl } from "../shared/paths.js";
 import { createShellChannel } from "../shared/protocol.js";
 import {
@@ -41,6 +50,7 @@ const els = {
   settingsButton: document.querySelector("#settings-button"),
   settingsPopover: document.querySelector("#settings-popover"),
   settingsOverlay: document.querySelector("#settings-overlay"),
+  settingsOmekaVersion: document.querySelector("#settings-omeka-version"),
   settingsPhpVersion: document.querySelector("#settings-php-version"),
   settingsApply: document.querySelector("#settings-apply"),
   settingsCancel: document.querySelector("#settings-cancel"),
@@ -56,6 +66,8 @@ const els = {
 const scopeId = getOrCreateScopeId();
 let config;
 let currentRuntimeId;
+let currentPhpVersion = DEFAULT_PHP_VERSION;
+let currentOmekaVersion = DEFAULT_OMEKA_VERSION;
 let currentPath = "/";
 let channel;
 let serviceWorkerReady = null;
@@ -382,30 +394,58 @@ function bindServiceWorkerMessages() {
 }
 
 function populateSettingsModal() {
+  if (!els.settingsOmekaVersion || !els.settingsPhpVersion) {
+    return;
+  }
+
+  els.settingsOmekaVersion.innerHTML = "";
+  for (const entry of OMEKA_VERSIONS) {
+    const option = document.createElement("option");
+    option.value = entry.version;
+    option.textContent = entry.label;
+    els.settingsOmekaVersion.append(option);
+  }
+  els.settingsOmekaVersion.value = currentOmekaVersion;
+
+  updatePhpVersionDropdown(currentOmekaVersion);
+  els.settingsPhpVersion.value = currentPhpVersion;
+}
+
+function updatePhpVersionDropdown(omekaVersion) {
   if (!els.settingsPhpVersion) {
     return;
   }
 
+  const compatible = getCompatiblePhpVersions(omekaVersion);
+  const previousValue = els.settingsPhpVersion.value;
   els.settingsPhpVersion.innerHTML = "";
-  for (const runtime of config.runtimes) {
+  for (const version of compatible) {
     const option = document.createElement("option");
-    option.value = runtime.id;
-    option.textContent = runtime.label;
+    option.value = version;
+    option.textContent = `PHP ${version}`;
     els.settingsPhpVersion.append(option);
   }
-  els.settingsPhpVersion.value = currentRuntimeId;
+
+  if (compatible.includes(previousValue)) {
+    els.settingsPhpVersion.value = previousValue;
+  } else if (compatible.includes(currentPhpVersion)) {
+    els.settingsPhpVersion.value = currentPhpVersion;
+  } else if (compatible.includes(DEFAULT_PHP_VERSION)) {
+    els.settingsPhpVersion.value = DEFAULT_PHP_VERSION;
+  } else {
+    els.settingsPhpVersion.value = compatible[0];
+  }
 }
 
 function updateCurrentVersionLabels() {
+  const meta = getOmekaVersionMetadata(currentOmekaVersion);
   if (els.currentOmekaLabel) {
-    els.currentOmekaLabel.textContent =
-      config.omekaVersion || config.bundleVersion || "-";
+    els.currentOmekaLabel.textContent = meta
+      ? meta.label
+      : currentOmekaVersion || "-";
   }
   if (els.currentPhpLabel) {
-    const runtime = config.runtimes.find((r) => r.id === currentRuntimeId);
-    els.currentPhpLabel.textContent = runtime
-      ? runtime.label
-      : currentRuntimeId;
+    els.currentPhpLabel.textContent = `PHP ${currentPhpVersion}`;
   }
   if (els.currentRuntimeLabel) {
     els.currentRuntimeLabel.textContent = currentRuntimeId;
@@ -439,22 +479,29 @@ function closeSettingsPopover() {
 }
 
 function applySettingsAndReset() {
-  const newRuntimeId = els.settingsPhpVersion?.value;
+  const newOmeka = els.settingsOmekaVersion?.value;
+  const newPhp = els.settingsPhpVersion?.value;
   closeSettingsPopover();
 
-  if (newRuntimeId === currentRuntimeId) {
+  if (newOmeka === currentOmekaVersion && newPhp === currentPhpVersion) {
     return;
   }
 
-  currentRuntimeId = newRuntimeId;
-  remoteFrameBooted = false;
-  appendLog(`Switching runtime to ${currentRuntimeId}`);
-  updateCurrentVersionLabels();
-  saveState({ switchedAt: new Date().toISOString() });
-  serviceWorkerReady = null;
-  pendingCleanBoot = true;
-  setPhpInfoContent("");
-  void updateFrame();
+  // Persist the choice via URL params and reload. Reloading gives us a
+  // fresh WASM runtime, a fresh service worker registration, and rebuilds
+  // the scope so stale per-version state can't leak across version swaps.
+  const url = new URL(window.location.href);
+  if (newPhp) {
+    url.searchParams.set("php", newPhp);
+  }
+  if (newOmeka) {
+    url.searchParams.set("omeka", newOmeka);
+  }
+  url.searchParams.delete("phpVersion");
+  url.searchParams.delete("omekaVersion");
+  // Clear any saved session state so the new version boots fresh.
+  clearScopeSession(scopeId);
+  window.location.href = url.toString();
 }
 
 async function main() {
@@ -462,16 +509,33 @@ async function main() {
   activeBlueprint = await resolveBlueprintForShell(scopeId, config);
   updateBlueprintTextarea();
   const previous = loadSessionState(scopeId);
-  const defaultRuntime = getDefaultRuntime(config);
   const preferredPath =
     activeBlueprint?.landingPage || config.landingPath || "/";
   const shouldForceCleanBoot = pendingCleanBoot;
   const shouldBypassSavedLogin =
     config.autologin && previous?.path === "/login";
 
-  currentRuntimeId = shouldForceCleanBoot
-    ? defaultRuntime.id
-    : previous?.runtimeId || defaultRuntime.id;
+  // Resolve the runtime selection from (explicit URL params) >
+  // (active blueprint preferred versions) > (saved session) >
+  // (config defaults). On a forced clean boot we ignore the saved session
+  // so the runtime always matches the resolved selection.
+  const urlParams = parseQueryParams(window.location.href);
+  const selection = resolveRuntimeSelection({
+    php: urlParams.php || activeBlueprint?.preferredVersions?.php || undefined,
+    omeka:
+      urlParams.omeka || activeBlueprint?.preferredVersions?.omeka || undefined,
+    runtimeId: shouldForceCleanBoot
+      ? undefined
+      : previous?.runtimeId ||
+        config.runtimes?.find((r) => r.default)?.id ||
+        config.runtimes?.[0]?.id,
+  });
+  currentPhpVersion = selection.phpVersion;
+  currentOmekaVersion = selection.omekaVersion;
+  currentRuntimeId = selection.runtimeId;
+  appendLog(
+    `Runtime selection: php=${currentPhpVersion}, omeka=${currentOmekaVersion}, runtime=${currentRuntimeId}`,
+  );
   currentPath = shouldForceCleanBoot
     ? preferredPath
     : shouldBypassSavedLogin
@@ -480,6 +544,12 @@ async function main() {
   els.address.value = currentPath;
 
   updateCurrentVersionLabels();
+
+  if (els.settingsOmekaVersion) {
+    els.settingsOmekaVersion.addEventListener("change", (event) => {
+      updatePhpVersionDropdown(event.target.value);
+    });
+  }
 
   // Settings popover event listeners
   if (els.settingsButton) {

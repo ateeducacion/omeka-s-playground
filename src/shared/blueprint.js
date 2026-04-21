@@ -1,3 +1,8 @@
+import {
+  DEFAULT_OMEKA_VERSION,
+  DEFAULT_PHP_VERSION,
+  resolveOmekaVersion,
+} from "./omeka-versions.js";
 import { resolveProjectUrl } from "./paths.js";
 import { SNAPSHOT_VERSION } from "./protocol.js";
 
@@ -207,10 +212,15 @@ export function buildDefaultBlueprint(config) {
     },
     preferredVersions: {
       php:
-        config.runtimes?.find((runtime) => runtime.default)?.phpVersionLabel ||
-        config.runtimes?.[0]?.phpVersionLabel ||
-        "8.3",
-      omeka: "4.2.0",
+        config.defaults?.phpVersion ||
+        config.runtimes?.find((runtime) => runtime.default)?.phpVersion ||
+        config.runtimes?.[0]?.phpVersion ||
+        DEFAULT_PHP_VERSION,
+      omeka:
+        config.defaults?.omekaVersion ||
+        config.runtimes?.find((runtime) => runtime.default)?.omekaVersion ||
+        config.runtimes?.[0]?.omekaVersion ||
+        DEFAULT_OMEKA_VERSION,
     },
     debug: {
       enabled: false,
@@ -339,7 +349,8 @@ export function normalizeBlueprint(input, config) {
     preferredVersions: {
       php: blueprint.preferredVersions?.php || fallback.preferredVersions.php,
       omeka:
-        blueprint.preferredVersions?.omeka || fallback.preferredVersions.omeka,
+        resolveOmekaVersion(blueprint.preferredVersions?.omeka) ||
+        fallback.preferredVersions.omeka,
     },
     debug: {
       enabled: blueprint.debug?.enabled === true,
