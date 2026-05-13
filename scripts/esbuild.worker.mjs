@@ -42,10 +42,10 @@ const phpWasmHeadBodyFixPlugin = {
       const pattern = /\bif\s*\(\s*S\.method\s*!==\s*"GET"\s*\)\s*\{/;
       if (!pattern.test(source)) {
         throw new Error(
-          "php-wasm-tcp-over-fetch-head-body-fix: pattern not found in "
-            + `${args.path}. The upstream bundle layout may have changed; `
-            + "verify parseHttpRequest() in @php-wasm/web/index.js and update "
-            + "the regex.",
+          "php-wasm-tcp-over-fetch-head-body-fix: pattern not found in " +
+            `${args.path}. The upstream bundle layout may have changed; ` +
+            "verify parseHttpRequest() in @php-wasm/web/index.js and update " +
+            "the regex.",
         );
       }
       const patched = source.replace(
