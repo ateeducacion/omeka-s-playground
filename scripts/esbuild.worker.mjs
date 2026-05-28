@@ -20,16 +20,14 @@ const icuDatShim = {
   },
 };
 
-// @php-wasm/web's `tcp-over-fetch-websocket.ts` (lines around 643 upstream)
-// builds an outbound `ReadableStream` body for every request whose method is
-// not exactly "GET", then constructs `new Request(url, { method, body })`.
-// HEAD passes through that branch and the browser throws
-// `Failed to construct 'Request': Request with GET/HEAD method cannot have body`,
-// which surfaces as an uncaught promise rejection from PHP curl. The published
-// @php-wasm/web bundle minifies the variable to `S.method`, so we patch the
-// single occurrence to also exclude HEAD before esbuild ingests the file.
-// Filed upstream at WordPress/wordpress-playground; remove this plugin once
-// it lands in a published @php-wasm/web release.
+// @php-wasm/web's `tcp-over-fetch-websocket.ts` historically built an outbound
+// `ReadableStream` body for every request whose method was not exactly "GET",
+// then constructed `new Request(url, { method, body })`. HEAD passed through
+// that branch and the browser threw `Failed to construct 'Request': Request
+// with GET/HEAD method cannot have body`. We used to patch the published
+// bundle to also exclude HEAD. As of @php-wasm/web 3.1.35 the fix is included
+// upstream, so the plugin now only patches older bundles and is a no-op when
+// the upstream code already excludes HEAD.
 const phpWasmHeadBodyFixPlugin = {
   name: "php-wasm-tcp-over-fetch-head-body-fix",
   setup(b) {
@@ -39,8 +37,17 @@ const phpWasmHeadBodyFixPlugin = {
         return null;
       }
       const source = await readFile(args.path, "utf8");
-      const pattern = /\bif\s*\(\s*S\.method\s*!==\s*"GET"\s*\)\s*\{/;
-      if (!pattern.test(source)) {
+      const alreadyPatched =
+        /\.method\s*!==\s*"GET"\s*&&\s*[A-Za-z_$][\w$]*\.method\s*!==\s*"HEAD"/.test(
+          source,
+        );
+      if (alreadyPatched) {
+        return null;
+      }
+      const pattern =
+        /\bif\s*\(\s*([A-Za-z_$][\w$]*)\.method\s*!==\s*"GET"\s*\)\s*\{/;
+      const match = source.match(pattern);
+      if (!match) {
         throw new Error(
           "php-wasm-tcp-over-fetch-head-body-fix: pattern not found in " +
             `${args.path}. The upstream bundle layout may have changed; ` +
@@ -48,9 +55,10 @@ const phpWasmHeadBodyFixPlugin = {
             "the regex.",
         );
       }
+      const varName = match[1];
       const patched = source.replace(
         pattern,
-        'if (S.method !== "GET" && S.method !== "HEAD") {',
+        `if (${varName}.method !== "GET" && ${varName}.method !== "HEAD") {`,
       );
       return { contents: patched, loader: "js" };
     });
