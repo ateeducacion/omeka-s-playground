@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve as resolvePath } from "node:path";
 import { build } from "esbuild";
@@ -20,51 +19,6 @@ const icuDatShim = {
   },
 };
 
-// @php-wasm/web's `tcp-over-fetch-websocket.ts` historically built an outbound
-// `ReadableStream` body for every request whose method was not exactly "GET",
-// then constructed `new Request(url, { method, body })`. HEAD passed through
-// that branch and the browser threw `Failed to construct 'Request': Request
-// with GET/HEAD method cannot have body`. We used to patch the published
-// bundle to also exclude HEAD. As of @php-wasm/web 3.1.35 the fix is included
-// upstream, so the plugin now only patches older bundles and is a no-op when
-// the upstream code already excludes HEAD.
-const phpWasmHeadBodyFixPlugin = {
-  name: "php-wasm-tcp-over-fetch-head-body-fix",
-  setup(b) {
-    const phpWasmWebIndex = resolvePath(phpWasmWebDir, "index.js");
-    b.onLoad({ filter: /@php-wasm\/web\/index\.js$/ }, async (args) => {
-      if (args.path !== phpWasmWebIndex) {
-        return null;
-      }
-      const source = await readFile(args.path, "utf8");
-      const alreadyPatched =
-        /\.method\s*!==\s*"GET"\s*&&\s*[A-Za-z_$][\w$]*\.method\s*!==\s*"HEAD"/.test(
-          source,
-        );
-      if (alreadyPatched) {
-        return null;
-      }
-      const pattern =
-        /\bif\s*\(\s*([A-Za-z_$][\w$]*)\.method\s*!==\s*"GET"\s*\)\s*\{/;
-      const match = source.match(pattern);
-      if (!match) {
-        throw new Error(
-          "php-wasm-tcp-over-fetch-head-body-fix: pattern not found in " +
-            `${args.path}. The upstream bundle layout may have changed; ` +
-            "verify parseHttpRequest() in @php-wasm/web/index.js and update " +
-            "the regex.",
-        );
-      }
-      const varName = match[1];
-      const patched = source.replace(
-        pattern,
-        `if (${varName}.method !== "GET" && ${varName}.method !== "HEAD") {`,
-      );
-      return { contents: patched, loader: "js" };
-    });
-  },
-};
-
 await build({
   entryPoints: ["php-worker.js"],
   bundle: true,
@@ -78,7 +32,7 @@ await build({
   banner: {
     js: `const __APP_ROOT__ = new URL("../", import.meta.url).href;`,
   },
-  plugins: [icuDatShim, phpWasmHeadBodyFixPlugin],
+  plugins: [icuDatShim],
   loader: {
     ".wasm": "file",
     ".so": "file",
