@@ -597,33 +597,6 @@ if (!$status->isInstalled()) {
 
 $ensureAdminIdentity('${config.admin.email}');
 
-$users = $blueprint['users'] ?? [];
-if (!$users) {
-  $users = [[
-    'username' => '${config.admin.username}',
-    'email' => '${config.admin.email}',
-    'password' => '${config.admin.password}',
-    'role' => 'global_admin',
-    'isActive' => true,
-  ]];
-}
-
-$userSettingsService = $serviceManager->get('Omeka\\\\Settings\\\\User');
-foreach ($users as $userSpec) {
-  $user = $upsertUser($userSpec);
-  if ($user && !empty($userSpec['settings']) && is_array($userSpec['settings'])) {
-    $userSettingsService->setTargetId($user->getId());
-    foreach ($userSpec['settings'] as $settingKey => $settingValue) {
-      $userSettingsService->set($settingKey, $settingValue);
-    }
-  }
-}
-
-$primaryAdmin = $ensureAdminIdentity($users[0]['email'] ?? '${config.admin.email}');
-if (!$primaryAdmin) {
-  throw new RuntimeException('Unable to establish a global admin identity for blueprint provisioning.');
-}
-
 $settings->set('administrator_email', '${config.admin.email}');
 $settings->set('installation_title', '${config.siteTitle}');
 $settings->set('locale', '${config.locale}');
@@ -678,6 +651,36 @@ if ($shouldRerunBootstrap) {
     echo "[warning] " . $warning . "\\n";
   }
   exit(0);
+}
+
+// Create blueprint users only after all modules are installed and active, so
+// module-defined roles (e.g. IsolatedSites' "site_editor") are registered and
+// pass user validation, and apply each user's per-user settings.
+$users = $blueprint['users'] ?? [];
+if (!$users) {
+  $users = [[
+    'username' => '${config.admin.username}',
+    'email' => '${config.admin.email}',
+    'password' => '${config.admin.password}',
+    'role' => 'global_admin',
+    'isActive' => true,
+  ]];
+}
+
+$userSettingsService = $serviceManager->get('Omeka\\\\Settings\\\\User');
+foreach ($users as $userSpec) {
+  $user = $upsertUser($userSpec);
+  if ($user && !empty($userSpec['settings']) && is_array($userSpec['settings'])) {
+    $userSettingsService->setTargetId($user->getId());
+    foreach ($userSpec['settings'] as $settingKey => $settingValue) {
+      $userSettingsService->set($settingKey, $settingValue);
+    }
+  }
+}
+
+$primaryAdmin = $ensureAdminIdentity($users[0]['email'] ?? '${config.admin.email}');
+if (!$primaryAdmin) {
+  throw new RuntimeException('Unable to establish a global admin identity for blueprint provisioning.');
 }
 
 // Support a list of sites (with per-user permissions); fall back to the legacy
