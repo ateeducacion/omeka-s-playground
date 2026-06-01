@@ -114,6 +114,15 @@ perl -0pi -e "s/\\n\\\$this->headLink\\(\\)->prependStylesheet\\('\\/\\/fonts\\.
   "$OMEKA_STAGE/application/view/layout/layout.phtml" \
   "$OMEKA_STAGE/application/view/common/user-bar.phtml"
 
+# Omeka deliberately calls setAutoGenerateProxyClasses(-1) and relies on old
+# Doctrine silently ignoring out-of-range modes ("do nothing"). doctrine/common
+# >= 3.5 now validates the mode and throws "Invalid auto generate mode -1",
+# crashing boot before the EntityManager can be created. The pre-generated
+# proxies are shipped in the bundle, so AUTOGENERATE_NEVER (0) is the correct,
+# valid equivalent of the original "never regenerate" intent.
+perl -0pi -e "s/setAutoGenerateProxyClasses\\(-1\\)/setAutoGenerateProxyClasses(0)/" \
+  "$OMEKA_STAGE/application/src/Service/EntityManagerFactory.php"
+
 if [ ! -d "$OMEKA_STAGE/vendor" ]; then
   if command -v composer >/dev/null 2>&1; then
     composer install --working-dir="$OMEKA_STAGE" --no-dev --prefer-dist --no-progress --no-interaction --ignore-platform-reqs >&2
