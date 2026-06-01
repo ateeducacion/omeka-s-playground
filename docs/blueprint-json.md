@@ -19,10 +19,10 @@ The shell loads a blueprint, normalizes missing values, and stores the active ve
 
 - set install metadata such as title, locale, and timezone
 - create and authenticate the primary admin account
-- create additional users
+- create additional users and apply per-user settings
 - install or activate modules and themes
 - create item sets, items, and media
-- create a default public site
+- create one or more sites, assign per-site user permissions, and pick the default
 - choose the landing page after boot
 
 Because the blueprint influences first-boot behavior, a small JSON change can alter installation, login, routing, or demo content.
@@ -40,12 +40,13 @@ The most important top-level properties are:
 | `landingPage` | Initial post-boot path | Should usually begin with `/` |
 | `siteOptions` | Install-wide defaults | Title, locale, timezone |
 | `login` | Credentials used by autologin | Usually mirror the first user |
-| `users` | Omeka users to create | First user becomes the effective admin source |
+| `users` | Omeka users to create | First user becomes the effective admin source; each may carry `settings` |
 | `themes` | Themes to install | Supports bundled, URL, and `omeka.org` sources |
 | `modules` | Modules to install or activate | Module names must stay unique |
 | `itemSets` | Collections created before items | Referenced by item titles later |
-| `items` | Sample resources and media | Media currently uses URL sources |
-| `site` | Default public site | Optional but recommended for demos |
+| `items` | Sample resources and media | Media currently uses URL sources; `items[].sites` assigns sites by slug |
+| `site` | A single public site | Optional; legacy shorthand for a one-entry `sites` |
+| `sites` | One or more public sites with per-site permissions | Takes precedence over `site`; one is the default |
 
 ## Example
 
@@ -112,6 +113,57 @@ The most important top-level properties are:
 }
 ```
 
+## Multiple sites, permissions, and per-user settings
+
+Use the `sites` array to provision more than one site and to grant users access
+to specific sites. This is what makes access-control modules such as
+[IsolatedSites](https://github.com/ateeducacion/omeka-s-IsolatedSites) testable
+in the browser: give a user a per-site role, flip a per-user setting, and assign
+items to individual sites.
+
+- `sites[]` accepts the same fields as the singular `site` (`title`, `slug`,
+  `summary`, `theme`, `isPublic`, `setAsDefault`) plus `permissions`.
+- `sites[].permissions[]` grants an existing blueprint **user** (by email) a
+  site role of `viewer`, `editor`, or `admin`.
+- Exactly one site is the default. If no entry sets `setAsDefault: true`, the
+  first one is used. The legacy singular `site` still works and is treated as a
+  one-entry `sites` list (keeping its historical default of `setAsDefault: true`).
+- `users[].settings` is an object written verbatim to each user's settings
+  (`user_setting`), e.g. `limit_to_granted_sites`.
+- `items[].sites` lists the site slugs (titles are also accepted and slugified)
+  an item is assigned to. Without it, items go to the default site.
+
+```json
+{
+  "users": [
+    { "username": "admin", "email": "admin@example.com", "password": "password", "role": "global_admin" },
+    {
+      "username": "editor_a",
+      "email": "editor.a@example.com",
+      "password": "password",
+      "role": "site_editor",
+      "settings": { "limit_to_granted_sites": true, "limit_to_own_assets": true }
+    }
+  ],
+  "sites": [
+    {
+      "title": "Site A",
+      "slug": "site-a",
+      "setAsDefault": true,
+      "permissions": [{ "user": "editor.a@example.com", "role": "admin" }]
+    },
+    { "title": "Site B", "slug": "site-b" }
+  ],
+  "items": [
+    { "title": "Doc A1", "sites": ["site-a"] },
+    { "title": "Doc B1", "sites": ["site-b"] }
+  ]
+}
+```
+
+With this blueprint, signing in as `editor.a@example.com` (with IsolatedSites
+active) shows only Site A and its items, while the admin keeps full visibility.
+
 ## Example file for Common + EasyAdmin
 
 There is a ready-to-copy example at:
@@ -151,6 +203,10 @@ These conventions come from the current implementation, not generic JSON style a
 - Remote addon URLs are absolutized against the current page URL.
 - `modules[].state` currently supports `install` and `activate`.
 - `items[].media[].type` currently supports `url`.
+- `sites` takes precedence over the singular `site`; exactly one site is forced to be the default (the first one if none is flagged), and duplicate site slugs are rejected.
+- `sites[].permissions[].role` is clamped to one of `viewer`, `editor`, `admin` (defaults to `viewer`); a permission whose `user` email matches no created user is skipped with a warning.
+- `items[].sites` entries are slugified to match site slugs; items with no match fall back to the default site.
+- `users[].settings` keys are written verbatim to `user_setting`; values are stored as-is.
 
 If you change the semantics of any of those rules, update both the schema and the documentation together.
 

@@ -216,6 +216,131 @@ describe("normalizeBlueprint", () => {
   it("sets site to null when not provided", () => {
     const result = normalizeBlueprint({}, baseConfig);
     assert.equal(result.site, null);
+    assert.deepEqual(result.sites, []);
+  });
+
+  it("keeps single site backward compatibility (site + sites[0])", () => {
+    const result = normalizeBlueprint(
+      { site: { title: "My Site", theme: "classic" } },
+      baseConfig,
+    );
+    assert.equal(result.sites.length, 1);
+    assert.equal(result.sites[0].slug, "my-site");
+    // Single-site mode keeps the historical setAsDefault default of true.
+    assert.equal(result.sites[0].setAsDefault, true);
+    assert.equal(result.site.slug, "my-site");
+  });
+
+  it("normalizes a sites array and picks the default", () => {
+    const result = normalizeBlueprint(
+      {
+        sites: [
+          { title: "Site A", slug: "site-a" },
+          { title: "Site B", slug: "site-b", setAsDefault: true },
+        ],
+      },
+      baseConfig,
+    );
+    assert.equal(result.sites.length, 2);
+    assert.equal(result.sites[0].setAsDefault, false);
+    assert.equal(result.sites[1].setAsDefault, true);
+    // `site` (singular) resolves to the default site.
+    assert.equal(result.site.slug, "site-b");
+  });
+
+  it("defaults the first site when no setAsDefault is given in a sites array", () => {
+    const result = normalizeBlueprint(
+      { sites: [{ title: "Site A" }, { title: "Site B" }] },
+      baseConfig,
+    );
+    assert.equal(result.sites[0].setAsDefault, true);
+    assert.equal(result.sites[1].setAsDefault, false);
+    assert.equal(result.site.slug, "site-a");
+  });
+
+  it("prefers the sites array over the singular site", () => {
+    const result = normalizeBlueprint(
+      {
+        site: { title: "Legacy" },
+        sites: [{ title: "New Site", slug: "new-site" }],
+      },
+      baseConfig,
+    );
+    assert.equal(result.sites.length, 1);
+    assert.equal(result.site.slug, "new-site");
+  });
+
+  it("throws on duplicate site slugs", () => {
+    assert.throws(
+      () =>
+        normalizeBlueprint(
+          {
+            sites: [
+              { title: "A", slug: "dup" },
+              { title: "B", slug: "dup" },
+            ],
+          },
+          baseConfig,
+        ),
+      /duplicate slug/u,
+    );
+  });
+
+  it("normalizes site permissions and clamps unknown roles", () => {
+    const result = normalizeBlueprint(
+      {
+        sites: [
+          {
+            title: "Site A",
+            permissions: [
+              { user: "a@example.com", role: "Admin" },
+              { email: "b@example.com", role: "weird" },
+              { role: "editor" },
+            ],
+          },
+        ],
+      },
+      baseConfig,
+    );
+    const perms = result.sites[0].permissions;
+    assert.equal(perms.length, 2);
+    assert.deepEqual(perms[0], { user: "a@example.com", role: "admin" });
+    assert.deepEqual(perms[1], { user: "b@example.com", role: "viewer" });
+  });
+
+  it("normalizes per-user settings", () => {
+    const result = normalizeBlueprint(
+      {
+        users: [
+          {
+            email: "a@b.com",
+            password: "pass",
+            settings: { limit_to_granted_sites: true, junk: "" },
+          },
+        ],
+      },
+      baseConfig,
+    );
+    assert.equal(result.users[0].settings.limit_to_granted_sites, true);
+    assert.equal(result.users[0].settings.junk, "");
+  });
+
+  it("defaults user settings to an empty object", () => {
+    const result = normalizeBlueprint(
+      { users: [{ email: "a@b.com", password: "pass" }] },
+      baseConfig,
+    );
+    assert.deepEqual(result.users[0].settings, {});
+  });
+
+  it("normalizes item site assignments to slugs", () => {
+    const result = normalizeBlueprint(
+      {
+        items: [{ title: "Item 1", sites: ["Site A", "site-b", ""] }],
+      },
+      baseConfig,
+    );
+    assert.deepEqual(result.items[0].sites, ["site-a", "site-b"]);
   });
 });
 

@@ -608,8 +608,15 @@ if (!$users) {
   ]];
 }
 
+$userSettingsService = $serviceManager->get('Omeka\\\\Settings\\\\User');
 foreach ($users as $userSpec) {
-  $upsertUser($userSpec);
+  $user = $upsertUser($userSpec);
+  if ($user && !empty($userSpec['settings']) && is_array($userSpec['settings'])) {
+    $userSettingsService->setTargetId($user->getId());
+    foreach ($userSpec['settings'] as $settingKey => $settingValue) {
+      $userSettingsService->set($settingKey, $settingValue);
+    }
+  }
 }
 
 $primaryAdmin = $ensureAdminIdentity($users[0]['email'] ?? '${config.admin.email}');
@@ -673,9 +680,21 @@ if ($shouldRerunBootstrap) {
   exit(0);
 }
 
-$siteSpec = $blueprint['site'] ?? null;
-$siteResource = null;
-if (is_array($siteSpec) && !empty($siteSpec['title'])) {
+// Support a list of sites (with per-user permissions); fall back to the legacy
+// singular "site" key for backward compatibility.
+$siteSpecs = $blueprint['sites'] ?? [];
+if (!$siteSpecs && is_array($blueprint['site'] ?? null)) {
+  $siteSpecs = [$blueprint['site']];
+}
+
+$siteRepo = $entityManager->getRepository(Omeka\\Entity\\Site::class);
+$siteIdsBySlug = [];
+$defaultSiteId = null;
+foreach ($siteSpecs as $siteSpec) {
+  if (!is_array($siteSpec) || empty($siteSpec['title'])) {
+    continue;
+  }
+
   $themeName = trim((string) ($siteSpec['theme'] ?? 'default'));
   if (!$themeManager->getTheme($themeName)) {
     $themeSpec = $themeSpecsByName[$themeName] ?? null;
@@ -688,11 +707,11 @@ if (is_array($siteSpec) && !empty($siteSpec['title'])) {
     $themeName = 'default';
   }
 
-  $siteRepo = $entityManager->getRepository(Omeka\\Entity\\Site::class);
-  $site = $siteRepo->findOneBy(['slug' => $siteSpec['slug']]);
+  $slug = trim((string) ($siteSpec['slug'] ?? ''));
+  $site = $slug !== '' ? $siteRepo->findOneBy(['slug' => $slug]) : null;
   $payload = [
     'o:title' => $siteSpec['title'],
-    'o:slug' => $siteSpec['slug'],
+    'o:slug' => $slug,
     'o:theme' => $themeName,
     'o:is_public' => array_key_exists('isPublic', $siteSpec) ? (bool) $siteSpec['isPublic'] : true,
     'o:item_pool' => [],
@@ -701,17 +720,50 @@ if (is_array($siteSpec) && !empty($siteSpec['title'])) {
     $payload['o:summary'] = $siteSpec['summary'];
   }
 
-  if ($site) {
-    $apiManager->update('sites', $site->getId(), $payload, [], ['isPartial' => true]);
-    $siteResponse = $apiManager->read('sites', $site->getId());
-  } else {
-    $siteResponse = $apiManager->create('sites', $payload);
+  // Grant per-site permissions to users referenced by email.
+  $sitePermissions = [];
+  foreach (($siteSpec['permissions'] ?? []) as $permission) {
+    $permissionEmail = trim((string) ($permission['user'] ?? ''));
+    if ($permissionEmail === '') {
+      continue;
+    }
+    $permissionUser = $findUserByEmail($permissionEmail);
+    if (!$permissionUser) {
+      $warnings[] = sprintf('Site "%s" permission skipped: user "%s" was not found.', $siteSpec['title'], $permissionEmail);
+      continue;
+    }
+    $sitePermissions[] = [
+      'o:user' => ['o:id' => $permissionUser->getId()],
+      'o:role' => trim((string) ($permission['role'] ?? 'viewer')) ?: 'viewer',
+    ];
+  }
+  if ($sitePermissions) {
+    $payload['o:site_permission'] = $sitePermissions;
   }
 
-  $siteResource = $siteResponse->getContent();
-  if (!empty($siteSpec['setAsDefault'])) {
-    $settings->set('default_site', $siteResource->id());
+  try {
+    if ($site) {
+      $apiManager->update('sites', $site->getId(), $payload, [], ['isPartial' => true]);
+      $siteResponse = $apiManager->read('sites', $site->getId());
+    } else {
+      $siteResponse = $apiManager->create('sites', $payload);
+    }
+
+    $siteResource = $siteResponse->getContent();
+    $siteIdsBySlug[$siteResource->slug()] = $siteResource->id();
+    $debug(sprintf('Provisioned site "%s" (#%s).', $siteSpec['title'], $siteResource->id()));
+
+    if (!empty($siteSpec['setAsDefault'])) {
+      $defaultSiteId = $siteResource->id();
+      $settings->set('default_site', $defaultSiteId);
+    }
+  } catch (Throwable $e) {
+    $warnings[] = sprintf('Unable to provision site "%s": %s', $siteSpec['title'], $describeThrowable($e));
   }
+}
+
+if (!$defaultSiteId && $siteIdsBySlug) {
+  $defaultSiteId = reset($siteIdsBySlug);
 }
 
 $ensureCoreVocabulary();
@@ -797,8 +849,18 @@ foreach (($blueprint['items'] ?? []) as $itemSpec) {
     $payload['o:item_set'] = $itemSetIds;
   }
 
-  if ($siteResource) {
-    $payload['o:site'] = [['o:id' => $siteResource->id()]];
+  $itemSiteIds = [];
+  foreach (($itemSpec['sites'] ?? []) as $itemSiteSlug) {
+    $itemSiteSlug = trim((string) $itemSiteSlug);
+    if ($itemSiteSlug !== '' && isset($siteIdsBySlug[$itemSiteSlug])) {
+      $itemSiteIds[] = ['o:id' => $siteIdsBySlug[$itemSiteSlug]];
+    }
+  }
+  if (!$itemSiteIds && $defaultSiteId) {
+    $itemSiteIds[] = ['o:id' => $defaultSiteId];
+  }
+  if ($itemSiteIds) {
+    $payload['o:site'] = $itemSiteIds;
   }
 
   try {

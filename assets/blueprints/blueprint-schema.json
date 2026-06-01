@@ -65,9 +65,14 @@
           "password": { "type": "string", "minLength": 1 },
           "role": {
             "type": "string",
-            "enum": ["global_admin", "site_admin", "editor", "reviewer", "author", "researcher", "admin", "supervisor"]
+            "enum": ["global_admin", "site_admin", "editor", "reviewer", "author", "researcher", "admin", "supervisor", "site_editor"]
           },
-          "isActive": { "type": "boolean" }
+          "isActive": { "type": "boolean" },
+          "settings": {
+            "type": "object",
+            "description": "Per-user settings written to user_setting (e.g. limit_to_granted_sites).",
+            "additionalProperties": true
+          }
         }
       }
     },
@@ -191,6 +196,11 @@
             "type": "array",
             "items": { "type": "string" }
           },
+          "sites": {
+            "type": "array",
+            "description": "Slugs (or titles) of the sites this item is assigned to. Defaults to the default site.",
+            "items": { "type": "string" }
+          },
           "media": {
             "type": "array",
             "items": {
@@ -221,7 +231,41 @@
         "summary": { "type": "string" },
         "theme": { "type": "string" },
         "isPublic": { "type": "boolean" },
-        "setAsDefault": { "type": "boolean" }
+        "setAsDefault": { "type": "boolean" },
+        "permissions": { "$ref": "#/$defs/sitePermissions" }
+      }
+    },
+    "sites": {
+      "type": "array",
+      "description": "Multiple sites. When present, takes precedence over the singular \"site\".",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string" },
+          "slug": { "type": "string" },
+          "summary": { "type": "string" },
+          "theme": { "type": "string" },
+          "isPublic": { "type": "boolean" },
+          "setAsDefault": { "type": "boolean" },
+          "permissions": { "$ref": "#/$defs/sitePermissions" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sitePermissions": {
+      "type": "array",
+      "description": "Per-site user permissions, by user email.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["user"],
+        "properties": {
+          "user": { "type": "string", "description": "Email of an existing blueprint user." },
+          "role": { "type": "string", "enum": ["viewer", "editor", "admin"] }
+        }
       }
     }
   }
