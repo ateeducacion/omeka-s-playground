@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
 const scriptPath = fileURLToPath(
   new URL("../scripts/build-omeka-bundle.sh", import.meta.url),
