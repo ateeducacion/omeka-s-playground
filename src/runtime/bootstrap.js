@@ -354,11 +354,16 @@ ${debugBlock}
 }
 
 function buildInstallScript(config, manifestState, blueprint, addonsState) {
+  // Boot through Omeka's own bootstrap.php instead of requiring vendor/autoload.php
+  // directly. Recent Omeka registers a prepended autoloader there that swaps in the
+  // patched Doctrine proxy classes under application/data/overrides/ (so the core's
+  // intentional setAutoGenerateProxyClasses(-1) is accepted). The regular request
+  // entrypoint (index.php) already goes through bootstrap.php; this install stub must
+  // do the same or the unpatched vendor ProxyFactory loads and boot dies with
+  // "Invalid auto generate mode -1".
   return `<?php
-define('OMEKA_PATH', '${OMEKA_ROOT}');
-chdir(OMEKA_PATH);
+require '${OMEKA_ROOT}/bootstrap.php';
 date_default_timezone_set('${config.timezone}');
-require OMEKA_PATH . '/vendor/autoload.php';
 $application = Omeka\\Mvc\\Application::init(require OMEKA_PATH . '/application/config/application.config.php');
 $serviceManager = $application->getServiceManager();
 $installer = new Omeka\\Installation\\Installer($serviceManager);
