@@ -110,6 +110,109 @@ function slugify(value, fallback = "playground") {
   return slug || fallback;
 }
 
+const SITE_PERMISSION_ROLES = ["viewer", "editor", "admin"];
+
+function normalizeSitePermissions(input) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input
+    .map((permission) => {
+      const user = String(permission?.user || permission?.email || "").trim();
+      if (!user) {
+        return null;
+      }
+
+      const role = String(permission?.role || "viewer")
+        .trim()
+        .toLowerCase();
+
+      return {
+        user,
+        role: SITE_PERMISSION_ROLES.includes(role) ? role : "viewer",
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeSiteSpec(site, fallbackTitle) {
+  if (!site || typeof site !== "object" || Array.isArray(site)) {
+    return null;
+  }
+
+  const title = String(site.title || fallbackTitle || "").trim();
+  if (!title) {
+    return null;
+  }
+
+  return {
+    title,
+    slug: slugify(site.slug || site.title || fallbackTitle),
+    summary: typeof site.summary === "string" ? site.summary : "",
+    theme: String(site.theme || "default").trim(),
+    isPublic: site.isPublic !== false,
+    setAsDefault: site.setAsDefault === true,
+    permissions: normalizeSitePermissions(site.permissions),
+  };
+}
+
+function normalizeUserSettings(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return {};
+  }
+
+  const settings = {};
+  for (const [key, value] of Object.entries(input)) {
+    const settingKey = String(key).trim();
+    if (settingKey) {
+      settings[settingKey] = value;
+    }
+  }
+  return settings;
+}
+
+function normalizeSites(blueprint, fallbackTitle) {
+  let sites = [];
+
+  if (Array.isArray(blueprint.sites) && blueprint.sites.length > 0) {
+    // Multi-site mode: setAsDefault defaults to false per entry.
+    sites = blueprint.sites
+      .map((site) => normalizeSiteSpec(site))
+      .filter(Boolean);
+  } else if (
+    blueprint.site &&
+    typeof blueprint.site === "object" &&
+    !Array.isArray(blueprint.site)
+  ) {
+    // Single-site mode: keep the historical setAsDefault default of true.
+    const single = normalizeSiteSpec(blueprint.site, fallbackTitle);
+    if (single) {
+      single.setAsDefault = blueprint.site.setAsDefault !== false;
+      sites = [single];
+    }
+  }
+
+  // Reject duplicate slugs so site/permission assignments stay unambiguous.
+  const seenSlugs = new Set();
+  for (const site of sites) {
+    if (seenSlugs.has(site.slug)) {
+      throw new Error(
+        `Blueprint sites cannot include duplicate slug "${site.slug}".`,
+      );
+    }
+    seenSlugs.add(site.slug);
+  }
+
+  // Guarantee exactly one default site so items without an explicit site land
+  // somewhere predictable.
+  if (sites.length > 0 && !sites.some((site) => site.setAsDefault)) {
+    sites[0].setAsDefault = true;
+  }
+
+  return sites;
+}
+
 function normalizeAddonSource(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { type: "bundled" };
@@ -312,29 +415,15 @@ export function normalizeBlueprint(input, config) {
         index === 0 ? "global_admin" : "researcher",
       ),
       isActive: user?.isActive !== false,
+      settings: normalizeUserSettings(user?.settings),
     };
   });
 
+  const sites = normalizeSites(blueprint, fallback.siteOptions.title);
+  // `site` (singular) is kept for backward compatibility and resolves to the
+  // default site (or the first one) so existing consumers keep working.
   const activeSite =
-    blueprint.site && typeof blueprint.site === "object"
-      ? {
-          title: String(
-            blueprint.site.title || fallback.siteOptions.title,
-          ).trim(),
-          slug: slugify(
-            blueprint.site.slug ||
-              blueprint.site.title ||
-              fallback.siteOptions.title,
-          ),
-          summary:
-            typeof blueprint.site.summary === "string"
-              ? blueprint.site.summary
-              : "",
-          theme: String(blueprint.site.theme || "default").trim(),
-          isPublic: blueprint.site.isPublic !== false,
-          setAsDefault: blueprint.site.setAsDefault !== false,
-        }
-      : null;
+    sites.find((site) => site.setAsDefault) || sites[0] || null;
 
   return {
     $schema:
@@ -371,6 +460,7 @@ export function normalizeBlueprint(input, config) {
     },
     users: normalizedUsers,
     site: activeSite,
+    sites,
     themes: normalizeAddonCollection(blueprint.themes, "theme"),
     modules: normalizeAddonCollection(blueprint.modules, "module"),
     itemSets: Array.isArray(blueprint.itemSets)
@@ -394,6 +484,11 @@ export function normalizeBlueprint(input, config) {
             itemSets: Array.isArray(item?.itemSets)
               ? item.itemSets
                   .map((entry) => String(entry || "").trim())
+                  .filter(Boolean)
+              : [],
+            sites: Array.isArray(item?.sites)
+              ? item.sites
+                  .map((entry) => slugify(String(entry || ""), ""))
                   .filter(Boolean)
               : [],
             media: Array.isArray(item?.media)
