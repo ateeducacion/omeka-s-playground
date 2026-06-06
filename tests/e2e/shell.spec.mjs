@@ -57,3 +57,47 @@ test("persists /persist to IndexedDB and reboots from it on reload", async ({
   await page.reload();
   await waitForRuntimeReady(page);
 });
+
+test("seeds blueprint content only once (content marker is journaled)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await waitForRuntimeReady(page);
+
+  // Seed-once writes /persist/runtime/content-seeded.json after the first
+  // provisioning; on every later boot the installer sees it and skips re-seeding,
+  // so a deleted blueprint item stays deleted. Before the fix that marker did not
+  // exist and the installer re-created blueprint content on every boot. Asserting
+  // the marker is journaled proves the gate is active (and fails on the old code).
+  // Wait past the 1500ms debounced flush so boot's writes reach IndexedDB.
+  await page.waitForTimeout(2500);
+
+  const marker = await page.evaluate(async () => {
+    const meta = (await indexedDB.databases()).find((d) =>
+      d.name?.startsWith("omeka-fs-journal:"),
+    );
+    if (!meta) return { error: "no journal db" };
+    const db = await new Promise((res, rej) => {
+      const r = indexedDB.open(meta.name);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    const ops = await new Promise((res, rej) => {
+      const rq = db.transaction("ops", "readonly").objectStore("ops").getAll();
+      rq.onsuccess = () => res(rq.result || []);
+      rq.onerror = () => rej(rq.error);
+    });
+    db.close();
+    const seeded = ops.some((op) => {
+      const p = typeof op?.path === "string" ? op.path : JSON.stringify(op);
+      return p.includes("/persist/runtime/content-seeded.json");
+    });
+    return { total: ops.length, seeded };
+  });
+
+  expect(marker.error).toBeUndefined();
+  // Positive control: real data is journaled.
+  expect(marker.total).toBeGreaterThan(0);
+  // The fix: the content-seeded marker is persisted, so re-seeding is skipped.
+  expect(marker.seeded).toBe(true);
+});
