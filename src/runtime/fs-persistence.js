@@ -81,6 +81,30 @@ export async function clearJournal(scopeId) {
 }
 
 /**
+ * Replay the journal, tolerating ops that can't be applied to a fresh FS so a
+ * single bad op never bricks the reload. This happens because Omeka writes media
+ * in an isolated CLI runtime (cli-runtime.js) whose creates aren't journaled,
+ * while the user's later delete (in the main runtime) is — leaving a dangling
+ * unlink. Fast path replays the whole batch; on any failure, replay op-by-op and
+ * skip the ones that throw (a failed unlink just means the file is already gone,
+ * which is the intended end state).
+ */
+function replayResilient(rawPhp, ops) {
+  if (!ops || ops.length === 0) return;
+  try {
+    replayFSJournal(rawPhp, ops);
+  } catch {
+    for (const op of ops) {
+      try {
+        replayFSJournal(rawPhp, [op]);
+      } catch {
+        // Skip un-appliable op.
+      }
+    }
+  }
+}
+
+/**
  * Replay the persisted /persist journal onto the fresh PHP instance, then start
  * journaling new changes back to IndexedDB (debounced). Must run before the app
  * bootstraps so the install gate sees the restored database.
@@ -108,7 +132,5 @@ export async function initFsPersistence(rawPhp, scopeId) {
   });
 
   const savedPersistOps = await loadOps(persistDb);
-  if (savedPersistOps.length > 0) {
-    replayFSJournal(rawPhp, savedPersistOps);
-  }
+  replayResilient(rawPhp, savedPersistOps);
 }
