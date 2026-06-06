@@ -19,6 +19,13 @@ export const OMEKA_ROOT = "/www/omeka";
 export const OMEKA_FILES_PATH = "/persist/mutable/files";
 export const PLAYGROUND_BLUEPRINT_MEDIA_PATH =
   "/persist/runtime/blueprint-media";
+// Marker recording that the blueprint's *content* (items + itemSets) has already
+// been seeded for the current bundle/blueprint manifest. Lives under /persist so
+// it is journaled and survives reloads. Its presence makes the install script seed
+// content only once, so a user who deletes/edits a seeded item keeps that change
+// across reloads (a manifest change or ?clean=1/reset clears it → reseed).
+export const PLAYGROUND_CONTENT_MARKER_PATH =
+  "/persist/runtime/content-seeded.json";
 
 function phpString(value) {
   return String(value).replaceAll("\\", "\\\\").replaceAll("'", "\\'");
@@ -394,6 +401,20 @@ $state = [
 ];
 
 $warnings = [];
+// Seed blueprint content (items + itemSets) only once per manifest. After the
+// first successful provisioning we drop a marker keyed by the bundle manifest, so
+// on later reloads the content loops are skipped — a user who deleted or edited a
+// seeded item keeps that change. A manifest change (new signature) or a reset
+// (?clean=1 wipes /persist, removing the marker) reseeds.
+$contentMarkerPath = '${PLAYGROUND_CONTENT_MARKER_PATH}';
+$contentSignature = '${phpString(JSON.stringify(manifestState))}';
+$shouldSeedContent = true;
+if (is_file($contentMarkerPath)) {
+  $previousSignature = @file_get_contents($contentMarkerPath);
+  if ($previousSignature !== false && $previousSignature === $contentSignature) {
+    $shouldSeedContent = false;
+  }
+}
 $shouldRerunBootstrap = false;
 $themeSpecsByName = [];
 foreach (($blueprint['themes'] ?? []) as $themeSpec) {
@@ -786,7 +807,7 @@ $debug(sprintf(
 ));
 
 $itemSetIdsByTitle = [];
-if ($titlePropertyId) {
+if ($titlePropertyId && $shouldSeedContent) {
 foreach (($blueprint['itemSets'] ?? []) as $itemSetSpec) {
   if (empty($itemSetSpec['title'])) {
     continue;
@@ -934,10 +955,14 @@ foreach (($blueprint['items'] ?? []) as $itemSpec) {
     $warnings[] = sprintf('Unable to provision item "%s": %s', $itemSpec['title'], $describeThrowable($e));
   }
 }
-} elseif (($blueprint['itemSets'] ?? []) || ($blueprint['items'] ?? [])) {
+} elseif ($shouldSeedContent && (($blueprint['itemSets'] ?? []) || ($blueprint['items'] ?? []))) {
   $warnings[] = 'Blueprint content provisioning was skipped because dcterms:title is not available in this runtime.';
 }
 
+if ($shouldSeedContent) {
+  @mkdir(dirname($contentMarkerPath), 0777, true);
+  @file_put_contents($contentMarkerPath, $contentSignature);
+}
 file_put_contents($statePath, json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 echo "omeka-playground-bootstrap-complete\\n";
 foreach ($warnings as $warning) {
