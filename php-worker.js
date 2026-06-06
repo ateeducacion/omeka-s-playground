@@ -160,6 +160,8 @@ async function getRuntimeState() {
         resolvedSelection.phpVersion,
       phpCorsProxyUrl: config.phpCorsProxyUrl || null,
       cliExecutor,
+      scopeId,
+      forceCleanBoot,
     });
 
     postShell({

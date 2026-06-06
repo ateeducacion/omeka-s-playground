@@ -52,6 +52,8 @@ export function createPhpRuntime(
     corsProxyUrl,
     phpCorsProxyUrl,
     cliExecutor,
+    scopeId,
+    forceCleanBoot,
   } = {},
 ) {
   const resolvedPhpVersion = phpVersion || DEFAULT_PHP_VERSION;
@@ -83,6 +85,21 @@ export function createPhpRuntime(
         FS.mkdirTree(PERSIST_ROOT);
       } catch {
         /* exists */
+      }
+
+      // Restore persisted mutable data (/persist) before the app bootstraps, so
+      // the install gate finds the existing database and skips re-install. The
+      // journal is keyed by scopeId (sessionStorage) → data survives reloads
+      // within the tab session. forceCleanBoot (reset / ?clean=1) wipes it.
+      if (scopeId) {
+        const { clearJournal, initFsPersistence } = await import(
+          "./fs-persistence.js"
+        );
+        if (forceCleanBoot) {
+          await clearJournal(scopeId);
+        } else {
+          await initFsPersistence(php, scopeId);
+        }
       }
 
       php.writeFile(

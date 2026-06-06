@@ -33,3 +33,27 @@ test("toggles the runtime side panel", async ({ page }) => {
   );
   await expect(page.locator("#side-panel")).not.toHaveClass(/is-collapsed/);
 });
+
+test("persists /persist to IndexedDB and reboots from it on reload", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await waitForRuntimeReady(page);
+
+  // The persistence layer opens an "omeka-fs-journal:<scopeId>" IndexedDB and
+  // journals /persist (the SQLite DB + uploads). Its presence proves mutable
+  // state is being persisted.
+  const journaled = await page.evaluate(async () => {
+    const dbs = await indexedDB.databases();
+    return dbs.some((d) => d.name?.startsWith("omeka-fs-journal:"));
+  });
+  expect(journaled).toBeTruthy();
+
+  // Wait past the 1500ms debounced flush so the journal holds the install, then
+  // reload in the same tab (sessionStorage keeps the scopeId). The runtime must
+  // boot again by replaying the persisted /persist — exercising the full
+  // write→replay round-trip without re-running a clean install.
+  await page.waitForTimeout(2500);
+  await page.reload();
+  await waitForRuntimeReady(page);
+});
