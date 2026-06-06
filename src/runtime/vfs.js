@@ -32,7 +32,9 @@ export async function mountReadonlyCore(
   const stage = "/tmp/omeka-core-stage";
   publish?.("Extracting Omeka core…", 0.45);
   await php.writeFile(tmpZip, archive.bytes);
-  // archive.bytes is no longer needed; PHP reads the zip from MEMFS.
+  // Drop the JS reference to the compressed buffer now that MEMFS has its own
+  // copy, so the GC can reclaim it while ZipArchive extracts.
+  archive.bytes = null;
   const result = await php.run(buildCoreExtractScript(tmpZip, stage, root));
   const out = decoder.decode(result.bytes || new Uint8Array()).trim();
   if (!out.startsWith("INSTALL_OK")) {
