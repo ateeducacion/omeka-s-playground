@@ -6,15 +6,19 @@
     "prepare-runtime": "node ./scripts/prepare-runtime.mjs",
     "sync-browser-deps": "node ./scripts/sync-browser-deps.mjs",
     "build-worker": "node ./scripts/esbuild.worker.mjs",
-    "bundle": "./scripts/build-omeka-bundle.sh"
+    "bundle": "./scripts/build-omeka-bundle.sh",
+    "test": "node --test tests/*.test.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@php-wasm/stream-compression": "^3.1.36",
     "@php-wasm/universal": "^3.1.36",
     "@php-wasm/web": "^3.1.36",
     "fflate": "^0.8.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
+    "@playwright/test": "^1.60.0",
     "esbuild": "^0.28.0"
   },
   "overrides": {

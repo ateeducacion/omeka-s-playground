@@ -79,6 +79,9 @@ clean:
 test:
 	node --test tests/*.test.mjs
 
+test-e2e:
+	npm run test:e2e
+
 lint:
 	npx @biomejs/biome check
 
