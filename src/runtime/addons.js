@@ -1,4 +1,4 @@
-import { unzipSync } from "../../vendor/fflate/esm/browser.js";
+import { streamZipEntries } from "../../lib/omeka-loader.js";
 import {
   patchEasyAdminGitLabArchiveFallback,
   patchEasyAdminSqliteSessionSupport,
@@ -97,24 +97,6 @@ function isSkippableArchivePath(path) {
     path.endsWith("/.DS_Store") ||
     path === ".DS_Store"
   );
-}
-
-function getArchiveRoot(entries) {
-  const roots = new Set();
-
-  for (const entry of entries) {
-    const normalized = normalizeArchivePath(entry);
-    if (isSkippableArchivePath(normalized)) {
-      continue;
-    }
-
-    const [root] = normalized.split("/");
-    if (root) {
-      roots.add(root);
-    }
-  }
-
-  return roots.size === 1 ? [...roots][0] : null;
 }
 
 function trimArchiveRoot(path, archiveRoot) {
@@ -298,19 +280,36 @@ function buildDownloadUrl(downloadUrl, proxyBaseUrl) {
   return proxied.toString();
 }
 
-function writeArchiveToFs(FS, targetDir, zipBytes) {
-  const archive = unzipSync(zipBytes);
-  const archiveEntries = Object.keys(archive);
-  const archiveRoot = getArchiveRoot(archiveEntries);
-
+async function writeArchiveToFs(FS, targetDir, zipBytes) {
   ensureDirSync(FS, targetDir);
 
+  // Stream the add-on ZIP one entry at a time (via @php-wasm/stream-compression
+  // decodeZip), writing each into MEMFS and releasing it before the next, so
+  // peak memory stays ~one entry instead of the whole decompressed tree that
+  // fflate's `unzipSync` held — the MEMFS OOM avoided here (same lesson as the
+  // Nextcloud "extract apps with PHP ZipArchive" fix). External module/theme
+  // ZIPs wrap their payload in a single top-level folder (the GitHub "repo-ref/"
+  // or "ModuleName/" convention); detect it from the first nested entry so it
+  // can be stripped, mirroring the previous getArchiveRoot() behavior without
+  // buffering the whole archive.
+  let archiveRoot = null;
+  let rootResolved = false;
   let writtenFiles = 0;
-  for (const entryName of archiveEntries) {
-    const normalizedEntryName = normalizeArchivePath(entryName);
-    const isDirectoryEntry =
-      /\/$/u.test(entryName) || /\/$/u.test(normalizedEntryName);
-    const trimmedPath = trimArchiveRoot(entryName, archiveRoot);
+
+  for await (const entry of streamZipEntries(zipBytes)) {
+    const normalizedEntryName = normalizeArchivePath(entry.name);
+
+    if (
+      !rootResolved &&
+      normalizedEntryName &&
+      !isSkippableArchivePath(normalizedEntryName)
+    ) {
+      const [top, ...rest] = normalizedEntryName.split("/");
+      archiveRoot = rest.length > 0 ? top : null;
+      rootResolved = true;
+    }
+
+    const trimmedPath = trimArchiveRoot(entry.name, archiveRoot);
     const relativePath = normalizeArchivePath(trimmedPath);
 
     if (isSkippableArchivePath(relativePath) || !relativePath) {
@@ -321,23 +320,20 @@ function writeArchiveToFs(FS, targetDir, zipBytes) {
       throw new Error(`Archive contains unsafe path "${relativePath}".`);
     }
 
-    if (isDirectoryEntry) {
-      ensureDirSync(
-        FS,
-        `${targetDir}/${relativePath}`.replace(/\/{2,}/gu, "/"),
-      );
-      continue;
-    }
-
-    const fileBytes = archive[entryName];
-    if (!(fileBytes instanceof Uint8Array)) {
-      continue;
-    }
-
     const targetPath = `${targetDir}/${relativePath}`.replace(/\/{2,}/gu, "/");
+
+    if (entry.isDirectory) {
+      ensureDirSync(FS, targetPath);
+      continue;
+    }
+
+    if (!(entry.data instanceof Uint8Array)) {
+      continue;
+    }
+
     const parentDir = targetPath.split("/").slice(0, -1).join("/") || "/";
     ensureDirSync(FS, parentDir);
-    FS.writeFile(targetPath, fileBytes);
+    FS.writeFile(targetPath, entry.data);
     writtenFiles += 1;
   }
 
@@ -636,7 +632,7 @@ async function materializeAddon({
       buildDownloadUrl(source.downloadUrl, proxyBaseUrl),
     );
     publish(`Extracting ${kind} "${spec.name}".`, 0.57);
-    writeArchiveToFs(FS, persistedPath, zipBytes);
+    await writeArchiveToFs(FS, persistedPath, zipBytes);
 
     writeJsonSync(FS, manifestPath, {
       name: spec.name,
