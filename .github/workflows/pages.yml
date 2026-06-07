@@ -3,16 +3,24 @@ name: Deploy Pages
 on:
   push:
     branches: ["main"]
+  pull_request:
+    branches: ["main"]
+    types: [opened, reopened, synchronize]
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  pull-requests: write
 
 concurrency:
-  group: "pages"
+  group: pages-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: 8cdbd0eb9712b3a9a3e9b860fd87ed6c
+  CLOUDFLARE_PAGES_PROJECT: omeka-s-playground
 
 jobs:
   build:
@@ -21,6 +29,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - uses: actions/configure-pages@v6
+        if: github.event_name == 'push'
 
       - uses: actions/setup-node@v6
         with:
@@ -64,11 +73,53 @@ jobs:
           touch _site/.nojekyll
 
       - name: Upload Pages artifact
+        if: github.event_name == 'push'
         uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
+      # ── Cloudflare Pages (Direct Upload) ──
+      - name: Deploy to Cloudflare Pages (production)
+        if: github.event_name == 'push'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4 pages deploy _site --project-name="$CLOUDFLARE_PAGES_PROJECT" --branch=main --commit-dirty=true
+
+      - name: Deploy to Cloudflare Pages (PR preview)
+        id: cf_preview
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          out=$(npx --yes wrangler@4 pages deploy _site \
+            --project-name="$CLOUDFLARE_PAGES_PROJECT" \
+            --branch="$HEAD_REF" --commit-dirty=true 2>&1 | tee /dev/stderr)
+          url=$(printf '%s\n' "$out" | grep -oE "https://[a-z0-9-]+\.${CLOUDFLARE_PAGES_PROJECT}\.pages\.dev" | head -n1)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Comment preview URL on PR
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.head_ref }}
+          PREVIEW_URL: ${{ steps.cf_preview.outputs.url }}
+        run: |
+          MARKER='<!-- cf-preview -->'
+          BODY=$(printf '%s\n🚀 **Cloudflare Pages preview**: %s\nBranch `%s`' \
+            "$MARKER" "${PREVIEW_URL:-deploy failed — see workflow logs}" "$HEAD_REF")
+          CID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq "map(select(.body|startswith(\"$MARKER\")))|.[0].id // empty")
+          if [ -n "$CID" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$CID" -f body="$BODY" >/dev/null
+          else
+            gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$BODY" >/dev/null
+          fi
+
   deploy:
+    if: github.event_name == 'push'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
