@@ -4,6 +4,12 @@
   <img src=".github/screenshot.png" alt="Omeka S Playground" width="600">
 </p>
 
+<p align="center">
+  <a href="https://omeka-s-playground.pages.dev/" target="_blank" rel="noopener noreferrer">
+    <img src="assets/playground-preview-button.svg" alt="Try on Omeka S Playground" width="224">
+  </a>
+</p>
+
 [Live demo](https://ateeducacion.github.io/omeka-s-playground/) · [Documentation](docs/) · [Blueprints](docs/blueprint-json.md)
 
 > Run a full Omeka S site in the browser — no server required.

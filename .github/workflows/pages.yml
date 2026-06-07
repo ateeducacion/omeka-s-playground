@@ -21,7 +21,7 @@ concurrency:
 env:
   CLOUDFLARE_ACCOUNT_ID: 8cdbd0eb9712b3a9a3e9b860fd87ed6c
   CLOUDFLARE_PAGES_PROJECT: omeka-s-playground
-  PREVIEW_BUTTON_IMG: https://img.shields.io/badge/%E2%96%B6%20Try%20on%20the%20Playground-f98012?style=for-the-badge
+  PREVIEW_BUTTON_IMG: https://raw.githubusercontent.com/ateeducacion/omeka-s-playground/main/assets/playground-preview-button.svg
 
 jobs:
   build:
