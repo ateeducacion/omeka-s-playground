@@ -95,11 +95,13 @@ export function createPhpRuntime(
         const { clearJournal, initFsPersistence } = await import(
           "./fs-persistence.js"
         );
+        // On a clean boot (reset / blueprint change), wipe the old journal first;
+        // then ALWAYS start journaling so the fresh env persists on later reloads
+        // (a same-blueprint reload then reuses it instead of reinstalling).
         if (forceCleanBoot) {
           await clearJournal(scopeId);
-        } else {
-          await initFsPersistence(php, scopeId);
         }
+        await initFsPersistence(php, scopeId);
       }
 
       php.writeFile(
