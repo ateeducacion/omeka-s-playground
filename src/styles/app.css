@@ -30,6 +30,9 @@
   --chrome-active: rgba(255, 255, 255, 0.25);
   --color-danger: #dc3545;
   --color-danger-hover: #c82333;
+  --color-danger-light: rgba(220, 53, 69, 0.08);
+  --color-danger-border: rgba(220, 53, 69, 0.25);
+  --color-success: #2f9e44;
 
   /* Semantic */
   --bg-page: var(--color-gray-100);
@@ -673,86 +676,176 @@ button.danger:hover {
   }
 }
 
-/* -- Settings popover (replaces modal) --------------------- */
-.settings-popover {
-  position: fixed;
-  top: calc(var(--navbar-height) + var(--space-sm));
-  right: var(--space-lg);
-  z-index: 100;
-  width: 360px;
-  max-width: calc(100vw - 32px);
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-popover);
-  padding: var(--space-xl);
-  display: none;
+/* ── Config / Info building blocks (sidebar redesign) ── */
+.info-stack {
+  display: grid;
+  gap: var(--space-xl);
+}
+.info-section {
+  display: grid;
+  gap: var(--space-md);
 }
 
-.settings-popover.is-open {
-  display: block;
-}
-
-.settings-popover__title {
-  margin: 0 0 var(--space-lg);
-  font-size: 15px;
+.section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-heading);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
-.settings-popover__field {
+.field {
   display: grid;
   gap: var(--space-xs);
-  margin-bottom: var(--space-lg);
 }
-
-.settings-popover__field span {
-  color: var(--text-muted);
+.field > label {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--text-muted);
 }
-
-.settings-popover__field select {
-  padding: 7px 12px;
+.field select {
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-input);
   color: var(--text);
-  font: inherit;
 }
-
-.settings-popover__field select:focus {
+.field select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--color-maroon-light);
+  outline: none;
+}
+.field select:disabled {
+  background: var(--bg-surface-muted);
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
 
-.settings-popover__warning {
+.value-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.value-row:last-child {
+  border-bottom: 0;
+}
+.value-row .vr-key {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-success);
+}
+.status-pill .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+.dirty-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.dirty-note .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.warn-banner {
+  display: flex;
+  gap: var(--space-sm);
   padding: var(--space-md);
   border-radius: var(--radius-md);
   background: var(--color-maroon-light);
   border: 1px solid var(--color-maroon-border);
   color: var(--color-maroon-hover);
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.45;
-  margin-bottom: var(--space-lg);
+}
+.warn-banner svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
 }
 
-.settings-popover__actions {
+.action-row {
   display: flex;
-  justify-content: flex-end;
   gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+.action-row .grow {
+  flex: 1;
 }
 
-/* Overlay behind popover for outside-click dismiss */
-.settings-popover-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 99;
+.copy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-heading);
+  background: var(--bg-surface-muted);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.copy-chip:hover {
+  border-color: var(--color-gray-400);
+  background: var(--color-gray-100);
+}
+
+.divider {
+  height: 1px;
+  background: var(--border-light);
+  border: 0;
+  margin: 0;
+}
+
+.muted-help {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.reveal {
+  animation: reveal 0.18s ease;
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* generic hide utility (used by the Info-panel config: warning + apply button) */
+.is-hidden {
   display: none;
-}
-
-.settings-popover-overlay.is-open {
-  display: block;
 }
 
 /* -- Responsive -------------------------------------------- */
@@ -803,11 +896,5 @@ button.danger:hover {
 
   .browser-toolbar__actions {
     justify-content: flex-end;
-  }
-
-  .settings-popover {
-    right: var(--space-sm);
-    left: var(--space-sm);
-    width: auto;
   }
 }

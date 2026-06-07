@@ -6,7 +6,10 @@ async function waitForRuntimeReady(page) {
   // The address bar stays disabled until the PHP runtime has booted and the
   // site frame is scoped — booting requires the core bundle to have been
   // extracted into MEMFS (now via PHP ZipArchive), so this also guards against
-  // a core-extraction regression making boot too slow / fail.
+  // a core-extraction regression making boot too slow / fail. The runtime-id
+  // chip in the Info panel is populated as soon as the runtime is selected, so
+  // it doubles as a readiness signal.
+  await expect(page.locator("#runtime-id-value")).not.toHaveText("-");
   await expect(page.locator("#address-input")).toBeEnabled();
   await expect(page.locator("#site-frame")).toHaveAttribute("src", /scope=/);
 }
@@ -32,6 +35,57 @@ test("toggles the runtime side panel", async ({ page }) => {
     "true",
   );
   await expect(page.locator("#side-panel")).not.toHaveClass(/is-collapsed/);
+});
+
+test("info panel hosts the version config with a dirty-state apply", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await waitForRuntimeReady(page);
+
+  // The floating settings popover and gear button are gone — the version config
+  // now lives in the Info panel (single source of truth).
+  await expect(page.locator("#settings-button")).toHaveCount(0);
+  await expect(page.locator("#settings-popover")).toHaveCount(0);
+
+  await page.locator("#panel-toggle-button").click();
+
+  const omekaOptions = await page.locator("#info-omeka-version option").count();
+  expect(omekaOptions).toBeGreaterThan(0);
+  const phpOptions = await page.locator("#info-php-version option").count();
+  expect(phpOptions).toBeGreaterThan(0);
+
+  // Clean state: no Apply button and no destructive warning.
+  await expect(page.locator("#config-apply")).toBeHidden();
+  await expect(page.locator("#config-warning")).toBeHidden();
+
+  // Changing a version reveals the Apply button + the warning. Reselecting the
+  // original value clears the dirty state (no Discard button needed). Prefer the
+  // Omeka select if it offers more than one version, else fall back to PHP.
+  const omekaCurrent = await page.locator("#info-omeka-version").inputValue();
+  const omekaOther = await page
+    .locator("#info-omeka-version option")
+    .evaluateAll(
+      (opts, cur) => opts.find((o) => o.value !== cur)?.value,
+      omekaCurrent,
+    );
+  const dirtySelect = omekaOther ? "#info-omeka-version" : "#info-php-version";
+  const current = await page.locator(dirtySelect).inputValue();
+  const other = await page
+    .locator(`${dirtySelect} option`)
+    .evaluateAll(
+      (opts, cur) => opts.find((o) => o.value !== cur)?.value,
+      current,
+    );
+
+  expect(other).toBeTruthy();
+  await page.locator(dirtySelect).selectOption(other);
+  await expect(page.locator("#config-apply")).toBeVisible();
+  await expect(page.locator("#config-warning")).toBeVisible();
+
+  await page.locator(dirtySelect).selectOption(current);
+  await expect(page.locator("#config-apply")).toBeHidden();
+  await expect(page.locator("#config-warning")).toBeHidden();
 });
 
 test("persists /persist to IndexedDB and reboots from it on reload", async ({
