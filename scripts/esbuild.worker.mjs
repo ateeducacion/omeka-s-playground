@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
-const require = createRequire(import.meta.url);
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoDir = resolvePath(scriptDir, "..");
 
@@ -61,15 +59,18 @@ const stripUnusedPhpVersions = {
   },
 };
 
-// @php-wasm/web >= 3.1.22 references "../intl/shared/icu.dat", expecting a
-// sibling @php-wasm/intl package that is never published to npm. The file still
-// ships inside @php-wasm/web itself, so redirect the import to the existing copy.
-const phpWasmWebDir = dirname(require.resolve("@php-wasm/web/package.json"));
+const ICU_DATA_URL =
+  "https://unpkg.com/@php-wasm/web@3.1.36/shared/icu.dat";
 const icuDatShim = {
   name: "php-wasm-intl-icu-shim",
   setup(api) {
-    api.onResolve({ filter: /\.\.\/intl\/shared\/icu\.dat$/ }, () => ({
-      path: resolvePath(phpWasmWebDir, "shared/icu.dat"),
+    api.onResolve({ filter: /(^|\/)(?:intl\/shared|shared)\/icu\.dat$/ }, () => ({
+      path: "external-icu-data-url",
+      namespace: "external-icu-data-url",
+    }));
+    api.onLoad({ filter: /.*/, namespace: "external-icu-data-url" }, () => ({
+      loader: "js",
+      contents: `export default ${JSON.stringify(ICU_DATA_URL)};`,
     }));
   },
 };
