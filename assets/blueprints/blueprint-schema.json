@@ -164,6 +164,19 @@
                     }
                   }
                 ]
+              },
+              "assets": {
+                "type": "array",
+                "description": "Extra ZIP payloads overlaid onto the installed module directory after the module is extracted. Each archive is unpacked into 'destination' (relative to the module root); a single top-level wrapper folder is stripped, mirroring module extraction.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["url", "destination"],
+                  "properties": {
+                    "url": { "type": "string", "format": "uri-reference" },
+                    "destination": { "type": "string", "minLength": 1 }
+                  }
+                }
               }
             }
           }

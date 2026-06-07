@@ -140,6 +140,35 @@ describe("normalizeBlueprint", () => {
     assert.equal(result.modules[0].state, "activate");
   });
 
+  it("passes through module asset overlays and drops incomplete ones", () => {
+    const result = normalizeBlueprint(
+      {
+        modules: [
+          {
+            name: "ExeLearning",
+            state: "activate",
+            source: { type: "url", url: "https://example.com/module.zip" },
+            assets: [
+              {
+                url: "https://example.com/editor.zip",
+                destination: "dist/static",
+              },
+              { url: "", destination: "skip-no-url" },
+              { url: "https://example.com/x.zip", destination: "" },
+            ],
+          },
+        ],
+      },
+      baseConfig,
+    );
+    assert.equal(result.modules[0].assets.length, 1);
+    assert.equal(
+      result.modules[0].assets[0].url,
+      "https://example.com/editor.zip",
+    );
+    assert.equal(result.modules[0].assets[0].destination, "dist/static");
+  });
+
   it("throws on duplicate module names", () => {
     assert.throws(
       () =>

@@ -594,6 +594,41 @@ export async function mountPersistedAddons({ php, omekaRoot }) {
   }
 }
 
+// Normalize the optional `assets` list on an add-on spec. Each asset overlays
+// an extra ZIP payload (e.g. a separately published static editor bundle) onto
+// the installed add-on directory after the add-on itself is extracted.
+function resolveAddonAssets(spec) {
+  if (!Array.isArray(spec.assets)) {
+    return [];
+  }
+  return spec.assets
+    .map((asset) => ({
+      url: String(asset?.url || "").trim(),
+      destination: String(asset?.destination || "").trim(),
+    }))
+    .filter((asset) => asset.url && asset.destination);
+}
+
+// Fold the asset list into the cache fingerprint so changing an asset URL or
+// destination busts the cached add-on and re-extracts everything.
+function assetsFingerprint(assets) {
+  if (!assets.length) {
+    return "";
+  }
+  return `|assets:${assets
+    .map((asset) => `${asset.url}->${asset.destination}`)
+    .join(",")}`;
+}
+
+// Resolve (and harden) an asset destination relative to the add-on root.
+function resolveAssetTarget(persistedPath, destination) {
+  const relative = normalizeArchivePath(destination);
+  if (!relative || isUnsafeArchivePath(relative)) {
+    throw new Error(`Unsafe add-on asset destination "${destination}".`);
+  }
+  return `${persistedPath}/${relative}`.replace(/\/{2,}/gu, "/");
+}
+
 async function materializeAddon({
   FS,
   kind,
@@ -618,10 +653,13 @@ async function materializeAddon({
     };
   }
 
+  const assets = resolveAddonAssets(spec);
+  const fingerprint = `${source.fingerprint}${assetsFingerprint(assets)}`;
+
   const existingManifest = readJsonSync(FS, manifestPath);
   const hasCachedFiles = directoryHasFiles(FS, persistedPath);
   const cacheHit =
-    existingManifest?.fingerprint === source.fingerprint && hasCachedFiles;
+    existingManifest?.fingerprint === fingerprint && hasCachedFiles;
 
   if (!cacheHit) {
     publish(`Fetching ${kind} "${spec.name}".`, 0.53);
@@ -634,11 +672,25 @@ async function materializeAddon({
     publish(`Extracting ${kind} "${spec.name}".`, 0.57);
     await writeArchiveToFs(FS, persistedPath, zipBytes);
 
+    // Overlay any declared asset archives (e.g. a separately published static
+    // editor bundle) onto the add-on directory. writeArchiveToFs strips a
+    // single top-level wrapper folder, so an archive that wraps its payload in
+    // "static/" lands directly under the requested destination.
+    for (const asset of assets) {
+      const assetTarget = resolveAssetTarget(persistedPath, asset.destination);
+      publish(`Fetching asset for ${kind} "${spec.name}".`, 0.56);
+      const assetBytes = await fetchBytes(
+        buildDownloadUrl(asset.url, proxyBaseUrl),
+      );
+      await writeArchiveToFs(FS, assetTarget, assetBytes);
+    }
+
     writeJsonSync(FS, manifestPath, {
       name: spec.name,
       kind,
-      fingerprint: source.fingerprint,
+      fingerprint,
       source,
+      assets,
       downloadedAt: new Date().toISOString(),
     });
   }

@@ -252,6 +252,26 @@ function normalizeAddonSource(input) {
   throw new Error(`Unsupported blueprint addon source type "${type}".`);
 }
 
+// Normalize the optional `assets` overlay list on an add-on entry. Each asset
+// is an extra ZIP unpacked into a path relative to the installed add-on (used,
+// for example, to drop the shared static editor bundle into the module).
+function normalizeAddonAssets(input) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input
+    .map((asset) => {
+      const url = absolutizeUrl(asset?.url || "");
+      const destination = String(asset?.destination || "").trim();
+      if (!url || !destination) {
+        return null;
+      }
+      return { url, destination };
+    })
+    .filter(Boolean);
+}
+
 function normalizeAddonCollection(input, kind) {
   if (!Array.isArray(input)) {
     return [];
@@ -264,6 +284,11 @@ function normalizeAddonCollection(input, kind) {
         name: String(entry?.name || entry || "").trim(),
         source: normalizeAddonSource(entry?.source),
       };
+
+      const assets = normalizeAddonAssets(entry?.assets);
+      if (assets.length) {
+        normalized.assets = assets;
+      }
 
       if (kind === "module") {
         normalized.state =
