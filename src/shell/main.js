@@ -10,7 +10,6 @@ import {
   DEFAULT_OMEKA_VERSION,
   DEFAULT_PHP_VERSION,
   getCompatiblePhpVersions,
-  getOmekaVersionMetadata,
   OMEKA_VERSIONS,
   parseQueryParams,
   resolveRuntimeSelection,
@@ -47,16 +46,13 @@ const els = {
   homeButton: document.querySelector("#home-button"),
   adminButton: document.querySelector("#admin-button"),
   reset: document.querySelector("#reset-button"),
-  settingsButton: document.querySelector("#settings-button"),
-  settingsPopover: document.querySelector("#settings-popover"),
-  settingsOverlay: document.querySelector("#settings-overlay"),
-  settingsOmekaVersion: document.querySelector("#settings-omeka-version"),
-  settingsPhpVersion: document.querySelector("#settings-php-version"),
-  settingsApply: document.querySelector("#settings-apply"),
-  settingsCancel: document.querySelector("#settings-cancel"),
-  currentOmekaLabel: document.querySelector("#current-omeka-label"),
-  currentPhpLabel: document.querySelector("#current-php-label"),
-  currentRuntimeLabel: document.querySelector("#current-runtime-label"),
+  infoOmekaVersion: document.querySelector("#info-omeka-version"),
+  infoPhpVersion: document.querySelector("#info-php-version"),
+  configStatus: document.querySelector("#config-status"),
+  configWarning: document.querySelector("#config-warning"),
+  configApply: document.querySelector("#config-apply"),
+  runtimeIdChip: document.querySelector("#runtime-id-chip"),
+  runtimeIdValue: document.querySelector("#runtime-id-value"),
   infoPanel: document.querySelector("#info-panel"),
   infoTab: document.querySelector("#info-tab"),
   sidePanel: document.querySelector("#side-panel"),
@@ -393,95 +389,88 @@ function bindServiceWorkerMessages() {
   });
 }
 
-function populateSettingsModal() {
-  if (!els.settingsOmekaVersion || !els.settingsPhpVersion) {
+function populateConfigSelects() {
+  if (!els.infoOmekaVersion || !els.infoPhpVersion) {
     return;
   }
 
-  els.settingsOmekaVersion.innerHTML = "";
+  // Populate Omeka version dropdown
+  els.infoOmekaVersion.innerHTML = "";
   for (const entry of OMEKA_VERSIONS) {
     const option = document.createElement("option");
     option.value = entry.version;
     option.textContent = entry.label;
-    els.settingsOmekaVersion.append(option);
+    els.infoOmekaVersion.append(option);
   }
-  els.settingsOmekaVersion.value = currentOmekaVersion;
+  els.infoOmekaVersion.value = currentOmekaVersion;
 
+  // Populate PHP version dropdown based on selected Omeka version
   updatePhpVersionDropdown(currentOmekaVersion);
-  els.settingsPhpVersion.value = currentPhpVersion;
+  els.infoPhpVersion.value = currentPhpVersion;
 }
 
 function updatePhpVersionDropdown(omekaVersion) {
-  if (!els.settingsPhpVersion) {
+  if (!els.infoPhpVersion) {
     return;
   }
 
   const compatible = getCompatiblePhpVersions(omekaVersion);
-  const previousValue = els.settingsPhpVersion.value;
-  els.settingsPhpVersion.innerHTML = "";
+  const previousValue = els.infoPhpVersion.value;
+  els.infoPhpVersion.innerHTML = "";
   for (const version of compatible) {
     const option = document.createElement("option");
     option.value = version;
     option.textContent = `PHP ${version}`;
-    els.settingsPhpVersion.append(option);
+    els.infoPhpVersion.append(option);
   }
 
+  // Keep current selection if still compatible, otherwise fall back
   if (compatible.includes(previousValue)) {
-    els.settingsPhpVersion.value = previousValue;
+    els.infoPhpVersion.value = previousValue;
   } else if (compatible.includes(currentPhpVersion)) {
-    els.settingsPhpVersion.value = currentPhpVersion;
+    els.infoPhpVersion.value = currentPhpVersion;
   } else if (compatible.includes(DEFAULT_PHP_VERSION)) {
-    els.settingsPhpVersion.value = DEFAULT_PHP_VERSION;
+    els.infoPhpVersion.value = DEFAULT_PHP_VERSION;
   } else {
-    els.settingsPhpVersion.value = compatible[0];
+    els.infoPhpVersion.value = compatible[0];
   }
 }
 
-function updateCurrentVersionLabels() {
-  const meta = getOmekaVersionMetadata(currentOmekaVersion);
-  if (els.currentOmekaLabel) {
-    els.currentOmekaLabel.textContent = meta
-      ? meta.label
-      : currentOmekaVersion || "-";
-  }
-  if (els.currentPhpLabel) {
-    els.currentPhpLabel.textContent = `PHP ${currentPhpVersion}`;
-  }
-  if (els.currentRuntimeLabel) {
-    els.currentRuntimeLabel.textContent = currentRuntimeId;
-  }
-}
-
-function openSettingsPopover() {
-  if (!els.settingsPopover) {
+// Reflect the applied runtime in the Info panel: when the selected versions
+// differ from what is actually running the config is "dirty". Changing a version
+// is destructive (it resets the site), so the Apply button stays hidden and the
+// warning stays hidden until the selection actually differs.
+function refreshDirtyState() {
+  if (!els.infoOmekaVersion || !els.infoPhpVersion) {
     return;
   }
-  populateSettingsModal();
-  els.settingsPopover.classList.add("is-open");
-  els.settingsOverlay.classList.add("is-open");
-  els.settingsOverlay.setAttribute("aria-hidden", "false");
-  els.settingsButton.setAttribute("aria-expanded", "true");
-  const firstInput = els.settingsPopover.querySelector("select");
-  if (firstInput) {
-    firstInput.focus();
+  const dirty =
+    els.infoOmekaVersion.value !== currentOmekaVersion ||
+    els.infoPhpVersion.value !== currentPhpVersion;
+
+  if (els.configStatus) {
+    els.configStatus.className = dirty ? "dirty-note" : "status-pill";
+    els.configStatus.innerHTML = dirty
+      ? '<span class="dot"></span>Unsaved'
+      : '<span class="dot"></span>Running';
   }
+  // Changing a version is destructive; the Apply button and warning only appear
+  // once the selection differs from what is running. To revert, reselect the
+  // original version — the dirty state clears itself.
+  els.configWarning?.classList.toggle("is-hidden", !dirty);
+  els.configApply?.classList.toggle("is-hidden", !dirty);
 }
 
-function closeSettingsPopover() {
-  if (!els.settingsPopover) {
-    return;
+function updateConfigState() {
+  if (els.runtimeIdValue) {
+    els.runtimeIdValue.textContent = currentRuntimeId;
   }
-  els.settingsPopover.classList.remove("is-open");
-  els.settingsOverlay.classList.remove("is-open");
-  els.settingsOverlay.setAttribute("aria-hidden", "true");
-  els.settingsButton.setAttribute("aria-expanded", "false");
-  els.settingsButton.focus();
+  refreshDirtyState();
 }
 
-function applySettingsAndReset() {
-  const newOmeka = els.settingsOmekaVersion?.value;
-  const newPhp = els.settingsPhpVersion?.value;
-  closeSettingsPopover();
+function applyConfigAndReset() {
+  const newOmeka = els.infoOmekaVersion?.value;
+  const newPhp = els.infoPhpVersion?.value;
 
   if (newOmeka === currentOmekaVersion && newPhp === currentPhpVersion) {
     return;
@@ -543,44 +532,36 @@ async function main() {
       : previous?.path || preferredPath;
   els.address.value = currentPath;
 
-  updateCurrentVersionLabels();
+  populateConfigSelects();
+  updateConfigState();
 
-  if (els.settingsOmekaVersion) {
-    els.settingsOmekaVersion.addEventListener("change", (event) => {
-      updatePhpVersionDropdown(event.target.value);
+  // Configuration (Info panel) event listeners
+  if (els.infoOmekaVersion) {
+    els.infoOmekaVersion.addEventListener("change", () => {
+      updatePhpVersionDropdown(els.infoOmekaVersion.value);
+      refreshDirtyState();
     });
   }
-
-  // Settings popover event listeners
-  if (els.settingsButton) {
-    els.settingsButton.addEventListener("click", () => {
-      const isOpen = els.settingsPopover?.classList.contains("is-open");
-      if (isOpen) {
-        closeSettingsPopover();
-      } else {
-        openSettingsPopover();
+  if (els.infoPhpVersion) {
+    els.infoPhpVersion.addEventListener("change", refreshDirtyState);
+  }
+  if (els.configApply) {
+    els.configApply.addEventListener("click", applyConfigAndReset);
+  }
+  if (els.runtimeIdChip) {
+    els.runtimeIdChip.addEventListener("click", () => {
+      navigator.clipboard?.writeText(currentRuntimeId || "");
+      const label = els.runtimeIdValue;
+      if (!label) {
+        return;
       }
+      const original = label.textContent;
+      label.textContent = "✓ copied";
+      setTimeout(() => {
+        label.textContent = original;
+      }, 1400);
     });
   }
-  if (els.settingsOverlay) {
-    els.settingsOverlay.addEventListener("click", closeSettingsPopover);
-  }
-  if (els.settingsCancel) {
-    els.settingsCancel.addEventListener("click", closeSettingsPopover);
-  }
-  if (els.settingsApply) {
-    els.settingsApply.addEventListener("click", applySettingsAndReset);
-  }
-
-  // Close popover on Escape
-  document.addEventListener("keydown", (event) => {
-    if (
-      event.key === "Escape" &&
-      els.settingsPopover?.classList.contains("is-open")
-    ) {
-      closeSettingsPopover();
-    }
-  });
 
   bindShellChannel();
   bindServiceWorkerMessages();
