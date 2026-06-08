@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - uses: actions/configure-pages@v6
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
       - uses: actions/setup-node@v6
         with:
@@ -74,14 +74,14 @@ jobs:
           touch _site/.nojekyll
 
       - name: Upload Pages artifact
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
       # ── Cloudflare Pages (Direct Upload) ──
       - name: Deploy to Cloudflare Pages (production)
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npx --yes wrangler@4 pages deploy _site --project-name="$CLOUDFLARE_PAGES_PROJECT" --branch=main --commit-dirty=true
@@ -138,7 +138,7 @@ jobs:
           fi
 
   deploy:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
