@@ -1,3 +1,4 @@
+import { BUILD_VERSION } from "../generated/build-version.js";
 import {
   buildDefaultBlueprint,
   clearActiveBlueprint,
@@ -109,7 +110,9 @@ async function ensureRuntimeServiceWorker() {
   }
 
   const swUrl = new URL("../../sw.js", import.meta.url);
-  swUrl.searchParams.set("v", config.bundleVersion);
+  // Cache-bust the SW by the per-build worker-bundle hash so a redeploy is
+  // always picked up (the old static config.bundleVersion was manual).
+  swUrl.searchParams.set("v", BUILD_VERSION);
   swUrl.searchParams.set("scope", scopeId);
   swUrl.searchParams.set("runtime", currentRuntimeId);
 

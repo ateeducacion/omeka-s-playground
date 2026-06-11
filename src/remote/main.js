@@ -1,3 +1,4 @@
+import { BUILD_VERSION } from "../generated/build-version.js";
 import { loadActiveBlueprint } from "../shared/blueprint.js";
 import { loadPlaygroundConfig } from "../shared/config.js";
 import { resolveRuntimeConfig } from "../shared/omeka-versions.js";
@@ -52,7 +53,7 @@ async function registerRuntimeServiceWorker(scopeId, runtimeId, config) {
   }
 
   const swUrl = new URL("../../sw.js", import.meta.url);
-  swUrl.searchParams.set("v", config.bundleVersion);
+  swUrl.searchParams.set("v", BUILD_VERSION);
   swUrl.searchParams.set("scope", scopeId);
   swUrl.searchParams.set("runtime", runtimeId);
 
@@ -250,6 +251,9 @@ async function bootstrapRemote() {
       "../../dist/php-worker.bundle.js",
       import.meta.url,
     );
+    // Cache-bust the worker bundle (fixed filename, not SW-cached) so a redeploy
+    // never serves a stale runtime from the browser HTTP cache.
+    workerUrl.searchParams.set("v", BUILD_VERSION);
     workerUrl.searchParams.set("scope", scopeId);
     workerUrl.searchParams.set("runtime", runtime.id);
     phpWorker = new Worker(workerUrl, { type: "module" });
