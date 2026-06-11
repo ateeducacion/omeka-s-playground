@@ -1,3 +1,4 @@
+import { resolveBootstrapArchive } from "../../lib/omeka-loader.js";
 import {
   buildEffectivePlaygroundConfig,
   normalizeBlueprint,
@@ -1291,9 +1292,23 @@ async function appendPhpIniOverrides(php, config) {
   );
 }
 
+/**
+ * Start downloading the readonly-core manifest + bundle right away so the
+ * ~19 MB fetch overlaps the WASM runtime compile in php.refresh() (parallel
+ * boot). Resolves to { manifest, bytes }, consumed by prepareOmekaRuntimeFilesystem
+ * once the live runtime can extract it. The bundle is Cache-API backed, so a
+ * failed or duplicated fetch is cheap.
+ */
+export function startCoreArchivePrefetch({ omekaVersion, onProgress } = {}) {
+  return fetchManifest({ omekaVersion }).then((manifest) =>
+    resolveBootstrapArchive({ manifest }, onProgress),
+  );
+}
+
 export async function prepareOmekaRuntimeFilesystem({
   blueprint,
   config,
+  corePrefetch = null,
   omekaVersion,
   php,
   publish = () => {},
@@ -1310,7 +1325,11 @@ export async function prepareOmekaRuntimeFilesystem({
   await ensureMutableLayout(php);
 
   publish("Loading Omeka readonly bundle manifest.", 0.28);
-  const manifest = await fetchManifest({ omekaVersion });
+  // Reuse the manifest + core bytes prefetched in parallel with php.refresh()
+  // when available; otherwise fetch lazily (e.g. the CLI media runtime path).
+  const prefetched = corePrefetch ? await corePrefetch : null;
+  const manifest =
+    prefetched?.manifest ?? (await fetchManifest({ omekaVersion }));
   const manifestState = buildManifestState(
     manifest,
     runtimeId,
@@ -1318,7 +1337,11 @@ export async function prepareOmekaRuntimeFilesystem({
   );
 
   publish("Mounting readonly Omeka core bundle.", 0.4);
-  await mountReadonlyCore(php, manifest, { root: OMEKA_ROOT, publish });
+  await mountReadonlyCore(php, manifest, {
+    root: OMEKA_ROOT,
+    publish,
+    bytes: prefetched?.bytes ?? null,
+  });
   await linkMutableFilesDir(php);
 
   publish("Writing SQLite and local config overrides.", 0.6);
@@ -1349,6 +1372,7 @@ export async function bootstrapOmeka({
   blueprint,
   clean = false,
   config,
+  corePrefetch = null,
   omekaVersion,
   php,
   publish,
@@ -1363,6 +1387,7 @@ export async function bootstrapOmeka({
     await prepareOmekaRuntimeFilesystem({
       blueprint,
       config,
+      corePrefetch,
       omekaVersion,
       php,
       publish,

@@ -9,7 +9,11 @@ import {
   createPhpBridgeChannel,
   createShellChannel,
 } from "./src/shared/protocol.js";
-import { bootstrapOmeka, PLAYGROUND_DB_PATH } from "./src/runtime/bootstrap.js";
+import {
+  bootstrapOmeka,
+  PLAYGROUND_DB_PATH,
+  startCoreArchivePrefetch,
+} from "./src/runtime/bootstrap.js";
 import { executeCliCommandInRuntime } from "./src/runtime/cli-runtime.js";
 import { createPhpRuntime } from "./src/runtime/php-loader.js";
 import {
@@ -164,12 +168,39 @@ async function getRuntimeState() {
       forceCleanBoot,
     });
 
-    postShell({
-      kind: "progress",
-      title: "Refreshing PHP runtime",
-      detail: `Booting ${runtime.label}.`,
-      progress: 0.12,
+    // Monotonic progress: the parallel core download and the bootstrap steps
+    // interleave, so clamp the reported progress so the bar never goes backward.
+    let maxProgress = 0;
+    const publishProgress = (title, detail, progress) => {
+      if (typeof progress === "number") {
+        maxProgress = Math.max(maxProgress, progress);
+      }
+      postShell({ kind: "progress", title, detail, progress: maxProgress });
+    };
+
+    // Parallel boot: start downloading the readonly-core manifest + bundle now
+    // so the ~19 MB fetch overlaps the WASM runtime compile in php.refresh().
+    const corePrefetch = startCoreArchivePrefetch({
+      omekaVersion,
+      onProgress: (p) => {
+        if (p?.ratio !== undefined) {
+          publishProgress(
+            "Downloading Omeka core",
+            `Downloading Omeka core: ${Math.round(p.ratio * 100)}%`,
+            0.3 + p.ratio * 0.15,
+          );
+        }
+      },
     });
+    // Keep a handler attached so a prefetch failure during refresh doesn't raise
+    // an unhandledrejection; the real error still surfaces where it is awaited.
+    corePrefetch.catch(() => {});
+
+    publishProgress(
+      "Refreshing PHP runtime",
+      `Booting ${runtime.label}.`,
+      0.12,
+    );
 
     await php.refresh();
     stateRef = { appBaseUrl, config, php, runtime };
@@ -186,12 +217,7 @@ async function getRuntimeState() {
     }
 
     const publish = (detail, progress) => {
-      postShell({
-        kind: "progress",
-        title: "Bootstrapping Omeka",
-        detail,
-        progress,
-      });
+      publishProgress("Bootstrapping Omeka", detail, progress);
     };
 
     let bootstrapState;
@@ -200,6 +226,7 @@ async function getRuntimeState() {
         config,
         blueprint: activeBlueprint,
         clean: forceCleanBoot,
+        corePrefetch,
         omekaVersion,
         php,
         publish,

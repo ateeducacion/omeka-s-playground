@@ -6,19 +6,24 @@ const decoder = new TextDecoder();
 export async function mountReadonlyCore(
   php,
   manifest,
-  { root = "/www/omeka", publish } = {},
+  { root = "/www/omeka", publish, bytes = null } = {},
 ) {
-  const archive = await resolveBootstrapArchive(
-    { manifestUrl: manifest._manifestUrl },
-    (progress) => {
+  // Parallel boot: prefer the core bytes the worker downloaded while the WASM
+  // runtime was compiling. Fall back to a lazy download when called without
+  // them (e.g. the short-lived CLI media runtime), where the bundle is served
+  // from the Cache API so the duplicate fetch is cheap.
+  let archiveBytes = bytes;
+  if (!archiveBytes) {
+    const archive = await resolveBootstrapArchive({ manifest }, (progress) => {
       if (publish && progress.ratio !== undefined) {
         publish(
           `Downloading Omeka bundle: ${Math.round(progress.ratio * 100)}%`,
           0.3 + progress.ratio * 0.15,
         );
       }
-    },
-  );
+    });
+    archiveBytes = archive.bytes;
+  }
 
   // Extract the core with PHP's native ZipArchive instead of decompressing the
   // whole ~19 MB / 9 310-file archive in JS on every boot. libzip inflates +
@@ -31,10 +36,10 @@ export async function mountReadonlyCore(
   const tmpZip = "/tmp/omeka-core.zip";
   const stage = "/tmp/omeka-core-stage";
   publish?.("Extracting Omeka core…", 0.45);
-  await php.writeFile(tmpZip, archive.bytes);
+  await php.writeFile(tmpZip, archiveBytes);
   // Drop the JS reference to the compressed buffer now that MEMFS has its own
   // copy, so the GC can reclaim it while ZipArchive extracts.
-  archive.bytes = null;
+  archiveBytes = null;
   const result = await php.run(buildCoreExtractScript(tmpZip, stage, root));
   const out = decoder.decode(result.bytes || new Uint8Array()).trim();
   if (!out.startsWith("INSTALL_OK")) {
@@ -45,7 +50,7 @@ export async function mountReadonlyCore(
   }
   const written = Number.parseInt(out.slice("INSTALL_OK".length).trim(), 10);
 
-  return { manifest: archive.manifest, entries: written };
+  return { manifest, entries: written };
 }
 
 export async function fetchArrayBuffer(path, cache = "default") {
