@@ -1,6 +1,7 @@
 import {
   buildDefaultBlueprint,
   clearActiveBlueprint,
+  encodeBlueprintParam,
   exportBlueprintPayload,
   parseImportedBlueprintPayload,
   resolveBlueprintForShell,
@@ -330,10 +331,9 @@ async function importPayload(file) {
     return;
   }
 
-  // Encode blueprint into URL and reload for clean WASM runtime
-  const encoded = btoa(
-    unescape(encodeURIComponent(JSON.stringify(imported.blueprint))),
-  );
+  // Encode blueprint into URL and reload for clean WASM runtime. Gzipped +
+  // base64url when the browser supports it, so shared links stay short.
+  const encoded = await encodeBlueprintParam(imported.blueprint);
   const url = new URL(window.location.href);
   url.searchParams.set("blueprint", encoded);
   url.searchParams.delete("blueprint-url");

@@ -33,13 +33,28 @@ function getBlueprintStorageKey(scopeId) {
   return `${BLUEPRINT_KEY_PREFIX}:${scopeId}`;
 }
 
-function decodeBase64Text(value) {
-  const text = String(value || "").trim();
-  if (!text) {
-    throw new Error("Blueprint data payload is empty.");
-  }
+// --- Inline blueprint URL payloads ----------------------------------------
+// Inline blueprints travel in the URL (?blueprint=) as base64url. To keep
+// shareable links short, the JSON is gzip-compressed first when the browser
+// supports the Compression Streams API; the compressed bytes keep the standard
+// gzip magic (0x1f 0x8b) so the decoder can tell a compressed payload from a
+// plain one. Plain base64 JSON (older links, or browsers without the API) keeps
+// working unchanged — the decoder accepts both base64 and base64url alphabets.
 
-  const normalized = text
+function base64UrlFromBytes(bytes) {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary)
+    .replace(/\+/gu, "-")
+    .replace(/\//gu, "_")
+    .replace(/=+$/u, "");
+}
+
+function bytesFromBase64(value) {
+  const normalized = String(value || "")
+    .trim()
     .replace(/-/gu, "+")
     .replace(/_/gu, "/")
     .replace(/\s+/gu, "");
@@ -54,26 +69,78 @@ function decodeBase64Text(value) {
     throw new Error("Blueprint data payload is not valid base64.");
   }
 
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function hasGzipMagic(bytes) {
+  return bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
+async function pipeThroughStream(bytes, transform) {
+  const piped = new Blob([bytes]).stream().pipeThrough(transform);
+  return new Uint8Array(await new Response(piped).arrayBuffer());
+}
+
+async function gzipBytes(bytes) {
+  return pipeThroughStream(bytes, new CompressionStream("gzip"));
+}
+
+async function gunzipBytes(bytes) {
+  return pipeThroughStream(bytes, new DecompressionStream("gzip"));
+}
+
+/**
+ * Encode a blueprint object into the compact base64url payload used in
+ * ?blueprint= links. Gzips the JSON when the browser supports it (and the
+ * result is actually smaller); otherwise emits plain base64url JSON.
+ */
+export async function encodeBlueprintParam(blueprint) {
+  const utf8 = new TextEncoder().encode(JSON.stringify(blueprint));
+  if (typeof CompressionStream === "function") {
+    try {
+      const gzipped = await gzipBytes(utf8);
+      if (gzipped.length < utf8.length) {
+        return base64UrlFromBytes(gzipped);
+      }
+    } catch {
+      // Compression unavailable at runtime — fall back to plain base64url.
+    }
+  }
+  return base64UrlFromBytes(utf8);
+}
+
+/**
+ * Decode a ?blueprint= / ?blueprint-data= payload back into its raw object,
+ * transparently handling both gzip-compressed and plain base64(url) JSON.
+ */
+export async function decodeBlueprintParam(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    throw new Error("Blueprint data payload is empty.");
+  }
+
+  const bytes = bytesFromBase64(text);
+  const jsonBytes =
+    hasGzipMagic(bytes) && typeof DecompressionStream === "function"
+      ? await gunzipBytes(bytes)
+      : bytes;
+
+  let json;
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    json = new TextDecoder("utf-8", { fatal: true }).decode(jsonBytes);
   } catch {
     throw new Error("Blueprint data payload is not valid UTF-8.");
   }
+
+  try {
+    return JSON.parse(json);
+  } catch {
+    throw new Error("Blueprint data payload is not valid JSON.");
+  }
 }
 
-function parseBlueprintDataParam(value, config) {
-  let rawPayload;
-  try {
-    rawPayload = JSON.parse(decodeBase64Text(value));
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      throw new Error("Blueprint data payload is not valid JSON.");
-    }
-    throw error;
-  }
-
-  return normalizeBlueprint(rawPayload, config);
+async function parseBlueprintDataParam(value, config) {
+  return normalizeBlueprint(await decodeBlueprintParam(value), config);
 }
 
 function normalizePath(path, fallback = "/") {
@@ -613,7 +680,7 @@ export async function resolveBlueprintForShell(scopeId, config) {
       saveActiveBlueprint(scopeId, payload);
       return payload;
     }
-    const payload = parseBlueprintDataParam(blueprintParam, config);
+    const payload = await parseBlueprintDataParam(blueprintParam, config);
     saveActiveBlueprint(scopeId, payload);
     return payload;
   }
@@ -641,7 +708,7 @@ export async function resolveBlueprintForShell(scopeId, config) {
     console.warn(
       "[blueprint] ?blueprint-data= is deprecated, use ?blueprint= instead.",
     );
-    const payload = parseBlueprintDataParam(blueprintDataParam, config);
+    const payload = await parseBlueprintDataParam(blueprintDataParam, config);
     saveActiveBlueprint(scopeId, payload);
     return payload;
   }
