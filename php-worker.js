@@ -30,6 +30,9 @@ const runtimeId = workerUrl.searchParams.get("runtime");
 let bridgeChannel = null;
 let runtimeStatePromise = null;
 let requestQueue = Promise.resolve();
+// Synchronous handle to the fully-booted runtime, used by the static fast-path
+// (null until bootstrap completes and again after a runtime rotation).
+let readyState = null;
 let activeBlueprint = null;
 let forceCleanBoot = false;
 
@@ -107,6 +110,7 @@ function resetRuntime(reason) {
   reactiveRestartCount += 1;
   requestCount = 0;
   runtimeStatePromise = null;
+  readyState = null;
 
   postShell({
     kind: "progress",
@@ -246,6 +250,8 @@ async function getRuntimeState() {
         config.landingPath,
     });
 
+    // Expose the booted runtime to the static fast-path now that it can serve.
+    readyState = stateRef;
     return stateRef;
   })();
 
@@ -265,11 +271,54 @@ async function respondError(id, message, status) {
   });
 }
 
+/**
+ * Serve an existing static asset straight from MEMFS, bypassing the serialized
+ * request queue so a slow page render doesn't hold up its own CSS/JS/images.
+ * Only kicks in for GET once the runtime is fully booted; returns false (and
+ * does not respond) for anything that should go through the PHP pipeline, so
+ * the caller falls back to the queue.
+ */
+function tryServeStaticFastPath(data) {
+  if (!readyState || (data.request?.method || "GET") !== "GET") {
+    return false;
+  }
+
+  let pathname;
+  try {
+    pathname = new URL(data.request.url).pathname;
+  } catch {
+    return false;
+  }
+
+  let response;
+  try {
+    response = readyState.php.serveStatic(pathname);
+  } catch {
+    return false;
+  }
+  if (!response) {
+    return false;
+  }
+
+  serializeResponse(response)
+    .then((serialized) => {
+      respond({ kind: "http-response", id: data.id, response: serialized });
+    })
+    .catch(async () => {
+      await respondError(data.id, "Static fast-path failed.", 500);
+    });
+  return true;
+}
+
 function installBridgeListener() {
   bridgeChannel.addEventListener("message", (event) => {
     const data = event.data;
 
     if (data?.kind !== "http-request") {
+      return;
+    }
+
+    if (tryServeStaticFastPath(data)) {
       return;
     }
 
