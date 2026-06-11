@@ -1,6 +1,15 @@
+import { BUILD_VERSION } from "./src/generated/build-version.js";
 import { createPhpBridgeChannel, createWorkerRequestId } from "./src/shared/protocol.js";
 
 const INTERNAL_PROXY_PATH = "/__playground_proxy__";
+// Cache-first store for the immutable, hash-named runtime assets under /dist/
+// (the multi-MB PHP .wasm + intl .so). Their filenames already encode a content
+// hash, so they are safe to serve from cache indefinitely and offline; the cache
+// name is keyed by the worker-bundle build so `activate` can drop old
+// generations. The large readonly-core ZIP under /assets/omeka/ is deliberately
+// left out — the worker caches it via its own Cache API with SHA verification.
+const STATIC_CACHE_NAME = `omeka-static-${BUILD_VERSION}`;
+const CACHEABLE_DIST_RE = /\/dist\/[^/]+\.(?:wasm|so)$/u;
 let addonProxyUrlOverride = null;
 let playgroundConfigPromise;
 
@@ -62,6 +71,32 @@ function buildErrorResponse(message, status = 500) {
       },
     },
   );
+}
+
+function isCacheableStatic(pathname) {
+  return CACHEABLE_DIST_RE.test(stripAppBasePath(pathname));
+}
+
+async function cacheFirst(request) {
+  let cache;
+  try {
+    cache = await caches.open(STATIC_CACHE_NAME);
+  } catch {
+    return fetch(request);
+  }
+
+  const cached = await cache.match(request);
+  if (cached) {
+    return cached;
+  }
+
+  const response = await fetch(request);
+  // Only store complete 200 responses (cache.put rejects 206 Partial Content).
+  if (response.status === 200) {
+    // Clone before the body is consumed by the caller.
+    cache.put(request, response.clone()).catch(() => {});
+  }
+  return response;
 }
 
 async function loadServiceWorkerConfig() {
@@ -390,7 +425,21 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      // Drop static caches from older builds before claiming clients.
+      const names = await caches.keys();
+      await Promise.all(
+        names
+          .filter(
+            (name) =>
+              name.startsWith("omeka-static-") && name !== STATIC_CACHE_NAME,
+          )
+          .map((name) => caches.delete(name)),
+      );
+      await self.clients.claim();
+    })(),
+  );
 });
 
 self.addEventListener("fetch", (event) => {
@@ -398,6 +447,17 @@ self.addEventListener("fetch", (event) => {
     const url = new URL(event.request.url);
     if (url.origin !== self.location.origin) {
       return fetch(event.request);
+    }
+
+    // Cache-first for the immutable runtime assets under /dist/ (WASM + intl .so),
+    // so reloads (and offline) don't re-download tens of MB. Range requests are
+    // passed through so a partial-content consumer still gets a 206.
+    if (
+      event.request.method === "GET" &&
+      !event.request.headers.has("range") &&
+      isCacheableStatic(url.pathname)
+    ) {
+      return cacheFirst(event.request);
     }
 
     const strippedPath = stripAppBasePath(url.pathname);

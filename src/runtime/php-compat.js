@@ -268,6 +268,32 @@ export function wrapPhpInstance(
       return response;
     },
 
+    /**
+     * Fast path for static assets: read an existing non-PHP file straight from
+     * MEMFS, mirroring request()'s static branch but without the CGI machinery
+     * (no $_SERVER assembly, cookies, cwd, or php.run()). A pure FS read, so it
+     * is safe to call from outside the request queue even while a php.run() is
+     * suspended mid-request. Returns null when the path resolves to a PHP script
+     * or is not an existing file, so the caller falls back to the normal
+     * pipeline (clean-URL rewriting to the front controller).
+     */
+    serveStatic(pathname) {
+      const { scriptPath } = resolveScriptPath(pathname, resolvedWebRoot);
+      if (isPhpScript(scriptPath)) {
+        return null;
+      }
+      let data;
+      try {
+        data = php.readFileAsBuffer(scriptPath);
+      } catch {
+        return null;
+      }
+      return new Response(data, {
+        status: 200,
+        headers: { "content-type": getMimeType(scriptPath) },
+      });
+    },
+
     async analyzePath(path) {
       try {
         const exists = php.fileExists(path);

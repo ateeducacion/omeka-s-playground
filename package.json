@@ -11,10 +11,10 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@php-wasm/fs-journal": "^3.1.36",
-    "@php-wasm/stream-compression": "^3.1.36",
-    "@php-wasm/universal": "^3.1.36",
-    "@php-wasm/web": "^3.1.36",
+    "@php-wasm/fs-journal": "^3.1.38",
+    "@php-wasm/stream-compression": "^3.1.38",
+    "@php-wasm/universal": "^3.1.38",
+    "@php-wasm/web": "^3.1.38",
     "fflate": "^0.8.3"
   },
   "devDependencies": {
