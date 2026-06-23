@@ -88,7 +88,7 @@ Add a new version by appending an entry to `OMEKA_VERSIONS` (with a `source.type
 
 ### Generated Assets
 
-- `assets/omeka/<version>/`: readonly runtime bundle files (`.zip`), one directory per supported Omeka version (e.g. `4.1.1`, `4.2.0`).
+- `assets/omeka/<version>/`: readonly runtime bundle files (`.zip`), one directory per supported Omeka version (e.g. `4.1.1`, `4.2.1`).
 - `assets/manifests/<version>.json`: generated bundle manifest per Omeka version. `latest.json` is written for the default version as a backward-compat alias.
 - `dist/`: esbuild-bundled worker and `@php-wasm` WASM binaries
 
@@ -388,7 +388,7 @@ privileged port below `1024` fails with `EACCES`, so use something like `8087`.
 Web Worker (`php-worker.js`, the PHP/WASM runtime) and a Service Worker (`sw.js`).
 The actual Omeka app is then served under `/playground/<scope>/<runtime>/…` and
 displayed inside the `#site-frame` iframe. `<runtime>` is a runtime id such as
-`php83-omeka420` (see `playground.config.json`); `<scope>` is a per-tab id stored
+`php83-omeka421` (see `playground.config.json`); `<scope>` is a per-tab id stored
 in `sessionStorage` (`getOrCreateScopeId` in `src/shared/storage.js`), so all
 mutable state is scoped to that tab within its session.
 

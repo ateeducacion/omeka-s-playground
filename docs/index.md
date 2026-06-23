@@ -4,7 +4,7 @@
   <img src="https://raw.githubusercontent.com/ateeducacion/omeka-s-playground/refs/heads/main/.github/screenshot.png" alt="Omeka S Playground" width="600">
 </p>
 
-Omeka S Playground runs a full Omeka S 4.2.0 instance in the browser with WebAssembly, powered by [WordPress Playground](https://github.com/WordPress/wordpress-playground)'s `@php-wasm/web` runtime. No server required — every page load boots a fresh, ephemeral Omeka S instance.
+Omeka S Playground runs a full Omeka S 4.2.1 instance in the browser with WebAssembly, powered by [WordPress Playground](https://github.com/WordPress/wordpress-playground)'s `@php-wasm/web` runtime. No server required — every page load boots a fresh, ephemeral Omeka S instance.
 
 Use this documentation when you need to:
 

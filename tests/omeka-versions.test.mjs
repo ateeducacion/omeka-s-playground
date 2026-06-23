@@ -22,12 +22,12 @@ import {
 } from "../src/shared/omeka-versions.js";
 
 describe("OMEKA_VERSIONS", () => {
-  it("includes 4.1.1 and 4.2.0 and picks 4.2.0 as default", () => {
+  it("includes 4.1.1 and 4.2.1 and picks 4.2.1 as default", () => {
     const versions = OMEKA_VERSIONS.map((entry) => entry.version);
     assert.ok(versions.includes("4.1.1"));
-    assert.ok(versions.includes("4.2.0"));
-    assert.equal(getDefaultOmekaVersion().version, "4.2.0");
-    assert.equal(DEFAULT_OMEKA_VERSION, "4.2.0");
+    assert.ok(versions.includes("4.2.1"));
+    assert.equal(getDefaultOmekaVersion().version, "4.2.1");
+    assert.equal(DEFAULT_OMEKA_VERSION, "4.2.1");
   });
 
   it("exposes the full PHP matrix and a sensible default", () => {
@@ -39,7 +39,7 @@ describe("OMEKA_VERSIONS", () => {
 describe("getOmekaVersionMetadata", () => {
   it("matches by exact version string", () => {
     assert.equal(getOmekaVersionMetadata("4.1.1")?.version, "4.1.1");
-    assert.equal(getOmekaVersionMetadata("4.2.0")?.version, "4.2.0");
+    assert.equal(getOmekaVersionMetadata("4.2.1")?.version, "4.2.1");
   });
 
   it("returns null for unknown versions", () => {
@@ -51,12 +51,12 @@ describe("getOmekaVersionMetadata", () => {
 describe("resolveOmekaVersion", () => {
   it("accepts exact version strings", () => {
     assert.equal(resolveOmekaVersion("4.1.1"), "4.1.1");
-    assert.equal(resolveOmekaVersion("4.2.0"), "4.2.0");
+    assert.equal(resolveOmekaVersion("4.2.1"), "4.2.1");
   });
 
   it("resolves a major.minor request to the declared patch version", () => {
     assert.equal(resolveOmekaVersion("4.1"), "4.1.1");
-    assert.equal(resolveOmekaVersion("4.2"), "4.2.0");
+    assert.equal(resolveOmekaVersion("4.2"), "4.2.1");
   });
 
   it("returns null for unknown input", () => {
@@ -79,18 +79,18 @@ describe("getCompatiblePhpVersions / isCompatibleCombination", () => {
 
   it("detects invalid combinations", () => {
     assert.equal(isCompatibleCombination("8.3", "4.1.1"), true);
-    assert.equal(isCompatibleCombination("7.4", "4.2.0"), false);
+    assert.equal(isCompatibleCombination("7.4", "4.2.1"), false);
     assert.equal(isCompatibleCombination("8.3", "nope"), false);
   });
 });
 
 describe("buildRuntimeId / parseRuntimeId", () => {
   it("round-trips modern runtime ids", () => {
-    const id = buildRuntimeId("8.3", "4.2.0");
-    assert.equal(id, "php83-omeka420");
+    const id = buildRuntimeId("8.3", "4.2.1");
+    assert.equal(id, "php83-omeka421");
     assert.deepEqual(parseRuntimeId(id), {
       phpVersion: "8.3",
-      omekaVersion: "4.2.0",
+      omekaVersion: "4.2.1",
     });
 
     const id411 = buildRuntimeId("8.3", "4.1.1");
@@ -124,7 +124,7 @@ describe("resolveVersions / resolveRuntimeSelection", () => {
       resolveVersions({
         php: "8.4",
         omeka: "4.1.1",
-        runtimeId: "php83-omeka420",
+        runtimeId: "php83-omeka421",
       }),
       { phpVersion: "8.4", omekaVersion: "4.1.1" },
     );
@@ -147,8 +147,8 @@ describe("resolveVersions / resolveRuntimeSelection", () => {
   it("drops incompatible explicit PHP versions", () => {
     // PHP 7.4 is not in the compatibility list — the resolver should fall
     // back to the Omeka version's default.
-    const resolved = resolveVersions({ php: "7.4", omeka: "4.2.0" });
-    assert.equal(resolved.omekaVersion, "4.2.0");
+    const resolved = resolveVersions({ php: "7.4", omeka: "4.2.1" });
+    assert.equal(resolved.omekaVersion, "4.2.1");
     assert.notEqual(resolved.phpVersion, "7.4");
   });
 
@@ -168,10 +168,10 @@ describe("resolveRuntimeConfig", () => {
   const fakeConfig = {
     runtimes: [
       {
-        id: "php83-omeka420",
-        label: "PHP 8.3 + Omeka 4.2.0",
+        id: "php83-omeka421",
+        label: "PHP 8.3 + Omeka 4.2.1",
         phpVersion: "8.3",
-        omekaVersion: "4.2.0",
+        omekaVersion: "4.2.1",
         default: true,
       },
       {
@@ -186,20 +186,20 @@ describe("resolveRuntimeConfig", () => {
 
   it("returns the exact runtime entry when present", () => {
     const resolved = resolveRuntimeConfig(fakeConfig, {
-      runtimeId: "php83-omeka420",
+      runtimeId: "php83-omeka421",
     });
-    assert.equal(resolved.id, "php83-omeka420");
-    assert.equal(resolved.label, "PHP 8.3 + Omeka 4.2.0");
+    assert.equal(resolved.id, "php83-omeka421");
+    assert.equal(resolved.label, "PHP 8.3 + Omeka 4.2.1");
   });
 
   it("synthesises a runtime entry for unconfigured combinations", () => {
     const resolved = resolveRuntimeConfig(fakeConfig, {
-      runtimeId: "php85-omeka420",
+      runtimeId: "php85-omeka421",
     });
-    assert.equal(resolved.id, "php85-omeka420");
+    assert.equal(resolved.id, "php85-omeka421");
     assert.equal(resolved.phpVersion, "8.5");
-    assert.equal(resolved.omekaVersion, "4.2.0");
-    assert.equal(resolved.label, "PHP 8.5 + Omeka S 4.2.0");
+    assert.equal(resolved.omekaVersion, "4.2.1");
+    assert.equal(resolved.label, "PHP 8.5 + Omeka S 4.2.1");
   });
 
   it("returns null when the config has no runtimes", () => {
@@ -216,16 +216,16 @@ describe("parseQueryParams", () => {
   });
 
   it("reads from an existing URL object", () => {
-    const url = new URL("https://example.com/?omekaVersion=4.2.0");
+    const url = new URL("https://example.com/?omekaVersion=4.2.1");
     const parsed = parseQueryParams(url);
-    assert.equal(parsed.omekaVersion, "4.2.0");
+    assert.equal(parsed.omekaVersion, "4.2.1");
   });
 });
 
 describe("buildManifestFilename", () => {
   it("produces the declared manifest filename for each version", () => {
     assert.equal(buildManifestFilename("4.1.1"), "4.1.1.json");
-    assert.equal(buildManifestFilename("4.2.0"), "4.2.0.json");
+    assert.equal(buildManifestFilename("4.2.1"), "4.2.1.json");
   });
 
   it("falls back to latest.json for unknown versions", () => {

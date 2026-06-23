@@ -15,9 +15,9 @@ OMEKA_REF_BRANCH ?=
 # Common overrides:
 #   make serve PORT=9090
 #   make bundle OMEKA_VERSION=4.1.1
-#   make bundle OMEKA_VERSION=4.2.0 OMEKA_REF=https://github.com/<org>/omeka-s.git OMEKA_REF_BRANCH=<branch>
+#   make bundle OMEKA_VERSION=4.2.1 OMEKA_REF=https://github.com/<org>/omeka-s.git OMEKA_REF_BRANCH=<branch>
 
-.PHONY: help up deps prepare bundle bundle-all bundle-4.1.1 bundle-4.2.0 serve clean reset test lint format
+.PHONY: help up deps prepare bundle bundle-all bundle-4.1.1 bundle-4.2.1 serve clean reset test lint format
 
 help:
 	@printf '%s\n' \
@@ -28,7 +28,7 @@ help:
 		'  make bundle        Build the readonly Omeka bundle for the default version' \
 		'  make bundle-all    Build bundles for every supported Omeka version' \
 		'  make bundle-4.1.1  Build only the Omeka 4.1.1 bundle' \
-		'  make bundle-4.2.0  Build only the Omeka 4.2.0 bundle' \
+		'  make bundle-4.2.1  Build only the Omeka 4.2.1 bundle' \
 		'  make serve         Start the local dev server' \
 		'  make up            Run bundle-all + serve' \
 		'  make test          Run tests' \
@@ -40,7 +40,7 @@ help:
 		'Common overrides:' \
 		'  PORT=9090 make serve' \
 		'  OMEKA_VERSION=4.1.1 make bundle' \
-		'  OMEKA_REF=<repo> OMEKA_REF_BRANCH=<branch> make bundle OMEKA_VERSION=4.2.0'
+		'  OMEKA_REF=<repo> OMEKA_REF_BRANCH=<branch> make bundle OMEKA_VERSION=4.2.1'
 
 deps:
 	npm install
@@ -53,15 +53,15 @@ prepare: deps
 bundle: prepare
 	OMEKA_VERSION=$(OMEKA_VERSION) OMEKA_REF=$(OMEKA_REF) OMEKA_REF_BRANCH=$(OMEKA_REF_BRANCH) npm run bundle
 
-bundle-all: prepare bundle-4.1.1 bundle-4.2.0
+bundle-all: prepare bundle-4.1.1 bundle-4.2.1
 
 # Per-version targets so recursive make can parallelise independent builds
 # (they share only the worker bundle and the vendor cache).
 bundle-4.1.1:
 	OMEKA_VERSION=4.1.1 npm run bundle
 
-bundle-4.2.0:
-	OMEKA_VERSION=4.2.0 OMEKA_REF=$(OMEKA_REF) OMEKA_REF_BRANCH=$(OMEKA_REF_BRANCH) npm run bundle
+bundle-4.2.1:
+	OMEKA_VERSION=4.2.1 OMEKA_REF=$(OMEKA_REF) OMEKA_REF_BRANCH=$(OMEKA_REF_BRANCH) npm run bundle
 
 serve:
 	PORT=$(PORT) node ./scripts/dev-server.mjs
