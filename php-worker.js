@@ -77,9 +77,21 @@ function deserializeRequest(requestLike) {
   return new Request(requestLike.url, init);
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function buildLoadingResponse(message, status = 503) {
+  // `message` can carry runtime/exception text (see respondError). Escape it
+  // before interpolating into the HTML body so error details can never be
+  // reinterpreted as markup in the playground iframe.
   return new Response(
-    `<!doctype html><meta charset="utf-8"><title>Omeka S Playground</title><body><pre>${message}</pre></body>`,
+    `<!doctype html><meta charset="utf-8"><title>Omeka S Playground</title><body><pre>${escapeHtml(message)}</pre></body>`,
     {
       status,
       headers: {
@@ -420,7 +432,7 @@ async function capturePhpInfo() {
     postShell({
       kind: "phpinfo",
       detail: `Failed to capture PHP info: ${formatErrorDetail(error)}`,
-      html: `<!doctype html><meta charset="utf-8"><pre>${formatErrorDetail(error)}</pre>`,
+      html: `<!doctype html><meta charset="utf-8"><pre>${escapeHtml(formatErrorDetail(error))}</pre>`,
     });
   }
 }

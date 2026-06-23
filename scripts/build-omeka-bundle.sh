@@ -3,7 +3,7 @@
 # Build a readonly Omeka S bundle and manifest for a specific Omeka version.
 #
 # Usage:
-#   OMEKA_VERSION=4.2.0 scripts/build-omeka-bundle.sh
+#   OMEKA_VERSION=4.2.1 scripts/build-omeka-bundle.sh
 #   OMEKA_VERSION=4.1.1 scripts/build-omeka-bundle.sh
 #
 # Environment:

@@ -283,16 +283,34 @@ function escapeHtml(str) {
     .replaceAll("'", "&#39;");
 }
 
+const NAMED_HTML_ENTITIES = {
+  amp: "&",
+  quot: '"',
+  apos: "'",
+  sol: "/",
+  colon: ":",
+};
+
 function decodeHtmlAttributeEntities(value) {
-  return value
-    .replace(/&#x([0-9a-f]+);/giu, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#([0-9]+);/gu, (_, dec) => String.fromCodePoint(Number.parseInt(dec, 10)))
-    .replaceAll("&amp;", "&")
-    .replaceAll("&quot;", "\"")
-    .replaceAll("&#39;", "'")
-    .replaceAll("&apos;", "'")
-    .replaceAll("&sol;", "/")
-    .replaceAll("&colon;", ":");
+  // Decode every entity in a single left-to-right pass. Doing it in one pass
+  // (rather than chained .replace/.replaceAll calls) prevents double-unescaping:
+  // a "&" produced by decoding one entity must not be reinterpreted as the
+  // start of another entity in a later pass.
+  return value.replace(
+    /&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/giu,
+    (match, body) => {
+      const lower = body.toLowerCase();
+      if (lower.startsWith("#x")) {
+        return String.fromCodePoint(Number.parseInt(body.slice(2), 16));
+      }
+      if (lower.startsWith("#")) {
+        return String.fromCodePoint(Number.parseInt(body.slice(1), 10));
+      }
+      return Object.hasOwn(NAMED_HTML_ENTITIES, lower)
+        ? NAMED_HTML_ENTITIES[lower]
+        : match;
+    },
+  );
 }
 
 function rewriteHtmlAttributeUrl(rawValue, { origin, scopeId, runtimeId }) {
@@ -304,13 +322,18 @@ function rewriteHtmlAttributeUrl(rawValue, { origin, scopeId, runtimeId }) {
     return decodedValue;
   }
 
+  // Leave fragment-only, protocol-relative, and special-scheme URLs untouched.
+  // Scheme matching is case-insensitive and covers every script-capable scheme
+  // (javascript:, vbscript:) so none of them slip through to be rewritten.
+  const lowerValue = decodedValue.toLowerCase();
   if (
     decodedValue.startsWith("#")
-    || decodedValue.startsWith("javascript:")
-    || decodedValue.startsWith("data:")
-    || decodedValue.startsWith("mailto:")
-    || decodedValue.startsWith("tel:")
     || decodedValue.startsWith("//")
+    || lowerValue.startsWith("javascript:")
+    || lowerValue.startsWith("vbscript:")
+    || lowerValue.startsWith("data:")
+    || lowerValue.startsWith("mailto:")
+    || lowerValue.startsWith("tel:")
   ) {
     return decodedValue;
   }

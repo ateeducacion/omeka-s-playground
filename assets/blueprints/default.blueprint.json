@@ -7,7 +7,7 @@
   },
   "preferredVersions": {
     "php": "8.3",
-    "omeka": "4.2.0"
+    "omeka": "4.2.1"
   },
   "debug": {
     "enabled": false

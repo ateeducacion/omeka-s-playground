@@ -24,11 +24,11 @@ export const OMEKA_VERSIONS = [
     default: false,
   },
   {
-    version: "4.2.0",
-    label: "Omeka S 4.2.0",
-    slug: "4.2.0",
-    manifestFile: "4.2.0.json",
-    bundleDir: "4.2.0",
+    version: "4.2.1",
+    label: "Omeka S 4.2.1",
+    slug: "4.2.1",
+    manifestFile: "4.2.1.json",
+    bundleDir: "4.2.1",
     phpVersions: ["8.1", "8.2", "8.3", "8.4", "8.5"],
     source: {
       type: "git",
@@ -129,7 +129,7 @@ export function resolveOmekaVersion(input) {
 
 /**
  * Build a runtime ID encoding both PHP version and Omeka version.
- * e.g., "php83-omeka420", "php83-omeka411".
+ * e.g., "php83-omeka421", "php83-omeka411".
  */
 export function buildRuntimeId(phpVersion, omekaVersion) {
   const phpPart = `php${String(phpVersion).replace(".", "")}`;

@@ -630,6 +630,18 @@ export function saveActiveBlueprint(scopeId, blueprint) {
     return;
   }
 
+  // NOTE: the blueprint includes admin/user passwords. This is not a secret
+  // leak: these are caller-authored credentials for an ephemeral in-browser
+  // sandbox (no server, no shared state; blueprints may define multiple users).
+  // The same values already live in the blueprint source the caller provided,
+  // and per-tab sessionStorage is wiped when the tab closes. sessionStorage is
+  // load-bearing beyond a simple shell -> iframe transport: on reload the remote
+  // iframe re-runs bootstrapRemote() and re-reads this entry (no live shell
+  // message exists then), so the blueprint must persist here to survive reloads.
+  // The password must also survive to recreate blueprint-defined users (schema
+  // requires a password per user, so it cannot be stripped). The CodeQL
+  // "clear-text storage" finding is therefore a false positive for this threat
+  // model.
   window.sessionStorage.setItem(
     getBlueprintStorageKey(scopeId),
     JSON.stringify(blueprint),

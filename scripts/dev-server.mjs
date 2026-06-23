@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
+import { lookup } from "node:dns/promises";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -32,6 +33,48 @@ const MIME_TYPES = {
 
 function log(message) {
   process.stdout.write(`${message}\n`);
+}
+
+// SSRF guard for the addon proxy. The proxy fetches a caller-supplied URL, so
+// resolve the host first and reject loopback / private / link-local targets to
+// stop the dev server being used as a hop to internal services. Fails closed
+// (anything unparseable is treated as blocked).
+function ipv4IsPrivate(ip) {
+  const parts = ip.split(".").map((part) => Number.parseInt(part, 10));
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) {
+    return true;
+  }
+  const [a, b] = parts;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true; // link-local
+  if (a === 172 && b >= 16 && b <= 31) return true; // private
+  if (a === 192 && b === 168) return true; // private
+  if (a >= 224) return true; // multicast + reserved
+  return false;
+}
+
+function ipv6IsPrivate(ip) {
+  const lower = ip.toLowerCase();
+  if (lower === "::1" || lower === "::") return true;
+  if (lower.startsWith("fe80")) return true; // link-local
+  if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // unique-local
+  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/u);
+  if (mapped) return ipv4IsPrivate(mapped[1]);
+  return false;
+}
+
+async function assertPublicHost(hostname) {
+  const results = await lookup(hostname, { all: true });
+  if (!results.length) {
+    throw new Error("host did not resolve");
+  }
+  for (const { address, family } of results) {
+    const blocked =
+      family === 6 ? ipv6IsPrivate(address) : ipv4IsPrivate(address);
+    if (blocked) {
+      throw new Error("target host is not allowed");
+    }
+  }
 }
 
 function send(res, status, body, headers = {}) {
@@ -108,6 +151,15 @@ async function proxyAddon(_req, res, url) {
     return;
   }
 
+  try {
+    await assertPublicHost(target.hostname);
+  } catch {
+    send(res, 403, "Target host is not allowed", {
+      "content-type": "text/plain; charset=utf-8",
+    });
+    return;
+  }
+
   log(`proxy ${target.toString()}`);
 
   let upstream;
@@ -132,7 +184,10 @@ async function proxyAddon(_req, res, url) {
         "content-length": String(bytes.length),
       });
     } catch (error) {
-      send(res, 502, String(error?.message || error), {
+      // Log the detail server-side; return a generic message so internal error
+      // text (paths, stack/curl diagnostics) is never exposed to the client.
+      log(`proxy error: ${String(error?.message || error)}`);
+      send(res, 502, "Upstream fetch failed", {
         "content-type": "text/plain; charset=utf-8",
       });
     }

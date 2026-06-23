@@ -17,14 +17,14 @@
   },
   "defaults": {
     "phpVersion": "8.3",
-    "omekaVersion": "4.2.0"
+    "omekaVersion": "4.2.1"
   },
   "runtimes": [
     {
-      "id": "php83-omeka420",
-      "label": "PHP 8.3 + Omeka S 4.2.0",
+      "id": "php83-omeka421",
+      "label": "PHP 8.3 + Omeka S 4.2.1",
       "phpVersion": "8.3",
-      "omekaVersion": "4.2.0",
+      "omekaVersion": "4.2.1",
       "default": true
     },
     {
