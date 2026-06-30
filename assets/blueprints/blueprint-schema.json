@@ -33,6 +33,12 @@
         "enabled": { "type": "boolean" }
       }
     },
+    "phpConstants": {
+      "type": "object",
+      "description": "PHP constants to define before Omeka boots, mapping constant name to value. Each blueprint decides which constants to set; the engine stays generic.",
+      "propertyNames": { "pattern": "^[A-Z_][A-Z0-9_]*$" },
+      "additionalProperties": { "type": ["boolean", "string", "number"] }
+    },
     "landingPage": {
       "type": "string"
     },
