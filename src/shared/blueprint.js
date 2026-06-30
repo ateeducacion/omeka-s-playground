@@ -239,6 +239,33 @@ function normalizeUserSettings(input) {
   return settings;
 }
 
+// Valid PHP constant names: start with a letter or underscore, then letters,
+// digits, or underscores. Matches the blueprint schema's propertyNames pattern.
+const PHP_CONSTANT_NAME_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
+
+// Keep only well-formed `NAME -> scalar` entries so the engine can safely emit
+// PHP `define()` calls. Any blueprint (not the engine) decides which PHP
+// constants to define; invalid names and non-scalar values are dropped.
+function normalizePhpConstants(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return {};
+  }
+
+  const constants = {};
+  for (const [key, value] of Object.entries(input)) {
+    const name = String(key).trim();
+    if (!PHP_CONSTANT_NAME_PATTERN.test(name)) {
+      continue;
+    }
+    if (typeof value === "boolean" || typeof value === "string") {
+      constants[name] = value;
+    } else if (typeof value === "number" && Number.isFinite(value)) {
+      constants[name] = value;
+    }
+  }
+  return constants;
+}
+
 function normalizeSites(blueprint, fallbackTitle) {
   let sites = [];
 
@@ -536,6 +563,7 @@ export function normalizeBlueprint(input, config) {
     debug: {
       enabled: blueprint.debug?.enabled === true,
     },
+    phpConstants: normalizePhpConstants(blueprint.phpConstants),
     landingPage: normalizePath(
       blueprint.landingPage || blueprint.landingPath || fallback.landingPage,
       fallback.landingPage,
@@ -613,6 +641,7 @@ export function buildEffectivePlaygroundConfig(config, blueprint) {
     timezone: normalized.siteOptions.timezone,
     landingPath: normalized.landingPage,
     debug: normalized.debug,
+    phpConstants: normalized.phpConstants,
     admin: {
       username: primaryUser.username,
       email: normalized.login.email || primaryUser.email,
