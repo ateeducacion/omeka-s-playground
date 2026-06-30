@@ -37,6 +37,7 @@ The most important top-level properties are:
 | `meta` | Human-readable metadata | Good place for title, author, and description |
 | `preferredVersions` | Informational runtime targets | Useful for intent, not a strict installer lockfile |
 | `debug.enabled` | Enables development-style diagnostics | Helpful for install/debug sessions |
+| `phpConstants` | PHP constants defined before Omeka boots | Name → boolean / string / number; see [PHP constants](#php-constants) |
 | `landingPage` | Initial post-boot path | Should usually begin with `/` |
 | `siteOptions` | Install-wide defaults | Title, locale, timezone |
 | `login` | Credentials used by autologin | Usually mirror the first user |
@@ -47,6 +48,37 @@ The most important top-level properties are:
 | `items` | Sample resources and media | Media currently uses URL sources; `items[].sites` assigns sites by slug |
 | `site` | A single public site | Optional; legacy shorthand for a one-entry `sites` |
 | `sites` | One or more public sites with per-site permissions | Takes precedence over `site`; one is the default |
+
+## PHP constants
+
+`phpConstants` defines PHP constants in the runtime's `auto_prepend` file, which runs
+**before Omeka boots**, so they are visible to module `defined()` / `getenv()` checks. Each
+entry is emitted as a guarded `define()`:
+
+```json
+{
+  "phpConstants": {
+    "MY_FLAG": true,
+    "MY_LABEL": "demo",
+    "MY_LIMIT": 50
+  }
+}
+```
+
+becomes:
+
+```php
+if (!defined('MY_FLAG')) { define('MY_FLAG', true); }
+if (!defined('MY_LABEL')) { define('MY_LABEL', 'demo'); }
+if (!defined('MY_LIMIT')) { define('MY_LIMIT', 50); }
+```
+
+Values may be boolean, string or number; constant names must match `^[A-Z_][A-Z0-9_]*$`
+(other names are skipped). This lets a module's own blueprint enable module-specific
+configuration without the playground engine knowing anything module-specific. For example,
+the eXeLearning module declares `"phpConstants": { "EXELEARNING_UNSAFE_LEGACY_IFRAME": true }`
+so its demo renders the content iframe same-origin (the php-wasm service worker cannot serve
+an opaque subframe); a real Omeka install never defines that constant.
 
 ## Example
 
