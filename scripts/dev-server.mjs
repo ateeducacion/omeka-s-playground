@@ -49,6 +49,7 @@ function ipv4IsPrivate(ip) {
   if (a === 169 && b === 254) return true; // link-local
   if (a === 172 && b >= 16 && b <= 31) return true; // private
   if (a === 192 && b === 168) return true; // private
+  if (a === 100 && b >= 64 && b <= 127) return true; // RFC 6598 CGNAT
   if (a >= 224) return true; // multicast + reserved
   return false;
 }
@@ -58,8 +59,11 @@ function ipv6IsPrivate(ip) {
   if (lower === "::1" || lower === "::") return true;
   if (lower.startsWith("fe80")) return true; // link-local
   if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // unique-local
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/u);
-  if (mapped) return ipv4IsPrivate(mapped[1]);
+  if (lower.startsWith("fec0")) return true; // deprecated site-local
+  if (lower.startsWith("64:ff9b:")) return true; // NAT64 well-known prefix
+  // IPv4-mapped (::ffff:a.b.c.d) and deprecated IPv4-compatible (::a.b.c.d).
+  const embedded = lower.match(/(?:::ffff:|::)(\d+\.\d+\.\d+\.\d+)$/u);
+  if (embedded) return ipv4IsPrivate(embedded[1]);
   return false;
 }
 
@@ -75,6 +79,33 @@ async function assertPublicHost(hostname) {
       throw new Error("target host is not allowed");
     }
   }
+}
+
+// Follow redirects manually, re-validating every hop. fetch's built-in
+// redirect:"follow" would let a public host 30x-redirect the proxy to an
+// internal address without re-checking, so we drive the chain ourselves and run
+// assertPublicHost before each request.
+const MAX_REDIRECTS = 10;
+
+async function fetchValidatingRedirects(initialUrl) {
+  let current = new URL(initialUrl);
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    if (!["http:", "https:"].includes(current.protocol)) {
+      throw new Error("redirect to unsupported protocol");
+    }
+    await assertPublicHost(current.hostname);
+    const response = await fetch(current, {
+      redirect: "manual",
+      headers: { "user-agent": "omeka-s-playground-dev-server" },
+    });
+    const location = response.headers.get("location");
+    if (response.status >= 300 && response.status < 400 && location) {
+      current = new URL(location, current);
+      continue;
+    }
+    return response;
+  }
+  throw new Error("too many redirects");
 }
 
 function send(res, status, body, headers = {}) {
@@ -164,10 +195,7 @@ async function proxyAddon(_req, res, url) {
 
   let upstream;
   try {
-    upstream = await fetch(target, {
-      redirect: "follow",
-      headers: { "user-agent": "omeka-s-playground-dev-server" },
-    });
+    upstream = await fetchValidatingRedirects(target);
   } catch {
     upstream = null;
   }
@@ -210,11 +238,28 @@ async function proxyAddon(_req, res, url) {
   send(res, 200, bytes, headers);
 }
 
+// Fallback path for hosts that reject Node's fetch via TLS fingerprinting. The
+// initial host is already validated by assertPublicHost before this is called;
+// curl still follows redirects itself (capped via --max-redirs) and does not
+// re-validate each hop, an accepted residual for this loopback-only dev fallback.
 function fetchWithCurl(url) {
   return new Promise((resolve, reject) => {
     execFile(
       "curl",
-      ["-fsSL", "--max-time", "60", "--max-filesize", "52428800", url],
+      [
+        "-fsSL",
+        "--max-redirs",
+        "10",
+        "--proto",
+        "=http,https",
+        "--proto-redir",
+        "=http,https",
+        "--max-time",
+        "60",
+        "--max-filesize",
+        "52428800",
+        url,
+      ],
       { encoding: "buffer", maxBuffer: 52_428_800 },
       (error, stdout) => {
         if (error) reject(new Error(`curl failed: ${error.message}`));
