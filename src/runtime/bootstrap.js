@@ -81,10 +81,20 @@ function buildDatabaseIni() {
 
 function buildLocalConfig(config) {
   const debugEnabled = config.debug?.enabled === true;
+  const phpConstantDefines = buildPhpConstantDefines(config.phpConstants);
 
   return `<?php
 ${debugEnabled ? "ini_set('display_errors', '1');" : ""}
-
+${
+  phpConstantDefines
+    ? `// Blueprint-provided PHP constants. Also defined here because local.config.php is
+// require()'d during Omeka's bootstrap (before any module loads), so the constants are
+// reliably available to module code even where the auto_prepend_file prepend does not
+// apply to a request.
+${phpConstantDefines}
+`
+    : ""
+}
 $thumbnailerAlias = extension_loaded('gd')
     ? 'Omeka\\\\File\\\\Thumbnailer\\\\Gd'
     : 'Omeka\\\\File\\\\Thumbnailer\\\\NoThumbnail';
