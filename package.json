@@ -11,15 +11,15 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@php-wasm/fs-journal": "^3.1.39",
-    "@php-wasm/stream-compression": "^3.1.39",
-    "@php-wasm/universal": "^3.1.39",
-    "@php-wasm/web": "^3.1.38",
+    "@php-wasm/fs-journal": "^3.1.41",
+    "@php-wasm/stream-compression": "^3.1.41",
+    "@php-wasm/universal": "^3.1.41",
+    "@php-wasm/web": "^3.1.41",
     "fflate": "^0.8.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.0",
-    "@playwright/test": "^1.61.0",
+    "@biomejs/biome": "^2.5.1",
+    "@playwright/test": "^1.61.1",
     "esbuild": "^0.28.1"
   },
   "overrides": {
