@@ -248,6 +248,14 @@ error_reporting(E_ALL);
 define('OMEKA_PLAYGROUND', true);
 define('OMEKA_PLAYGROUND_PROXY_URL', '${phpString(resolveProxyUrl(config) || "")}');
 
+// eXeLearning module: php-wasm's service worker only serves same-origin documents, so the
+// module's opaque (cross-origin) content iframe cannot load its CSS/JS. Enable the module's
+// dev-only escape hatch so the demo renders the content same-origin. Playground-only
+// workaround; never set this in a real Omeka deployment.
+if (!defined('EXELEARNING_UNSAFE_LEGACY_IFRAME')) {
+    define('EXELEARNING_UNSAFE_LEGACY_IFRAME', true);
+}
+
 if (!defined('FILEINFO_MIME_TYPE')) {
     define('FILEINFO_MIME_TYPE', 16);
 }
