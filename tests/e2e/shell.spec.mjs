@@ -37,7 +37,7 @@ test("toggles the runtime side panel", async ({ page }) => {
   await expect(page.locator("#side-panel")).not.toHaveClass(/is-collapsed/);
 });
 
-test("blueprint panel is editable and gates the Run button on invalid JSON", async ({
+test("blueprint editor validates edits and gates the Run button", async ({
   page,
 }) => {
   await page.goto("/");
