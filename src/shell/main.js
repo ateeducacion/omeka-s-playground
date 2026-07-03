@@ -28,17 +28,22 @@ import {
   loadSessionState,
   saveSessionState,
 } from "../shared/storage.js";
+import { initBlueprintEditor } from "./blueprint-editor.js";
 
 const els = {
   addressForm: document.querySelector("#address-form"),
   address: document.querySelector("#address-input"),
+  blueprintEditorMount: document.querySelector("#blueprint-editor"),
   blueprintPanel: document.querySelector("#blueprint-panel"),
+  blueprintStatus: document.querySelector("#blueprint-status"),
   blueprintTab: document.querySelector("#blueprint-tab"),
   blueprintTextarea: document.querySelector("#blueprint-textarea"),
   clearLogs: document.querySelector("#clear-logs-button"),
+  copyBlueprintButton: document.querySelector("#copy-button"),
   copyLogs: document.querySelector("#copy-logs-button"),
   exportButton: document.querySelector("#export-button"),
   importInput: document.querySelector("#import-input"),
+  runButton: document.querySelector("#run-button"),
   frame: document.querySelector("#site-frame"),
   logPanel: document.querySelector("#log-panel"),
   logsPanel: document.querySelector("#logs-panel"),
@@ -67,6 +72,16 @@ const els = {
 
 const scopeId = getOrCreateScopeId();
 let config;
+const blueprintEditor = initBlueprintEditor(
+  {
+    mount: els.blueprintEditorMount,
+    textarea: els.blueprintTextarea,
+    statusEl: els.blueprintStatus,
+    runButton: els.runButton,
+    copyButton: els.copyBlueprintButton,
+  },
+  { getConfig: () => config },
+);
 let currentRuntimeId;
 let currentPhpVersion = DEFAULT_PHP_VERSION;
 let currentOmekaVersion = DEFAULT_OMEKA_VERSION;
@@ -102,6 +117,7 @@ function setUiLocked(locked) {
   els.exportButton.disabled = locked;
   els.importInput.disabled = locked;
   els.addressForm.classList.toggle("is-disabled", locked);
+  blueprintEditor.setLocked(locked);
 }
 
 async function ensureRuntimeServiceWorker() {
@@ -294,8 +310,13 @@ function saveState(extra = {}) {
 }
 
 function exportBlueprint() {
-  const payload = exportBlueprintPayload(config, activeBlueprint);
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+  const result = blueprintEditor.getValidationResult();
+  if (!result.valid) {
+    appendLog(`Cannot export blueprint: ${result.message}`, true);
+    return;
+  }
+
+  const blob = new Blob([JSON.stringify(result.blueprint, null, 2)], {
     type: "application/json",
   });
   const url = URL.createObjectURL(blob);
@@ -307,16 +328,13 @@ function exportBlueprint() {
 }
 
 function updateBlueprintTextarea() {
-  if (!config || !activeBlueprint || !els.blueprintTextarea) {
+  if (!config || !activeBlueprint) {
     return;
   }
 
-  els.blueprintTextarea.value = JSON.stringify(
-    exportBlueprintPayload(config, activeBlueprint),
-    null,
-    2,
+  blueprintEditor.setCode(
+    JSON.stringify(exportBlueprintPayload(config, activeBlueprint), null, 2),
   );
-  els.blueprintTextarea.scrollTop = 0;
 }
 
 async function importPayload(file) {
