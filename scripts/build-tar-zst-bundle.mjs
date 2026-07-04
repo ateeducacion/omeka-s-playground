@@ -6,7 +6,7 @@
 //
 // Deterministic USTAR + GNU longlink (never PAX — the streaming parser and PHP
 // readers do not honor PAX 'path' headers). zstd level 19 + long-distance matching
-// (windowLog 27) for strong cross-file dedup. Requires Node >= 22.15 (native
+// (windowLog 24) for strong cross-file dedup. Requires Node >= 22.15 (native
 // node:zlib zstd); CI must run Node 24 LTS.
 //
 // Usage: node scripts/build-tar-zst-bundle.mjs <stageDir> <out.tar.zst>
@@ -51,7 +51,11 @@ const compressed = zlib.zstdCompressSync(tar, {
   params: {
     [zlib.constants.ZSTD_c_compressionLevel]: 19,
     [zlib.constants.ZSTD_c_enableLongDistanceMatching]: 1,
-    [zlib.constants.ZSTD_c_windowLog]: 27,
+    // wlog 24 caps the zstd decode window at 16 MiB (vs 128 MiB at wlog 27),
+    // shrinking the buffer the zstddec streaming decoder allocates on every
+    // client. Measured on the moodle tree it cost only +0.9% compressed size;
+    // for omeka's smaller bundle the size effect is neutral-to-positive.
+    [zlib.constants.ZSTD_c_windowLog]: 24,
   },
 });
 writeFileSync(outFile, compressed);

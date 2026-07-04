@@ -36,9 +36,13 @@ export async function mountReadonlyCore(
   // design — the install is not cached, so a reload retries. See
   // docs/streaming-tar-zst-bundle.md.
   publish?.("Extracting Omeka core…", 0.45);
-  const stream = await createDecodedTarStream(archiveBytes, "zstd");
-  // Drop the JS reference to the compressed buffer now that the stream owns it,
-  // so the GC can reclaim it while extraction proceeds.
+  const codec = manifest?.bundle?.codec ?? "zstd";
+  const stream = await createDecodedTarStream(archiveBytes, codec);
+  // Drop our local reference to the compressed buffer now that the decode stream
+  // owns it. On the native DecompressionStream path this lets the GC reclaim it
+  // as extraction consumes the stream; on the zstddec fallback the decoder keeps
+  // the whole compressed buffer until extraction finishes, so this frees nothing
+  // there.
   archiveBytes = null;
   const stats = await extractTarStreamToPhp(stream, php, root);
 

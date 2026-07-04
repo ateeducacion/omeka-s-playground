@@ -1,32 +1,35 @@
 // tar-ustar.mjs — a small, deterministic USTAR tar writer + reader.
 //
-// Why hand-rolled: the compression experiment needs a byte-for-byte reproducible
-// `.tar` so the reported SHA-256 is stable across runs and machines. The local
-// `tar` is bsdtar (libarchive), which does NOT accept GNU-tar's `--sort` and
-// injects libarchive/mac metadata, so it cannot produce a canonical archive.
-// A pure-JS writer gives full control over entry order and every header field.
+// Extracted verbatim from moodle-playground (canonical origin:
+// https://github.com/ateeducacion/moodle-playground) — keep in sync.
+//
+// Why hand-rolled: the bundle build needs a byte-for-byte reproducible `.tar` so
+// the reported SHA-256 is stable across runs and machines. The local `tar` is
+// bsdtar (libarchive), which does NOT accept GNU-tar's `--sort` and injects
+// libarchive/mac metadata, so it cannot produce a canonical archive. A pure-JS
+// writer gives full control over entry order and every header field.
 //
 // Long-name strategy — IMPORTANT: names longer than the 100-byte USTAR `name`
 // field use the USTAR `prefix`/`name` split when a "/" lets them fit (prefix<=155,
 // name<=100), and fall back to a GNU `././@LongLink` ('L' typeflag) entry when no
-// such split exists. We deliberately do NOT use PAX extended headers: PHP's
-// `PharData` tar reader — the runtime extractor for ADR 0018 — silently IGNORES
-// PAX `path` records and writes long files under their truncated 100-byte name,
-// which collides and drops ~32 of Moodle's files (measured). PharData reads both
-// the USTAR prefix split and GNU longlink correctly, and so do bsdtar / GNU tar,
-// so this format keeps full file-count parity with the ZIP baseline.
+// such split exists. We deliberately do NOT use PAX extended headers: the runtime
+// streaming parser (lib/streaming-tar-extract.js) and PHP tar readers honor the
+// USTAR prefix split and GNU longlink but IGNORE PAX `path` records, so a long
+// name under PAX would be written under its truncated 100-byte name, collide, and
+// drop files. bsdtar / GNU tar read the prefix split and longlink correctly too,
+// so this format keeps full file-count parity with the source tree.
 //
 // Determinism policy: entries are emitted files-only (no directory members, which
 // the runtime reconstructs anyway) in a fixed byte-wise sort, with mtime=0,
 // uid=gid=0, empty uname/gname, and a fixed mode.
 //
-// Reused semantics: entry-name sanitization mirrors sanitizeArchivePath() in
-// lib/moodle-loader.js (reject "..", strip leading "/", drop "." segments) so the
-// tar cannot carry a path-traversal entry — parity with the ZIP boot path.
+// Entry-name sanitization (reject "..", strip leading "/", drop "." segments)
+// keeps the tar from carrying a path-traversal entry — the same guard the ZIP
+// boot path applies.
 
 const BLOCK = 512;
 
-// --- name sanitization (parity with lib/moodle-loader.js) --------------------
+// --- name sanitization -------------------------------------------------------
 
 export function normalizeArchiveName(name) {
   return String(name).replaceAll("\\", "/").replace(/^\/+/, "");
