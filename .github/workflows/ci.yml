@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -47,7 +47,9 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # Node 24 LTS: the e2e job builds the tar.zst bundle (make bundle),
+          # which needs native node:zlib zstd support (Node >= 22.15).
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
