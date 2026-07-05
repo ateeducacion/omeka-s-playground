@@ -21,9 +21,10 @@ quoted below).
   the WASM compile instead of blocking boot — the moodle experiment measured roughly
   **3× faster cold boot on Cloudflare**.
 - **Bounded peak memory.** The large uncompressed tar is *never* fully materialized.
-  The decoder holds only the zstd window plus, at any instant, one partial 512-byte
-  header, the current entry's bytes (bounded by the largest single file), and one
-  decoded chunk — a few MiB, not the whole tree. This avoids both the `fflate`
+  The decoder holds only the zstd decode window (capped at 16 MiB by windowLog 24)
+  plus, at any instant, one partial 512-byte header, the current entry's bytes
+  (bounded by the largest single file), and one decoded chunk — well under the whole
+  tree. This avoids both the `fflate`
   `unzipSync` whole-archive heap peak and the per-entry `DecompressionStream`
   overhead of the previous ZIP paths.
 - **Chrome and Firefox.** No shipping browser exposes `DecompressionStream("zstd")`,
@@ -37,7 +38,10 @@ quoted below).
    the staged, root-relative Omeka tree is packed into a **deterministic USTAR**
    archive (with GNU `././@LongLink` for the handful of paths that do not fit the
    USTAR prefix/name split — never PAX, which PHP tar readers mis-handle) and
-   compressed with `node:zlib` zstd level 19 + long-distance matching (windowLog 27).
+   compressed with `node:zlib` zstd level 19 + long-distance matching (windowLog 24
+   — an 8× smaller decode window than the default 27, costing only ~+0.9% compressed
+   size, so the bundled `zstddec` decoder allocates 16 MiB instead of 128 MiB on
+   every client).
    The helper prints `{ fileCount, bytes, sha256, uncompressedBytes }`; the manifest
    reuses `fileCount`. Requires **Node ≥ 22.15** for native `node:zlib` zstd — CI
    runs Node 24 LTS.

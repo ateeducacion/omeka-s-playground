@@ -135,6 +135,35 @@ BUNDLE_PATH="$DIST_DIR/$BUNDLE_FILE"
 # always points at the freshly built artifact.
 find "$DIST_DIR" -maxdepth 1 -type f -name 'omeka-core-*.tar.zst' ! -name "$BUNDLE_FILE" -delete 2>/dev/null || true
 
+# Two entries are expected from `composer install` and are safe to drop, because
+# the tar packer already omits them today (the shipped bundle boots fine without
+# them) so removing them here is bundle-neutral and keeps the tripwire below
+# meaningful:
+#   - vendor/omeka/composer-addon-installer — a symlink into the path repository
+#     application/data/composer-addon-installer (Omeka's addon installer). That
+#     plugin only runs during `composer install`; the web runtime never loads it,
+#     and its real files already ship under application/data/.
+#   - vendor/symfony/string/Resources/bin — an empty dir left when --prefer-dist
+#     excludes the (dev-only) data-regeneration script; a files-only tar cannot
+#     carry an empty dir anyway.
+find "$OMEKA_STAGE" -type l -name 'composer-addon-installer' -delete 2>/dev/null || true
+find "$OMEKA_STAGE" -type d -empty -path '*/symfony/string/Resources/bin' -delete 2>/dev/null || true
+
+# Tripwire against silent drops. The tar packer (build-tar-zst-bundle.mjs) records
+# regular files only (its walk uses isFile()), reconstructs directories from each
+# file's parent path, and never follows symlinks. So a symlink or empty directory
+# left in the stage would vanish from the bundle with no trace — and the file-count
+# parity check (regular files on both sides) is blind to it. Fail loudly here
+# instead of shipping a partial tree.
+SYMLINKS=$(find "$OMEKA_STAGE" -type l)
+EMPTY_DIRS=$(find "$OMEKA_STAGE" -type d -empty)
+if [ -n "$SYMLINKS" ] || [ -n "$EMPTY_DIRS" ]; then
+  echo "ERROR: staged tree has symlinks or empty dirs the tar packer would silently drop:" >&2
+  [ -n "$SYMLINKS" ] && { echo "  symlinks:" >&2; echo "$SYMLINKS" | sed 's/^/    /' >&2; }
+  [ -n "$EMPTY_DIRS" ] && { echo "  empty dirs:" >&2; echo "$EMPTY_DIRS" | sed 's/^/    /' >&2; }
+  exit 1
+fi
+
 # Pack the staged root-relative tree into a deterministic, zstd-compressed tar
 # (`.tar.zst`). The browser runtime extracts it by streaming zstd decode +
 # incremental USTAR parsing straight into MEMFS (see lib/streaming-tar-extract.js),

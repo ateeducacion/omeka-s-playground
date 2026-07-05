@@ -4,7 +4,11 @@ import {
   StreamingTarParser,
   sanitizeTarPath,
 } from "../lib/streaming-tar-extract.js";
-import { createUstarTar, normalizeEntries } from "../scripts/lib/tar-ustar.mjs";
+import {
+  createUstarTar,
+  normalizeEntries,
+  readUstarTar,
+} from "../scripts/lib/tar-ustar.mjs";
 
 const BLOCK = 512;
 const enc = (s) => new TextEncoder().encode(s);
@@ -184,5 +188,36 @@ describe("StreamingTarParser", () => {
     const parser = new StreamingTarParser({ onEntry: () => {} });
     parser.push(tar.subarray(0, 512 + 400)); // header + partial data
     assert.throws(() => parser.end(), /Truncated/);
+  });
+});
+
+describe("createUstarTar → readUstarTar round-trip", () => {
+  it("reads back every entry's name and bytes, incl. long paths", () => {
+    const prefixSplitName = `deep/${"segment/".repeat(20)}leaf.txt`; // USTAR prefix/name split
+    const gnuLongName = `dir/${"y".repeat(150)}.bin`; // no split fits -> GNU longlink
+    const input = {
+      "a.txt": enc("alpha"),
+      "nested/b.bin": new Uint8Array([0, 1, 2, 250, 128, 255]),
+      [prefixSplitName]: enc("deep-data"),
+      [gnuLongName]: enc("gnu-data"),
+    };
+    const entries = normalizeEntries(input);
+    const tar = Buffer.from(createUstarTar(entries));
+    // Exercise both long-name encodings on the way out.
+    assert.ok(tar.includes(Buffer.from("././@LongLink")));
+
+    const read = readUstarTar(tar);
+
+    // Same names, in the writer's deterministic sort order.
+    assert.deepEqual(
+      read.map((e) => e.name),
+      entries.map((e) => e.name),
+    );
+    // Byte-identical payloads (including the binary entry with a NUL byte).
+    for (const { name, data } of entries) {
+      const got = read.find((e) => e.name === name);
+      assert.ok(got, `reader must return ${name}`);
+      assert.deepEqual(Buffer.from(got.data), Buffer.from(data));
+    }
   });
 });

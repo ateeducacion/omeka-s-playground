@@ -28,6 +28,8 @@ jobs:
         run: |
           node --check src/shared/blueprint.js
           node --check src/runtime/bootstrap.js
+          node --check lib/streaming-tar-extract.js
+          node --check scripts/lib/tar-ustar.mjs
 
       - name: Run tests
         run: make test
