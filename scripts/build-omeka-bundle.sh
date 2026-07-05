@@ -135,32 +135,32 @@ BUNDLE_PATH="$DIST_DIR/$BUNDLE_FILE"
 # always points at the freshly built artifact.
 find "$DIST_DIR" -maxdepth 1 -type f -name 'omeka-core-*.tar.zst' ! -name "$BUNDLE_FILE" -delete 2>/dev/null || true
 
-# Two entries are expected from `composer install` and are safe to drop, because
-# the tar packer already omits them today (the shipped bundle boots fine without
-# them) so removing them here is bundle-neutral and keeps the tripwire below
-# meaningful:
-#   - vendor/omeka/composer-addon-installer — a symlink into the path repository
-#     application/data/composer-addon-installer (Omeka's addon installer). That
-#     plugin only runs during `composer install`; the web runtime never loads it,
-#     and its real files already ship under application/data/.
-#   - vendor/symfony/string/Resources/bin — an empty dir left when --prefer-dist
-#     excludes the (dev-only) data-regeneration script; a files-only tar cannot
-#     carry an empty dir anyway.
+# `composer install` leaves one dangling symlink in the stage:
+# vendor/omeka/composer-addon-installer → application/data/composer-addon-installer
+# (Omeka's addon installer, a path-repository package). That plugin only runs
+# during `composer install`; the web runtime never loads it, and its real files
+# already ship under application/data/. The tar packer never follows symlinks, so
+# drop it — bundle-neutral. NOTE: in a fresh CI composer install vendor/omeka holds
+# ONLY this symlink, so removing it leaves vendor/omeka empty (pruned below).
 find "$OMEKA_STAGE" -type l -name 'composer-addon-installer' -delete 2>/dev/null || true
-find "$OMEKA_STAGE" -type d -empty -path '*/symfony/string/Resources/bin' -delete 2>/dev/null || true
 
-# Tripwire against silent drops. The tar packer (build-tar-zst-bundle.mjs) records
-# regular files only (its walk uses isFile()), reconstructs directories from each
-# file's parent path, and never follows symlinks. So a symlink or empty directory
-# left in the stage would vanish from the bundle with no trace — and the file-count
-# parity check (regular files on both sides) is blind to it. Fail loudly here
-# instead of shipping a partial tree.
+# Prune empty directories — bundle-neutral. The tar packer records regular files
+# only and never emits directory entries (the runtime reconstructs every dir from
+# its files' parent paths on extract), so an empty dir was never in the bundle to
+# begin with; the pre-tripwire build shipped fine without them. `-depth` makes the
+# prune cascade: a dir emptied by the symlink removal above (e.g. vendor/omeka) is
+# deleted, and any parent it in turn leaves empty is deleted in the same pass.
+find "$OMEKA_STAGE" -depth -type d -empty -delete 2>/dev/null || true
+
+# Tripwire for the real data-loss risk: a stray SYMLINK. The packer walks regular
+# files only (isFile()) and never follows symlinks, so any symlink left here would
+# vanish from the bundle with no trace — and the file-count parity check (regular
+# files on both sides) is blind to it. (Empty dirs are dataless and already pruned
+# above, so they are NOT a failure.) Fail loudly instead of shipping a partial tree.
 SYMLINKS=$(find "$OMEKA_STAGE" -type l)
-EMPTY_DIRS=$(find "$OMEKA_STAGE" -type d -empty)
-if [ -n "$SYMLINKS" ] || [ -n "$EMPTY_DIRS" ]; then
-  echo "ERROR: staged tree has symlinks or empty dirs the tar packer would silently drop:" >&2
-  [ -n "$SYMLINKS" ] && { echo "  symlinks:" >&2; echo "$SYMLINKS" | sed 's/^/    /' >&2; }
-  [ -n "$EMPTY_DIRS" ] && { echo "  empty dirs:" >&2; echo "$EMPTY_DIRS" | sed 's/^/    /' >&2; }
+if [ -n "$SYMLINKS" ]; then
+  echo "ERROR: staged tree has symlinks the tar packer would silently drop:" >&2
+  echo "$SYMLINKS" | sed 's/^/    /' >&2
   exit 1
 fi
 
