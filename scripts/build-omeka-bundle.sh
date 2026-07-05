@@ -128,16 +128,51 @@ if [ -z "$RELEASE" ] || [ "$RELEASE" = "unknown" ]; then
   RELEASE="$VERSION"
 fi
 SAFE_RELEASE=$(printf '%s' "$RELEASE" | sed 's/[^A-Za-z0-9._-]/_/g')
-BUNDLE_FILE="omeka-core-${SAFE_RELEASE}.zip"
+BUNDLE_FILE="omeka-core-${SAFE_RELEASE}.tar.zst"
 BUNDLE_PATH="$DIST_DIR/$BUNDLE_FILE"
-FILE_COUNT=$(find "$OMEKA_STAGE" -type f | wc -l | tr -d ' ')
 
 # Drop any stale bundle(s) in this version's dist dir so the manifest path
 # always points at the freshly built artifact.
-find "$DIST_DIR" -maxdepth 1 -type f -name 'omeka-core-*.zip' ! -name "$BUNDLE_FILE" -delete 2>/dev/null || true
+find "$DIST_DIR" -maxdepth 1 -type f -name 'omeka-core-*.tar.zst' ! -name "$BUNDLE_FILE" -delete 2>/dev/null || true
 
-echo "Creating ZIP bundle for Omeka $RELEASE..." >&2
-(cd "$OMEKA_STAGE" && zip -qr "$BUNDLE_PATH" .)
+# `composer install` leaves one dangling symlink in the stage:
+# vendor/omeka/composer-addon-installer → application/data/composer-addon-installer
+# (Omeka's addon installer, a path-repository package). That plugin only runs
+# during `composer install`; the web runtime never loads it, and its real files
+# already ship under application/data/. The tar packer never follows symlinks, so
+# drop it — bundle-neutral. NOTE: in a fresh CI composer install vendor/omeka holds
+# ONLY this symlink, so removing it leaves vendor/omeka empty (pruned below).
+find "$OMEKA_STAGE" -type l -name 'composer-addon-installer' -delete 2>/dev/null || true
+
+# Prune empty directories — bundle-neutral. The tar packer records regular files
+# only and never emits directory entries (the runtime reconstructs every dir from
+# its files' parent paths on extract), so an empty dir was never in the bundle to
+# begin with; the pre-tripwire build shipped fine without them. `-depth` makes the
+# prune cascade: a dir emptied by the symlink removal above (e.g. vendor/omeka) is
+# deleted, and any parent it in turn leaves empty is deleted in the same pass.
+find "$OMEKA_STAGE" -depth -type d -empty -delete 2>/dev/null || true
+
+# Tripwire for the real data-loss risk: a stray SYMLINK. The packer walks regular
+# files only (isFile()) and never follows symlinks, so any symlink left here would
+# vanish from the bundle with no trace — and the file-count parity check (regular
+# files on both sides) is blind to it. (Empty dirs are dataless and already pruned
+# above, so they are NOT a failure.) Fail loudly instead of shipping a partial tree.
+SYMLINKS=$(find "$OMEKA_STAGE" -type l)
+if [ -n "$SYMLINKS" ]; then
+  echo "ERROR: staged tree has symlinks the tar packer would silently drop:" >&2
+  echo "$SYMLINKS" | sed 's/^/    /' >&2
+  exit 1
+fi
+
+# Pack the staged root-relative tree into a deterministic, zstd-compressed tar
+# (`.tar.zst`). The browser runtime extracts it by streaming zstd decode +
+# incremental USTAR parsing straight into MEMFS (see lib/streaming-tar-extract.js),
+# replacing the old `zip -qr` + PHP ZipArchive path. The helper prints
+# {fileCount,bytes,sha256,uncompressedBytes}; the manifest reuses its fileCount so
+# the runtime file-count parity check matches exactly.
+echo "Creating tar.zst bundle for Omeka $RELEASE..." >&2
+BUNDLE_STATS=$(node "$SCRIPT_DIR/build-tar-zst-bundle.mjs" "$OMEKA_STAGE" "$BUNDLE_PATH")
+FILE_COUNT=$(printf '%s' "$BUNDLE_STATS" | node -e "let d='';process.stdin.on('data',(c)=>{d+=c;}).on('end',()=>{process.stdout.write(String(JSON.parse(d).fileCount));});")
 echo "Bundle created: $BUNDLE_PATH ($FILE_COUNT files)" >&2
 
 MANIFEST_ARGS="--channel browser --manifest $MANIFEST_PATH --release $RELEASE --sourceRepository $SOURCE_URL --sourceBranch $SOURCE_REF --bundle $BUNDLE_PATH --fileCount $FILE_COUNT"

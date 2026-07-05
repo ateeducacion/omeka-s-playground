@@ -46,7 +46,9 @@ const manifest = {
   release: args.release,
   source,
   bundle: {
-    format: "zip",
+    format: "tar.zst",
+    container: "tar",
+    codec: "zstd",
     path: relative(resolve(manifestPath, ".."), bundlePath).replaceAll(
       "\\",
       "/",
