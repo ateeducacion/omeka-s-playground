@@ -34,7 +34,9 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # Node 24 LTS: the tar.zst bundle build helper needs native node:zlib
+          # zstd support (Node >= 22.15).
+          node-version: 24
           cache: npm
 
       - uses: actions/setup-python@v6

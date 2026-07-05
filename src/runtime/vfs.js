@@ -1,7 +1,8 @@
 import { resolveBootstrapArchive } from "../../lib/omeka-loader.js";
-import { buildCoreExtractScript } from "./core-extract-script.js";
-
-const decoder = new TextDecoder();
+import {
+  createDecodedTarStream,
+  extractTarStreamToPhp,
+} from "../../lib/streaming-tar-extract.js";
 
 export async function mountReadonlyCore(
   php,
@@ -25,32 +26,36 @@ export async function mountReadonlyCore(
     archiveBytes = archive.bytes;
   }
 
-  // Extract the core with PHP's native ZipArchive instead of decompressing the
-  // whole ~19 MB / 9 310-file archive in JS on every boot. libzip inflates +
-  // writes one entry at a time (fast at any file count, ~one-entry peak),
-  // avoiding both the fflate `unzipSync` heap OOM and the per-entry
-  // DecompressionStream overhead of `decodeZip` (which made boot exceed the
-  // readiness gate). Write the zip to MEMFS, run the extractor, then fail loud
-  // if ext/zip is missing or it errors — the install is not cached, so a reload
-  // retries (no JS fallback by design).
-  const tmpZip = "/tmp/omeka-core.zip";
-  const stage = "/tmp/omeka-core-stage";
+  // Extract the core by streaming-decoding the solid `tar.zst` bundle straight
+  // into MEMFS: zstd is decoded incrementally (zstddec streaming) and each USTAR
+  // entry is written as it is parsed, so the large uncompressed tar is never
+  // materialized — peak memory stays bounded to roughly one file plus one decoded
+  // chunk. This replaces the previous ZIP path (write to MEMFS + PHP
+  // ZipArchive::extractTo) with a format that is ~50% smaller (the download hides
+  // behind the WASM compile) and works on Chrome and Firefox. No JS fallback by
+  // design — the install is not cached, so a reload retries. See
+  // docs/streaming-tar-zst-bundle.md.
   publish?.("Extracting Omeka core…", 0.45);
-  await php.writeFile(tmpZip, archiveBytes);
-  // Drop the JS reference to the compressed buffer now that MEMFS has its own
-  // copy, so the GC can reclaim it while ZipArchive extracts.
+  const codec = manifest?.bundle?.codec ?? "zstd";
+  const stream = await createDecodedTarStream(archiveBytes, codec);
+  // Drop our local reference to the compressed buffer now that the decode stream
+  // owns it. On the native DecompressionStream path this lets the GC reclaim it
+  // as extraction consumes the stream; on the zstddec fallback the decoder keeps
+  // the whole compressed buffer until extraction finishes, so this frees nothing
+  // there.
   archiveBytes = null;
-  const result = await php.run(buildCoreExtractScript(tmpZip, stage, root));
-  const out = decoder.decode(result.bytes || new Uint8Array()).trim();
-  if (!out.startsWith("INSTALL_OK")) {
+  const stats = await extractTarStreamToPhp(stream, php, root);
+
+  // Parity: the streamed file count must match the manifest, or the bundle was
+  // truncated / does not match the manifest — fail loud.
+  const expected = manifest?.bundle?.fileCount;
+  if (expected && stats.fileCount !== expected) {
     throw new Error(
-      `Omeka core extraction failed: ${out.slice(0, 200)} ` +
-        "(PHP ext/zip is required to mount the core).",
+      `Omeka core tar file-count parity mismatch: ${stats.fileCount} != ${expected}`,
     );
   }
-  const written = Number.parseInt(out.slice("INSTALL_OK".length).trim(), 10);
 
-  return { manifest, entries: written };
+  return { manifest, entries: stats.fileCount };
 }
 
 export async function fetchArrayBuffer(path, cache = "default") {

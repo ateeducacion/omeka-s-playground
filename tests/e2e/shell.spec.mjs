@@ -5,7 +5,7 @@ test.describe.configure({ timeout: 180_000 });
 async function waitForRuntimeReady(page) {
   // The address bar stays disabled until the PHP runtime has booted and the
   // site frame is scoped — booting requires the core bundle to have been
-  // extracted into MEMFS (now via PHP ZipArchive), so this also guards against
+  // extracted into MEMFS (streaming tar.zst decode), so this also guards against
   // a core-extraction regression making boot too slow / fail. The runtime-id
   // chip in the Info panel is populated as soon as the runtime is selected, so
   // it doubles as a readiness signal.
