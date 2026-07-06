@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  extractTarStreamToPhp,
   StreamingTarParser,
   sanitizeTarPath,
 } from "../lib/streaming-tar-extract.js";
@@ -188,6 +189,58 @@ describe("StreamingTarParser", () => {
     const parser = new StreamingTarParser({ onEntry: () => {} });
     parser.push(tar.subarray(0, 512 + 400)); // header + partial data
     assert.throws(() => parser.end(), /Truncated/);
+  });
+
+  it("11. surfaces an empty directory written by createUstarTar", () => {
+    // End-to-end regression for the tar.zst core bundle: a semantically-meaningful
+    // empty directory must survive the production writer -> streaming extractor
+    // path (see tar-ustar.test.mjs for the writer-side assertions).
+    const tar = Buffer.from(
+      createUstarTar(
+        normalizeEntries({ "emptydir/": enc(""), "a.txt": enc("a") }),
+      ),
+    );
+    const { entries, stats } = collect(tar, 64);
+    assert.equal(stats.dirCount, 1);
+    const dir = entries.find((e) => e.type === "dir" && e.path === "emptydir");
+    assert.ok(dir, "empty directory must survive writer -> extractor");
+  });
+});
+
+describe("extractTarStreamToPhp", () => {
+  it("creates an empty directory on the filesystem via mkdirTree", async () => {
+    const tar = Buffer.from(
+      createUstarTar(
+        normalizeEntries({
+          "emptydir/": enc(""),
+          "modules/quiz/version.php": enc("<?php"),
+        }),
+      ),
+    );
+    const mkdirs = [];
+    const writes = [];
+    const fakePhp = {
+      _php: {
+        mkdirTree: (d) => mkdirs.push(d),
+        writeFile: (p) => writes.push(p),
+      },
+    };
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(tar);
+        controller.close();
+      },
+    });
+    const stats = await extractTarStreamToPhp(stream, fakePhp, "/www/omeka");
+    // The semantically-meaningful empty directory is materialized even though it
+    // holds no file.
+    assert.ok(
+      mkdirs.includes("/www/omeka/emptydir"),
+      `expected /www/omeka/emptydir to be created; got ${JSON.stringify(mkdirs)}`,
+    );
+    assert.ok(writes.includes("/www/omeka/modules/quiz/version.php"));
+    assert.equal(stats.dirCount, 1);
+    assert.equal(stats.fileCount, 1);
   });
 });
 
