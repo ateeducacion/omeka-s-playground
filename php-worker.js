@@ -38,6 +38,7 @@ let forceCleanBoot = false;
 
 const MAX_REACTIVE_RESTARTS = 20;
 const MIN_REQUESTS_BEFORE_RESTART = 10;
+const RUNTIME_HIGH_WATERMARK_REQUESTS = 1500;
 let requestCount = 0;
 let reactiveRestartCount = 0;
 
@@ -339,6 +340,12 @@ function installBridgeListener() {
 
       try {
         requestCount += 1;
+        if (requestCount === RUNTIME_HIGH_WATERMARK_REQUESTS) {
+          postShell({
+            kind: "trace",
+            detail: `[perf] request count reached ${RUNTIME_HIGH_WATERMARK_REQUESTS}; a manual reset may release accumulated memory.`,
+          });
+        }
         const state = await getRuntimeState();
         const response = await executePhpRequest(state, data.request);
         respond({
@@ -358,7 +365,16 @@ function installBridgeListener() {
         try {
           const currentState = await runtimeStatePromise;
           if (currentState?.php?._php) {
-            await snapshot.hydrate(currentState.php, PLAYGROUND_DB_PATH);
+            const snapshotResult = await snapshot.hydrate(
+              currentState.php,
+              PLAYGROUND_DB_PATH,
+            );
+            if (snapshotResult?.captured === false) {
+              postShell({
+                kind: "trace",
+                detail: `[snapshot] live checkpoint skipped (${snapshotResult.reason || "unknown"})`,
+              });
+            }
           }
         } catch (hydrateErr) {
           postShell({

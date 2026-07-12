@@ -174,6 +174,11 @@ echo "Creating tar.zst bundle for Omeka $RELEASE..." >&2
 BUNDLE_STATS=$(node "$SCRIPT_DIR/build-tar-zst-bundle.mjs" "$OMEKA_STAGE" "$BUNDLE_PATH")
 FILE_COUNT=$(printf '%s' "$BUNDLE_STATS" | node -e "let d='';process.stdin.on('data',(c)=>{d+=c;}).on('end',()=>{process.stdout.write(String(JSON.parse(d).fileCount));});")
 echo "Bundle created: $BUNDLE_PATH ($FILE_COUNT files)" >&2
+if [ ! -f "$BUNDLE_PATH" ]; then
+  echo "ERROR: expected tar.zst bundle was not produced: $BUNDLE_PATH" >&2
+  exit 1
+fi
+echo "Final bundle: $BUNDLE_PATH (tar.zst, $(stat -c%s "$BUNDLE_PATH" 2>/dev/null || wc -c < "$BUNDLE_PATH") bytes)" >&2
 
 MANIFEST_ARGS="--channel browser --manifest $MANIFEST_PATH --release $RELEASE --sourceRepository $SOURCE_URL --sourceBranch $SOURCE_REF --bundle $BUNDLE_PATH --fileCount $FILE_COUNT"
 if [ -n "$SOURCE_COMMIT" ]; then

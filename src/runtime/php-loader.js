@@ -58,6 +58,7 @@ export function createPhpRuntime(
 ) {
   const resolvedPhpVersion = phpVersion || DEFAULT_PHP_VERSION;
   let wrapped = null;
+  let persistenceController = null;
 
   const deferred = {
     async refresh() {
@@ -66,9 +67,14 @@ export function createPhpRuntime(
       const runtimeId = await loadWebRuntime(resolvedPhpVersion, {
         withIntl: true,
         tcpOverFetch,
+        emscriptenOptions: {
+          INITIAL_MEMORY: 128 * 1024 * 1024,
+          ALLOW_MEMORY_GROWTH: 1,
+        },
       });
       const php = new PHP(runtimeId);
       const FS = php[__private__dont__use].FS;
+      persistenceController = null;
 
       // Ensure directories exist
       try {
@@ -101,7 +107,7 @@ export function createPhpRuntime(
         if (forceCleanBoot) {
           await clearJournal(scopeId);
         }
-        await initFsPersistence(php, scopeId);
+        persistenceController = await initFsPersistence(php, scopeId);
       }
 
       php.writeFile(
@@ -127,8 +133,9 @@ export function createPhpRuntime(
         "opcache.file_cache": "/internal/shared/opcache",
         "opcache.file_cache_only": "1",
         "opcache.max_accelerated_files": "10000",
-        "opcache.memory_consumption": "128",
-        "opcache.interned_strings_buffer": "32",
+        "opcache.memory_consumption": "96",
+        "opcache.interned_strings_buffer": "16",
+        "opcache.jit": "0",
         "opcache.validate_timestamps": "0",
         "opcache.file_cache_consistency_checks": "0",
       });
@@ -182,6 +189,23 @@ export function createPhpRuntime(
         },
         configurable: true,
       });
+    },
+
+    async flushPersistence(options = {}) {
+      if (!persistenceController) {
+        return {
+          enabled: false,
+          ok: true,
+          flushedOps: 0,
+          hydratedBytes: 0,
+          estimatedBytes: 0,
+        };
+      }
+
+      return {
+        enabled: true,
+        ...(await persistenceController.flushNow(options)),
+      };
     },
 
     // Placeholder methods that throw if called before refresh()
