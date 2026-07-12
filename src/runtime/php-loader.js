@@ -160,6 +160,7 @@ export function createPhpRuntime(
         absoluteUrl,
         webRoot: webRoot || OMEKA_ROOT,
       });
+      wrapped.unlink = (path) => php.unlink(path);
 
       // Copy all methods from the wrapped instance onto this deferred object
       for (const key of Object.keys(wrapped)) {
@@ -196,6 +197,9 @@ export function createPhpRuntime(
       throw new Error("PHP runtime not initialized. Call refresh() first.");
     },
     async readFile() {
+      throw new Error("PHP runtime not initialized. Call refresh() first.");
+    },
+    async unlink() {
       throw new Error("PHP runtime not initialized. Call refresh() first.");
     },
     async run() {
