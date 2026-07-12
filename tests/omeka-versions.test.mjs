@@ -22,12 +22,32 @@ import {
 } from "../src/shared/omeka-versions.js";
 
 describe("OMEKA_VERSIONS", () => {
-  it("includes 4.1.1 and 4.2.1 and picks 4.2.1 as default", () => {
-    const versions = OMEKA_VERSIONS.map((entry) => entry.version);
-    assert.ok(versions.includes("4.1.1"));
-    assert.ok(versions.includes("4.2.1"));
+  it("includes the supported 4.1, 4.2, and 4.3 alpha versions", () => {
+    assert.deepEqual(
+      OMEKA_VERSIONS.map((entry) => entry.version),
+      ["4.1.1", "4.2.1", "4.3.0-alpha"],
+    );
     assert.equal(getDefaultOmekaVersion().version, "4.2.1");
     assert.equal(DEFAULT_OMEKA_VERSION, "4.2.1");
+  });
+
+  it("uses the matching SQLite support branch for each Omeka line", () => {
+    const branches = Object.fromEntries(
+      OMEKA_VERSIONS.map((entry) => [entry.version, entry.source.branch]),
+    );
+
+    assert.equal(
+      branches["4.1.1"],
+      "feature/experimental-sqlite-support-4.1",
+    );
+    assert.equal(
+      branches["4.2.1"],
+      "feature/experimental-sqlite-support-4.2",
+    );
+    assert.equal(
+      branches["4.3.0-alpha"],
+      "feature/experimental-sqlite-support",
+    );
   });
 
   it("exposes the full PHP matrix and a sensible default", () => {
@@ -40,6 +60,10 @@ describe("getOmekaVersionMetadata", () => {
   it("matches by exact version string", () => {
     assert.equal(getOmekaVersionMetadata("4.1.1")?.version, "4.1.1");
     assert.equal(getOmekaVersionMetadata("4.2.1")?.version, "4.2.1");
+    assert.equal(
+      getOmekaVersionMetadata("4.3.0-alpha")?.version,
+      "4.3.0-alpha",
+    );
   });
 
   it("returns null for unknown versions", () => {
@@ -52,11 +76,13 @@ describe("resolveOmekaVersion", () => {
   it("accepts exact version strings", () => {
     assert.equal(resolveOmekaVersion("4.1.1"), "4.1.1");
     assert.equal(resolveOmekaVersion("4.2.1"), "4.2.1");
+    assert.equal(resolveOmekaVersion("4.3.0-alpha"), "4.3.0-alpha");
   });
 
   it("resolves a major.minor request to the declared patch version", () => {
     assert.equal(resolveOmekaVersion("4.1"), "4.1.1");
     assert.equal(resolveOmekaVersion("4.2"), "4.2.1");
+    assert.equal(resolveOmekaVersion("4.3"), "4.3.0-alpha");
   });
 
   it("returns null for unknown input", () => {
@@ -98,6 +124,13 @@ describe("buildRuntimeId / parseRuntimeId", () => {
     assert.deepEqual(parseRuntimeId(id411), {
       phpVersion: "8.3",
       omekaVersion: "4.1.1",
+    });
+
+    const id430alpha = buildRuntimeId("8.3", "4.3.0-alpha");
+    assert.equal(id430alpha, "php83-omeka430alpha");
+    assert.deepEqual(parseRuntimeId(id430alpha), {
+      phpVersion: "8.3",
+      omekaVersion: "4.3.0-alpha",
     });
   });
 
@@ -157,10 +190,10 @@ describe("resolveVersions / resolveRuntimeSelection", () => {
   });
 
   it("resolveRuntimeSelection returns a consistent runtime id", () => {
-    const selection = resolveRuntimeSelection({ omeka: "4.1", php: "8.3" });
-    assert.equal(selection.omekaVersion, "4.1.1");
+    const selection = resolveRuntimeSelection({ omeka: "4.3", php: "8.3" });
+    assert.equal(selection.omekaVersion, "4.3.0-alpha");
     assert.equal(selection.phpVersion, "8.3");
-    assert.equal(selection.runtimeId, "php83-omeka411");
+    assert.equal(selection.runtimeId, "php83-omeka430alpha");
   });
 });
 
@@ -194,12 +227,12 @@ describe("resolveRuntimeConfig", () => {
 
   it("synthesises a runtime entry for unconfigured combinations", () => {
     const resolved = resolveRuntimeConfig(fakeConfig, {
-      runtimeId: "php85-omeka421",
+      runtimeId: "php83-omeka430alpha",
     });
-    assert.equal(resolved.id, "php85-omeka421");
-    assert.equal(resolved.phpVersion, "8.5");
-    assert.equal(resolved.omekaVersion, "4.2.1");
-    assert.equal(resolved.label, "PHP 8.5 + Omeka S 4.2.1");
+    assert.equal(resolved.id, "php83-omeka430alpha");
+    assert.equal(resolved.phpVersion, "8.3");
+    assert.equal(resolved.omekaVersion, "4.3.0-alpha");
+    assert.equal(resolved.label, "PHP 8.3 + Omeka S 4.3.0-alpha");
   });
 
   it("returns null when the config has no runtimes", () => {
@@ -216,9 +249,9 @@ describe("parseQueryParams", () => {
   });
 
   it("reads from an existing URL object", () => {
-    const url = new URL("https://example.com/?omekaVersion=4.2.1");
+    const url = new URL("https://example.com/?omekaVersion=4.3.0-alpha");
     const parsed = parseQueryParams(url);
-    assert.equal(parsed.omekaVersion, "4.2.1");
+    assert.equal(parsed.omekaVersion, "4.3.0-alpha");
   });
 });
 
@@ -226,6 +259,10 @@ describe("buildManifestFilename", () => {
   it("produces the declared manifest filename for each version", () => {
     assert.equal(buildManifestFilename("4.1.1"), "4.1.1.json");
     assert.equal(buildManifestFilename("4.2.1"), "4.2.1.json");
+    assert.equal(
+      buildManifestFilename("4.3.0-alpha"),
+      "4.3.0-alpha.json",
+    );
   });
 
   it("falls back to latest.json for unknown versions", () => {
