@@ -1140,12 +1140,15 @@ function buildPhpIni(config) {
     `display_errors=${debugEnabled ? 1 : 0}`,
     `display_startup_errors=${debugEnabled ? 1 : 0}`,
     `error_reporting=${debugEnabled ? "E_ALL" : "E_ALL & ~E_DEPRECATED"}`,
-    "memory_limit=512M",
+    "memory_limit=256M",
     "max_execution_time=30",
     "allow_url_fopen=1",
     `auto_prepend_file=${PLAYGROUND_PREPEND_PATH}`,
     `date.timezone=${config.timezone}`,
     "session.save_path=/persist/mutable/session",
+    "opcache.jit=0",
+    "opcache.memory_consumption=96",
+    "opcache.interned_strings_buffer=16",
     "",
   ].join("\n");
 }

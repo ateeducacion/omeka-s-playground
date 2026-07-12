@@ -18,6 +18,7 @@ const pending = new Map();
 const clientContexts = new Map();
 const STATIC_PREFIXES = [
   "/assets/",
+  "/application/asset/",
   "/src/",
   "/vendor/",
   "/dist/",
