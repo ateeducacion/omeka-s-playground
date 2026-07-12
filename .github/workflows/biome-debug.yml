@@ -3,6 +3,8 @@ name: Biome Debug
 on:
   push:
     branches: ["security/harden-dev-proxy-ssrf"]
+  pull_request:
+    branches: ["main"]
 
 permissions:
   contents: read
