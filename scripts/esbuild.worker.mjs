@@ -7,18 +7,20 @@ import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
+import { ALL_PHP_VERSIONS as SUPPORTED_PHP_VERSIONS } from "../src/shared/omeka-versions.js";
+
 const require = createRequire(import.meta.url);
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoDir = resolvePath(scriptDir, "..");
 
-// Only bundle the PHP runtime versions this playground actually offers. The
-// monolithic @php-wasm/web's loadWebRuntime() switch dynamically imports every
-// @php-wasm/web-X-Y package, so esbuild can't tree-shake and would emit all 8
-// versions' .wasm (~798 MB) into dist/ — even though the browser only ever
-// downloads the one version a session selects. Stub the non-offered version
-// packages so their assets are never emitted (a deploy/CI/disk reduction;
-// runtime behavior for the offered versions is unchanged).
-const ALL_PHP_VERSIONS = [
+// Only bundle the PHP runtime versions supported by the compatibility matrix.
+// The shell can synthesize every valid PHP/Omeka combination even when
+// playground.config.json contains only a curated list of default runtimes.
+// The monolithic @php-wasm/web's loadWebRuntime() switch dynamically imports
+// every @php-wasm/web-X-Y package, so esbuild can't tree-shake and would emit
+// all 8 versions' .wasm (~798 MB) into dist/. Stub only the unsupported version
+// packages so every runtime offered by the UI remains available.
+const PHP_WASM_VERSIONS = [
   "5-2",
   "7-4",
   "8-0",
@@ -28,19 +30,12 @@ const ALL_PHP_VERSIONS = [
   "8-4",
   "8-5",
 ];
-const offeredPhp = [
-  ...new Set(
-    (
-      JSON.parse(
-        readFileSync(resolvePath(repoDir, "playground.config.json"), "utf8"),
-      ).runtimes || []
-    )
-      .map((r) => r.phpVersion)
-      .filter(Boolean),
-  ),
-];
-const keepVersions = offeredPhp.map((v) => v.replace(".", "-"));
-const dropVersions = ALL_PHP_VERSIONS.filter((v) => !keepVersions.includes(v));
+const keepVersions = SUPPORTED_PHP_VERSIONS.map((version) =>
+  version.replace(".", "-"),
+);
+const dropVersions = PHP_WASM_VERSIONS.filter(
+  (version) => !keepVersions.includes(version),
+);
 
 const stripUnusedPhpVersions = {
   name: "strip-unused-php-versions",
