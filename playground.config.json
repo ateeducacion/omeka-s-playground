@@ -33,6 +33,13 @@
       "phpVersion": "8.3",
       "omekaVersion": "4.1.1",
       "default": false
+    },
+    {
+      "id": "php83-omeka430alpha",
+      "label": "PHP 8.3 + Omeka S 4.3.0-alpha",
+      "phpVersion": "8.3",
+      "omekaVersion": "4.3.0-alpha",
+      "default": false
     }
   ]
 }
