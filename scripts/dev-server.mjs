@@ -490,7 +490,8 @@ export function createDevServer() {
 }
 
 const isMainModule =
-  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMainModule) {
   const server = createDevServer();
   server.listen(port, "127.0.0.1", () => {
