@@ -16,6 +16,19 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Run Biome on changed files
+        id: biome
+        continue-on-error: true
         run: |
           npm install --silent
-          npx @biomejs/biome check scripts/dev-server.mjs tests/dev-server.test.mjs
+          npx @biomejs/biome check scripts/dev-server.mjs tests/dev-server.test.mjs > biome.log 2>&1
+
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v7
+        with:
+          name: biome-diagnostics
+          path: biome.log
+          retention-days: 1
+
+      - name: Fail on Biome errors
+        if: steps.biome.outcome == 'failure'
+        run: exit 1
