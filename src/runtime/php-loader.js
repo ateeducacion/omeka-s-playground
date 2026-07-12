@@ -160,9 +160,7 @@ export function createPhpRuntime(
         absoluteUrl,
         webRoot: webRoot || OMEKA_ROOT,
       });
-      // bootstrap.js removes stale persisted files through the deferred API.
-      // Keep that operation backed by PHP's public filesystem method so the
-      // fs-journal receives the native filesystem.write event.
+      // Preserve PHP's filesystem.write event for persisted file removals.
       wrapped.unlink = (path) => php.unlink(path);
 
       // Copy all methods from the wrapped instance onto this deferred object
