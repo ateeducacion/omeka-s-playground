@@ -19,7 +19,7 @@ export const OMEKA_VERSIONS = [
     source: {
       type: "git",
       repository: "https://github.com/ateeducacion/omeka-s.git",
-      branch: "feature/experimental-sqlite-support-4.1.1",
+      branch: "feature/experimental-sqlite-support-4.1",
     },
     default: false,
   },
@@ -33,9 +33,23 @@ export const OMEKA_VERSIONS = [
     source: {
       type: "git",
       repository: "https://github.com/ateeducacion/omeka-s.git",
-      branch: "feature/experimental-sqlite-support",
+      branch: "feature/experimental-sqlite-support-4.2",
     },
     default: true,
+  },
+  {
+    version: "4.3.0-alpha",
+    label: "Omeka S 4.3.0-alpha",
+    slug: "4.3.0-alpha",
+    manifestFile: "4.3.0-alpha.json",
+    bundleDir: "4.3.0-alpha",
+    phpVersions: ["8.1", "8.2", "8.3", "8.4", "8.5"],
+    source: {
+      type: "git",
+      repository: "https://github.com/ateeducacion/omeka-s.git",
+      branch: "feature/experimental-sqlite-support",
+    },
+    default: false,
   },
 ];
 
@@ -52,6 +66,10 @@ function normalizeStringParam(value) {
 
   const normalized = String(value).trim();
   return normalized || null;
+}
+
+function buildOmekaRuntimeToken(version) {
+  return String(version).replaceAll(/[^A-Za-z0-9]/gu, "");
 }
 
 /**
@@ -129,21 +147,20 @@ export function resolveOmekaVersion(input) {
 
 /**
  * Build a runtime ID encoding both PHP version and Omeka version.
- * e.g., "php83-omeka421", "php83-omeka411".
+ * e.g., "php83-omeka421", "php83-omeka411", "php83-omeka430alpha".
  */
 export function buildRuntimeId(phpVersion, omekaVersion) {
   const phpPart = `php${String(phpVersion).replace(".", "")}`;
   const meta = getOmekaVersionMetadata(omekaVersion);
-  const omekaPart = meta
-    ? `omeka${meta.version.replaceAll(".", "")}`
-    : `omeka${String(omekaVersion).replaceAll(/[^A-Za-z0-9]/gu, "")}`;
+  const resolvedVersion = meta?.version || omekaVersion;
+  const omekaPart = `omeka${buildOmekaRuntimeToken(resolvedVersion)}`;
   return `${phpPart}-${omekaPart}`;
 }
 
 /**
  * Parse a runtime ID back to { phpVersion, omekaVersion }.
  *
- * Accepts the new "phpXY-omekaNNN" format and the legacy "phpXY" format
+ * Accepts the new "phpXY-omekaVERSION" format and the legacy "phpXY" format
  * (which maps to the default Omeka version).
  */
 export function parseRuntimeId(runtimeId) {
@@ -151,21 +168,21 @@ export function parseRuntimeId(runtimeId) {
     return null;
   }
 
-  const newMatch = runtimeId.match(/^php(\d)(\d)-omeka(\d+)$/u);
+  const newMatch = runtimeId.match(/^php(\d)(\d)-omeka([A-Za-z0-9]+)$/u);
   if (newMatch) {
     const phpVersion = `${newMatch[1]}.${newMatch[2]}`;
-    const digits = newMatch[3];
+    const versionToken = newMatch[3];
     const byExact = OMEKA_VERSIONS.find(
-      (entry) => entry.version.replaceAll(".", "") === digits,
+      (entry) => buildOmekaRuntimeToken(entry.version) === versionToken,
     );
     if (byExact) {
       return { phpVersion, omekaVersion: byExact.version };
     }
 
-    // Tolerate shortened forms like "omeka41" -> try "4.1" loose match.
-    if (digits.length >= 2) {
+    // Tolerate shortened numeric forms like "omeka41" -> try "4.1".
+    if (/^\d+$/u.test(versionToken) && versionToken.length >= 2) {
       const loose = resolveOmekaVersion(
-        `${digits[0]}.${digits.slice(1)}`.replace(
+        `${versionToken[0]}.${versionToken.slice(1)}`.replace(
           /^(\d+)\.(\d)(\d+)$/u,
           "$1.$2.$3",
         ),
