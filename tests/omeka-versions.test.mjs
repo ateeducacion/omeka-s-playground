@@ -36,14 +36,8 @@ describe("OMEKA_VERSIONS", () => {
       OMEKA_VERSIONS.map((entry) => [entry.version, entry.source.branch]),
     );
 
-    assert.equal(
-      branches["4.1.1"],
-      "feature/experimental-sqlite-support-4.1",
-    );
-    assert.equal(
-      branches["4.2.1"],
-      "feature/experimental-sqlite-support-4.2",
-    );
+    assert.equal(branches["4.1.1"], "feature/experimental-sqlite-support-4.1");
+    assert.equal(branches["4.2.1"], "feature/experimental-sqlite-support-4.2");
     assert.equal(
       branches["4.3.0-alpha"],
       "feature/experimental-sqlite-support",
@@ -259,10 +253,7 @@ describe("buildManifestFilename", () => {
   it("produces the declared manifest filename for each version", () => {
     assert.equal(buildManifestFilename("4.1.1"), "4.1.1.json");
     assert.equal(buildManifestFilename("4.2.1"), "4.2.1.json");
-    assert.equal(
-      buildManifestFilename("4.3.0-alpha"),
-      "4.3.0-alpha.json",
-    );
+    assert.equal(buildManifestFilename("4.3.0-alpha"), "4.3.0-alpha.json");
   });
 
   it("falls back to latest.json for unknown versions", () => {
