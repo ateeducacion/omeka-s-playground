@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { after, before, describe, it } from "node:test";
 import {
-  ProxyValidationError,
   addressIsBlocked,
   fetchAddon,
+  ProxyValidationError,
   requestWithNodeRedirects,
   requestWithValidatedRedirects,
   resolvePublicHost,
@@ -97,34 +97,31 @@ describe("dev server SSRF guard", () => {
     assert.equal(localHostHeader, `public.example:${address.port}`);
   });
 
-  it(
-    "rejects a public redirect to a local HTTP service before requesting it",
-    async () => {
-      localRequests = 0;
-      let requestCount = 0;
-      const requestSingleHop = async () => {
-        requestCount += 1;
-        return response(302, localUrl);
-      };
-      const resolveHost = async (hostname) => {
-        if (hostname === "public.example") {
-          return [{ address: "93.184.216.34", family: 4 }];
-        }
-        return resolvePublicHost(hostname);
-      };
+  it("rejects a public redirect to a local HTTP service before requesting it", async () => {
+    localRequests = 0;
+    let requestCount = 0;
+    const requestSingleHop = async () => {
+      requestCount += 1;
+      return response(302, localUrl);
+    };
+    const resolveHost = async (hostname) => {
+      if (hostname === "public.example") {
+        return [{ address: "93.184.216.34", family: 4 }];
+      }
+      return resolvePublicHost(hostname);
+    };
 
-      await assert.rejects(
-        requestWithValidatedRedirects(
-          "https://public.example/addon.zip",
-          requestSingleHop,
-          resolveHost,
-        ),
-        ProxyValidationError,
-      );
-      assert.equal(requestCount, 1);
-      assert.equal(localRequests, 0);
-    },
-  );
+    await assert.rejects(
+      requestWithValidatedRedirects(
+        "https://public.example/addon.zip",
+        requestSingleHop,
+        resolveHost,
+      ),
+      ProxyValidationError,
+    );
+    assert.equal(requestCount, 1);
+    assert.equal(localRequests, 0);
+  });
 
   it("does not invoke curl after a validation rejection", async () => {
     let curlCalled = false;
@@ -143,55 +140,49 @@ describe("dev server SSRF guard", () => {
     assert.equal(curlCalled, false);
   });
 
-  it(
-    "applies redirect validation inside the curl transport fallback",
-    async () => {
-      localRequests = 0;
-      let curlHopCount = 0;
-      const resolveHost = async (hostname) => {
-        if (hostname === "public.example") {
-          return [{ address: "93.184.216.34", family: 4 }];
-        }
-        return resolvePublicHost(hostname);
-      };
+  it("applies redirect validation inside the curl transport fallback", async () => {
+    localRequests = 0;
+    let curlHopCount = 0;
+    const resolveHost = async (hostname) => {
+      if (hostname === "public.example") {
+        return [{ address: "93.184.216.34", family: 4 }];
+      }
+      return resolvePublicHost(hostname);
+    };
 
-      await assert.rejects(
-        fetchAddon(new URL("https://public.example/addon.zip"), {
-          nodeRequest: async () => {
-            throw new Error("simulated TLS fingerprint rejection");
-          },
-          curlRequest: (target) =>
-            requestWithValidatedRedirects(
-              target,
-              async () => {
-                curlHopCount += 1;
-                return response(302, localUrl);
-              },
-              resolveHost,
-            ),
-        }),
-        ProxyValidationError,
-      );
-      assert.equal(curlHopCount, 1);
-      assert.equal(localRequests, 0);
-    },
-  );
-
-  it(
-    "uses curl after a transport failure and returns its successful response",
-    async () => {
-      const result = await fetchAddon(
-        new URL("https://public.example/addon.zip"),
-        {
-          nodeRequest: async () => {
-            throw new Error("simulated TLS failure");
-          },
-          curlRequest: async () => response(200, null, "zip bytes"),
+    await assert.rejects(
+      fetchAddon(new URL("https://public.example/addon.zip"), {
+        nodeRequest: async () => {
+          throw new Error("simulated TLS fingerprint rejection");
         },
-      );
-      assert.equal(result.body.toString(), "zip bytes");
-    },
-  );
+        curlRequest: (target) =>
+          requestWithValidatedRedirects(
+            target,
+            async () => {
+              curlHopCount += 1;
+              return response(302, localUrl);
+            },
+            resolveHost,
+          ),
+      }),
+      ProxyValidationError,
+    );
+    assert.equal(curlHopCount, 1);
+    assert.equal(localRequests, 0);
+  });
+
+  it("uses curl after a transport failure and returns its successful response", async () => {
+    const result = await fetchAddon(
+      new URL("https://public.example/addon.zip"),
+      {
+        nodeRequest: async () => {
+          throw new Error("simulated TLS failure");
+        },
+        curlRequest: async () => response(200, null, "zip bytes"),
+      },
+    );
+    assert.equal(result.body.toString(), "zip bytes");
+  });
 
   it("rejects redirects to unsupported protocols", async () => {
     await assert.rejects(
