@@ -3,14 +3,19 @@
 import { execFile } from "node:child_process";
 import { lookup } from "node:dns/promises";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { stat } from "node:fs/promises";
-import { createServer } from "node:http";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { createServer, request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { BlockList, isIP } from "node:net";
+import { tmpdir } from "node:os";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const port = Number(process.env.PORT || process.argv[2] || 8080);
 const proxyPath = "/__addon_proxy__";
+const MAX_REDIRECTS = 10;
+const MAX_BODY_BYTES = 52_428_800;
 
 const MIME_TYPES = {
   ".bin": "application/octet-stream",
@@ -31,81 +36,318 @@ const MIME_TYPES = {
   ".zip": "application/zip",
 };
 
+const BLOCKED_IPV4_CIDRS = [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.168.0.0", 16],
+  ["224.0.0.0", 3],
+];
+
+const BLOCKED_IPV6_CIDRS = [
+  ["fc00::", 7],
+  ["fe80::", 10],
+  ["fec0::", 10],
+  ["64:ff9b::", 96],
+  ["64:ff9b:1::", 48],
+  ["ff00::", 8],
+];
+
+const ipv4BlockList = new BlockList();
+const ipv6BlockList = new BlockList();
+
+for (const [address, prefix] of BLOCKED_IPV4_CIDRS) {
+  ipv4BlockList.addSubnet(address, prefix, "ipv4");
+  ipv6BlockList.addSubnet(`::ffff:${address}`, 96 + prefix, "ipv6");
+  ipv6BlockList.addSubnet(`::${address}`, 96 + prefix, "ipv6");
+}
+for (const [address, prefix] of BLOCKED_IPV6_CIDRS) {
+  ipv6BlockList.addSubnet(address, prefix, "ipv6");
+}
+ipv6BlockList.addAddress("::", "ipv6");
+ipv6BlockList.addAddress("::1", "ipv6");
+
+export class ProxyValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ProxyValidationError";
+  }
+}
+
 function log(message) {
   process.stdout.write(`${message}\n`);
 }
 
-// SSRF guard for the addon proxy. The proxy fetches a caller-supplied URL, so
-// resolve the host first and reject loopback / private / link-local targets to
-// stop the dev server being used as a hop to internal services. Fails closed
-// (anything unparseable is treated as blocked).
-function ipv4IsPrivate(ip) {
-  const parts = ip.split(".").map((part) => Number.parseInt(part, 10));
-  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) {
+function normalizeHostname(hostname) {
+  const value = String(hostname || "").trim();
+  if (value.startsWith("[") && value.endsWith("]")) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+export function addressIsBlocked(address, family = isIP(address)) {
+  try {
+    if (family === 4) {
+      return ipv4BlockList.check(address, "ipv4");
+    }
+    if (family === 6) {
+      return ipv6BlockList.check(address, "ipv6");
+    }
+  } catch {
     return true;
   }
-  const [a, b] = parts;
-  if (a === 0 || a === 10 || a === 127) return true;
-  if (a === 169 && b === 254) return true; // link-local
-  if (a === 172 && b >= 16 && b <= 31) return true; // private
-  if (a === 192 && b === 168) return true; // private
-  if (a === 100 && b >= 64 && b <= 127) return true; // RFC 6598 CGNAT
-  if (a >= 224) return true; // multicast + reserved
-  return false;
+  return true;
 }
 
-function ipv6IsPrivate(ip) {
-  const lower = ip.toLowerCase();
-  if (lower === "::1" || lower === "::") return true;
-  if (lower.startsWith("fe80")) return true; // link-local
-  if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // unique-local
-  if (lower.startsWith("fec0")) return true; // deprecated site-local
-  if (lower.startsWith("64:ff9b:")) return true; // NAT64 well-known prefix
-  // IPv4-mapped (::ffff:a.b.c.d) and deprecated IPv4-compatible (::a.b.c.d).
-  const embedded = lower.match(/(?:::ffff:|::)(\d+\.\d+\.\d+\.\d+)$/u);
-  if (embedded) return ipv4IsPrivate(embedded[1]);
-  return false;
-}
+// Resolve once, reject every non-public result, and return the validated
+// addresses so the transport can pin the request to the same DNS answer.
+export async function resolvePublicHost(hostname, lookupFn = lookup) {
+  const normalizedHostname = normalizeHostname(hostname);
+  const literalFamily = isIP(normalizedHostname);
+  let results;
 
-async function assertPublicHost(hostname) {
-  const results = await lookup(hostname, { all: true });
+  if (literalFamily) {
+    results = [{ address: normalizedHostname, family: literalFamily }];
+  } else {
+    try {
+      results = await lookupFn(normalizedHostname, { all: true });
+    } catch {
+      throw new ProxyValidationError("target host could not be validated");
+    }
+  }
+
   if (!results.length) {
-    throw new Error("host did not resolve");
+    throw new ProxyValidationError("target host did not resolve");
   }
   for (const { address, family } of results) {
-    const blocked =
-      family === 6 ? ipv6IsPrivate(address) : ipv4IsPrivate(address);
-    if (blocked) {
-      throw new Error("target host is not allowed");
+    if (addressIsBlocked(address, family)) {
+      throw new ProxyValidationError("target host is not allowed");
     }
+  }
+  return results;
+}
+
+function responseHeaders(rawHeaders) {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(rawHeaders)) {
+    if (Array.isArray(value)) {
+      for (const item of value) headers.append(name, item);
+    } else if (value !== undefined) {
+      headers.set(name, value);
+    }
+  }
+  return headers;
+}
+
+function requestPinnedAddress(url, resolvedAddress) {
+  return new Promise((resolveRequest, rejectRequest) => {
+    const client = url.protocol === "https:" ? httpsRequest : httpRequest;
+    const request = client(
+      url,
+      {
+        headers: { "user-agent": "omeka-s-playground-dev-server" },
+        lookup: (_hostname, options, callback) => {
+          if (options.all) {
+            callback(null, [resolvedAddress]);
+          } else {
+            callback(null, resolvedAddress.address, resolvedAddress.family);
+          }
+        },
+        timeout: 60_000,
+      },
+      (response) => {
+        const status = response.statusCode || 0;
+        const headers = responseHeaders(response.headers);
+        const location = headers.get("location");
+
+        if (status >= 300 && status < 400 && location) {
+          response.resume();
+          resolveRequest({ body: Buffer.alloc(0), headers, status });
+          return;
+        }
+
+        const contentLength = Number(headers.get("content-length") || 0);
+        if (contentLength > MAX_BODY_BYTES) {
+          response.destroy(new Error("upstream response is too large"));
+          return;
+        }
+
+        const chunks = [];
+        let size = 0;
+        response.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > MAX_BODY_BYTES) {
+            response.destroy(new Error("upstream response is too large"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on("end", () => {
+          resolveRequest({ body: Buffer.concat(chunks), headers, status });
+        });
+        response.on("error", rejectRequest);
+      },
+    );
+
+    request.on("timeout", () => request.destroy(new Error("upstream timeout")));
+    request.on("error", rejectRequest);
+    request.end();
+  });
+}
+
+async function requestWithNode(url, resolvedAddresses) {
+  let lastError;
+  for (const resolvedAddress of resolvedAddresses) {
+    try {
+      return await requestPinnedAddress(url, resolvedAddress);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("upstream request failed");
+}
+
+function curlResolveArgument(url, resolvedAddress) {
+  const hostname = normalizeHostname(url.hostname);
+  if (isIP(hostname)) return null;
+  const portNumber = url.port || (url.protocol === "https:" ? "443" : "80");
+  const address =
+    resolvedAddress.family === 6
+      ? `[${resolvedAddress.address}]`
+      : resolvedAddress.address;
+  return `${hostname}:${portNumber}:${address}`;
+}
+
+async function requestPinnedAddressWithCurl(url, resolvedAddress) {
+  const tempDirectory = await mkdtemp(join(tmpdir(), "omeka-addon-proxy-"));
+  const bodyPath = join(tempDirectory, "body");
+  const resolveArgument = curlResolveArgument(url, resolvedAddress);
+  const args = [
+    "--silent",
+    "--show-error",
+    "--max-time",
+    "60",
+    "--max-filesize",
+    String(MAX_BODY_BYTES),
+    "--proto",
+    "=http,https",
+    "--noproxy",
+    "*",
+    "--output",
+    bodyPath,
+    "--write-out",
+    "%{http_code}\n%{redirect_url}",
+  ];
+  if (resolveArgument) args.push("--resolve", resolveArgument);
+  args.push(url.toString());
+
+  try {
+    const metadata = await new Promise((resolveCurl, rejectCurl) => {
+      execFile(
+        "curl",
+        args,
+        { encoding: "utf8", maxBuffer: 65_536 },
+        (error, stdout) => {
+          if (error) rejectCurl(new Error(`curl failed: ${error.message}`));
+          else resolveCurl(stdout);
+        },
+      );
+    });
+    const [statusLine, ...redirectLines] = String(metadata).split("\n");
+    const status = Number.parseInt(statusLine, 10);
+    if (!Number.isInteger(status) || status < 100 || status > 599) {
+      throw new Error("curl returned an invalid HTTP status");
+    }
+    return {
+      body: await readFile(bodyPath),
+      headers: new Headers({ location: redirectLines.join("\n").trim() }),
+      status,
+    };
+  } finally {
+    await rm(tempDirectory, { force: true, recursive: true });
   }
 }
 
-// Follow redirects manually, re-validating every hop. fetch's built-in
-// redirect:"follow" would let a public host 30x-redirect the proxy to an
-// internal address without re-checking, so we drive the chain ourselves and run
-// assertPublicHost before each request.
-const MAX_REDIRECTS = 10;
+async function requestWithCurl(url, resolvedAddresses) {
+  let lastError;
+  for (const resolvedAddress of resolvedAddresses) {
+    try {
+      return await requestPinnedAddressWithCurl(url, resolvedAddress);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("curl request failed");
+}
 
-async function fetchValidatingRedirects(initialUrl) {
+export async function requestWithValidatedRedirects(
+  initialUrl,
+  requestSingleHop,
+  resolveHost = resolvePublicHost,
+) {
   let current = new URL(initialUrl);
+
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
     if (!["http:", "https:"].includes(current.protocol)) {
-      throw new Error("redirect to unsupported protocol");
+      throw new ProxyValidationError("redirect to unsupported protocol");
     }
-    await assertPublicHost(current.hostname);
-    const response = await fetch(current, {
-      redirect: "manual",
-      headers: { "user-agent": "omeka-s-playground-dev-server" },
-    });
+
+    const resolvedAddresses = await resolveHost(current.hostname);
+    const response = await requestSingleHop(current, resolvedAddresses);
     const location = response.headers.get("location");
     if (response.status >= 300 && response.status < 400 && location) {
-      current = new URL(location, current);
+      try {
+        current = new URL(location, current);
+      } catch {
+        throw new ProxyValidationError("redirect URL is invalid");
+      }
       continue;
     }
     return response;
   }
-  throw new Error("too many redirects");
+
+  throw new ProxyValidationError("too many redirects");
+}
+
+export async function requestWithNodeRedirects(
+  target,
+  resolveHost = resolvePublicHost,
+) {
+  return requestWithValidatedRedirects(target, requestWithNode, resolveHost);
+}
+
+export async function requestWithCurlRedirects(
+  target,
+  resolveHost = resolvePublicHost,
+) {
+  return requestWithValidatedRedirects(target, requestWithCurl, resolveHost);
+}
+
+export async function fetchAddon(
+  target,
+  {
+    nodeRequest = requestWithNodeRedirects,
+    curlRequest = requestWithCurlRedirects,
+  } = {},
+) {
+  let upstream;
+  try {
+    upstream = await nodeRequest(target);
+  } catch (error) {
+    if (error instanceof ProxyValidationError) throw error;
+  }
+
+  if (upstream?.status >= 200 && upstream.status < 300) {
+    return upstream;
+  }
+
+  // Curl is used only as a transport fallback. It shares the same host,
+  // redirect, protocol, and DNS-pinning policy as the primary Node request.
+  return curlRequest(target);
 }
 
 function send(res, status, body, headers = {}) {
@@ -182,43 +424,30 @@ async function proxyAddon(_req, res, url) {
     return;
   }
 
+  log(`proxy ${target.toString()}`);
+
+  let upstream;
   try {
-    await assertPublicHost(target.hostname);
-  } catch {
-    send(res, 403, "Target host is not allowed", {
+    upstream = await fetchAddon(target);
+  } catch (error) {
+    if (error instanceof ProxyValidationError) {
+      send(res, 403, "Target host is not allowed", {
+        "content-type": "text/plain; charset=utf-8",
+      });
+      return;
+    }
+
+    log(`proxy error: ${String(error?.message || error)}`);
+    send(res, 502, "Upstream fetch failed", {
       "content-type": "text/plain; charset=utf-8",
     });
     return;
   }
 
-  log(`proxy ${target.toString()}`);
-
-  let upstream;
-  try {
-    upstream = await fetchValidatingRedirects(target);
-  } catch {
-    upstream = null;
-  }
-
-  // Some hosts (e.g. GitLab/Cloudflare) reject Node.js fetch via TLS
-  // fingerprinting. Fall back to curl which is not fingerprinted.
-  if (!upstream?.ok) {
-    try {
-      const bytes = await fetchWithCurl(target.toString());
-      send(res, 200, bytes, {
-        "access-control-allow-origin": "*",
-        "cache-control": "no-store",
-        "content-type": "application/octet-stream",
-        "content-length": String(bytes.length),
-      });
-    } catch (error) {
-      // Log the detail server-side; return a generic message so internal error
-      // text (paths, stack/curl diagnostics) is never exposed to the client.
-      log(`proxy error: ${String(error?.message || error)}`);
-      send(res, 502, "Upstream fetch failed", {
-        "content-type": "text/plain; charset=utf-8",
-      });
-    }
+  if (upstream.status < 200 || upstream.status >= 300) {
+    send(res, 502, "Upstream fetch failed", {
+      "content-type": "text/plain; charset=utf-8",
+    });
     return;
   }
 
@@ -227,72 +456,47 @@ async function proxyAddon(_req, res, url) {
     "cache-control": "no-store",
     "content-type":
       upstream.headers.get("content-type") || "application/octet-stream",
+    "content-length": String(upstream.body.length),
   };
   const disposition = upstream.headers.get("content-disposition");
   if (disposition) {
     headers["content-disposition"] = disposition;
   }
 
-  const bytes = Buffer.from(await upstream.arrayBuffer());
-  headers["content-length"] = String(bytes.length);
-  send(res, 200, bytes, headers);
+  send(res, 200, upstream.body, headers);
 }
 
-// Fallback path for hosts that reject Node's fetch via TLS fingerprinting. The
-// initial host is already validated by assertPublicHost before this is called;
-// curl still follows redirects itself (capped via --max-redirs) and does not
-// re-validate each hop, an accepted residual for this loopback-only dev fallback.
-function fetchWithCurl(url) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      "curl",
-      [
-        "-fsSL",
-        "--max-redirs",
-        "10",
-        "--proto",
-        "=http,https",
-        "--proto-redir",
-        "=http,https",
-        "--max-time",
-        "60",
-        "--max-filesize",
-        "52428800",
-        url,
-      ],
-      { encoding: "buffer", maxBuffer: 52_428_800 },
-      (error, stdout) => {
-        if (error) reject(new Error(`curl failed: ${error.message}`));
-        else resolve(stdout);
-      },
+export function createDevServer() {
+  return createServer(async (req, res) => {
+    const url = new URL(
+      req.url || "/",
+      `http://${req.headers.host || `127.0.0.1:${port}`}`,
     );
+
+    if (req.method === "GET" && url.pathname === proxyPath) {
+      await proxyAddon(req, res, url);
+      return;
+    }
+
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      send(res, 405, "Method not allowed", {
+        "content-type": "text/plain; charset=utf-8",
+      });
+      return;
+    }
+
+    await serveStatic(req, res, url);
   });
 }
 
-const server = createServer(async (req, res) => {
-  const url = new URL(
-    req.url || "/",
-    `http://${req.headers.host || `127.0.0.1:${port}`}`,
-  );
-
-  if (req.method === "GET" && url.pathname === proxyPath) {
-    await proxyAddon(req, res, url);
-    return;
-  }
-
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    send(res, 405, "Method not allowed", {
-      "content-type": "text/plain; charset=utf-8",
-    });
-    return;
-  }
-
-  await serveStatic(req, res, url);
-});
-
-server.listen(port, "127.0.0.1", () => {
-  log(`Omeka playground dev server listening on http://127.0.0.1:${port}`);
-  log(
-    `Addon proxy available at http://127.0.0.1:${port}${proxyPath}?url=<encoded-url>`,
-  );
-});
+const isMainModule =
+  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  const server = createDevServer();
+  server.listen(port, "127.0.0.1", () => {
+    log(`Omeka playground dev server listening on http://127.0.0.1:${port}`);
+    log(
+      `Addon proxy available at http://127.0.0.1:${port}${proxyPath}?url=<encoded-url>`,
+    );
+  });
+}
