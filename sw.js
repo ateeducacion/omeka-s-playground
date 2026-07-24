@@ -1,4 +1,9 @@
 import { BUILD_VERSION } from "./src/generated/build-version.js";
+import {
+  isHostStaticPath,
+  rewriteHtmlAttributeUrl as rewriteHtmlAttributeUrlPure,
+  rewriteHtmlDocument as rewriteHtmlDocumentPure,
+} from "./src/shared/html-url-rewrite.js";
 import { createPhpBridgeChannel, createWorkerRequestId } from "./src/shared/protocol.js";
 
 const INTERNAL_PROXY_PATH = "/__playground_proxy__";
@@ -16,18 +21,6 @@ let playgroundConfigPromise;
 const bridges = new Map();
 const pending = new Map();
 const clientContexts = new Map();
-const STATIC_PREFIXES = [
-  "/assets/",
-  "/application/asset/",
-  "/src/",
-  "/vendor/",
-  "/dist/",
-  "/sw.js",
-  "/remote.html",
-  "/index.html",
-  "/playground.config.json",
-  "/favicon.ico",
-];
 
 function getAppBasePath() {
   const scopeUrl = new URL(self.registration.scope);
@@ -193,7 +186,10 @@ async function resolveScopedRequest(event, url) {
     };
   }
 
-  if (STATIC_PREFIXES.some((prefix) => strippedPathname === prefix || strippedPathname.startsWith(prefix))) {
+  // Host-static paths (shell assets, dist, etc.) pass through to the network.
+  // Omeka `/application/asset/*` is intentionally NOT host-static — see
+  // HOST_STATIC_PREFIXES in html-url-rewrite.js.
+  if (isHostStaticPath(strippedPathname)) {
     return null;
   }
 
@@ -275,111 +271,22 @@ function getScopedBasePath(scopeId, runtimeId) {
   return withAppBasePath(`/playground/${scopeId}/${runtimeId}`);
 }
 
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-const NAMED_HTML_ENTITIES = {
-  amp: "&",
-  quot: '"',
-  apos: "'",
-  sol: "/",
-  colon: ":",
-};
-
-function decodeHtmlAttributeEntities(value) {
-  // Decode every entity in a single left-to-right pass. Doing it in one pass
-  // (rather than chained .replace/.replaceAll calls) prevents double-unescaping:
-  // a "&" produced by decoding one entity must not be reinterpreted as the
-  // start of another entity in a later pass.
-  return value.replace(
-    /&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/giu,
-    (match, body) => {
-      const lower = body.toLowerCase();
-      if (lower.startsWith("#x")) {
-        return String.fromCodePoint(Number.parseInt(body.slice(2), 16));
-      }
-      if (lower.startsWith("#")) {
-        return String.fromCodePoint(Number.parseInt(body.slice(1), 10));
-      }
-      return Object.hasOwn(NAMED_HTML_ENTITIES, lower)
-        ? NAMED_HTML_ENTITIES[lower]
-        : match;
-    },
-  );
-}
-
 function rewriteHtmlAttributeUrl(rawValue, { origin, scopeId, runtimeId }) {
-  const decodedValue = decodeHtmlAttributeEntities(rawValue);
-  const scopedBasePath = getScopedBasePath(scopeId, runtimeId);
-  const appBasePath = getAppBasePath();
-
-  if (!decodedValue) {
-    return decodedValue;
-  }
-
-  // Leave fragment-only, protocol-relative, and special-scheme URLs untouched.
-  // Scheme matching is case-insensitive and covers every script-capable scheme
-  // (javascript:, vbscript:) so none of them slip through to be rewritten.
-  const lowerValue = decodedValue.toLowerCase();
-  if (
-    decodedValue.startsWith("#")
-    || decodedValue.startsWith("//")
-    || lowerValue.startsWith("javascript:")
-    || lowerValue.startsWith("vbscript:")
-    || lowerValue.startsWith("data:")
-    || lowerValue.startsWith("mailto:")
-    || lowerValue.startsWith("tel:")
-  ) {
-    return decodedValue;
-  }
-
-  // Skip relative URLs (not starting with "/") — they resolve correctly
-  // relative to the document's own URL and must not be rewritten.
-  if (!decodedValue.startsWith("/")) {
-    return decodedValue;
-  }
-
-  try {
-    const absolute = new URL(decodedValue, origin);
-    if (absolute.origin !== origin) {
-      return decodedValue;
-    }
-
-    const absolutePath = `${absolute.pathname}${absolute.search}${absolute.hash}`;
-    if (absolute.pathname.startsWith(`${scopedBasePath}/`) || absolute.pathname === scopedBasePath) {
-      return absolutePath;
-    }
-
-    if (appBasePath !== "/" && (absolute.pathname === appBasePath || absolute.pathname.startsWith(`${appBasePath}/`))) {
-      return absolutePath;
-    }
-
-    if (!absolute.pathname.startsWith("/")) {
-      return decodedValue;
-    }
-
-    return `${scopedBasePath}${absolutePath.startsWith("/") ? absolutePath : `/${absolutePath}`}`.replace(/\/{2,}/gu, "/");
-  } catch {
-    return decodedValue;
-  }
+  return rewriteHtmlAttributeUrlPure(rawValue, {
+    origin,
+    scopeId,
+    runtimeId,
+    appBasePath: getAppBasePath(),
+    scopedBasePath: getScopedBasePath(scopeId, runtimeId),
+  });
 }
 
 function rewriteHtmlDocument(html, scope) {
-  return html.replace(
-    /((?:href|src|action|data-[\w-]*url|data-url|data-action)=["'])([^"']*)(["'])/giu,
-    // rewriteHtmlAttributeUrl returns a *decoded* URL (entities turned back
-    // into raw &, ", <, > characters). Re-encode it for HTML attribute context
-    // before interpolating it back between the quotes, otherwise a decoded
-    // value containing a quote could close the attribute early and inject HTML
-    // into the playground iframe (reflected XSS).
-    (match, prefix, rawValue, suffix) => `${prefix}${escapeHtml(rewriteHtmlAttributeUrl(rawValue, scope))}${suffix}`,
-  );
+  return rewriteHtmlDocumentPure(html, {
+    ...scope,
+    appBasePath: getAppBasePath(),
+    scopedBasePath: getScopedBasePath(scope.scopeId, scope.runtimeId),
+  });
 }
 
 async function rewriteScopedHtmlResponse(response, scope) {
