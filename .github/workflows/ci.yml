@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -43,6 +44,7 @@ jobs:
   # runs `make bundle` (git clone + composer + runtime) then `make serve`;
   # ubuntu-latest ships php + composer.
   e2e:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
