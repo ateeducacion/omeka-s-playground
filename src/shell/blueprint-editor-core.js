@@ -160,7 +160,9 @@ export function createBlueprintValidationResult(rawText, deps) {
   return {
     valid: true,
     stage: "valid",
-    message: "Blueprint is valid.",
+    // No step count (unlike moodle-playground): blueprints here are declarative
+    // sections, not an ordered step list.
+    message: "✓ Valid blueprint",
     blueprint,
   };
 }

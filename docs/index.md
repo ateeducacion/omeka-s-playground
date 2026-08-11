@@ -35,7 +35,7 @@ At runtime:
 - the Omeka core is extracted from a ZIP bundle into writable MEMFS under `/www/omeka`
 - mutable state (SQLite database, config, uploads) lives under `/persist` in MEMFS
 - all state is ephemeral — closing the tab destroys everything
-- the shell hosts the running site in an iframe and exposes Home, Admin, and Docs navigation
+- the shell hosts the running site in an iframe and exposes Back, Refresh, and Home navigation plus Admin and Docs links
 - the service worker rewrites paths so the app works both locally and under the GitHub Pages subpath `/omeka-s-playground`
 - crash recovery snapshots the DB and addon files before WASM crashes and restores them onto fresh runtimes
 
