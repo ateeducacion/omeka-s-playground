@@ -399,13 +399,24 @@ function bindShellChannel() {
         setUiLocked(true);
         appendLog(`${message.title}: ${message.detail}`);
         break;
-      case "ready":
+      case "ready": {
+        // The remote frame emits "ready" before "navigate" on every iframe
+        // load, so in-site navigations have to be recorded here: by the time
+        // "navigate" arrives currentPath has already moved on and there is no
+        // transition left to push. The first load is the landing redirect, not
+        // a user navigation, so it is skipped.
+        const wasBooted = remoteFrameBooted;
         remoteFrameBooted = true;
         setUiLocked(false);
-        currentPath = message.path || currentPath;
+        const nextPath = message.path || currentPath;
+        if (wasBooted) {
+          recordBackEntry(currentPath, nextPath);
+        }
+        currentPath = nextPath;
         els.address.value = currentPath;
         saveState({ lastReadyAt: new Date().toISOString() });
         break;
+      }
       case "navigate": {
         const nextPath = message.path || "/";
         recordBackEntry(currentPath, nextPath);
