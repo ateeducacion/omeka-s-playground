@@ -231,6 +231,14 @@ button.danger:hover {
   width: auto;
 }
 
+/* Compact app icon: swapped in for the wordmark on the mobile toolbar. */
+.toolbar-brand__icon {
+  display: none;
+  height: 26px;
+  width: 26px;
+  border-radius: 6px;
+}
+
 .address-form__input {
   display: flex;
   align-items: center;
@@ -982,34 +990,21 @@ button.danger:hover {
     gap: var(--space-sm);
   }
 
-  .address-form__input {
-    display: none;
-  }
-
-  .toolbar-separator {
-    display: none;
-  }
-
-  /* The brand is a wide wordmark: let it scale down instead of pushing the
-     nav cluster underneath the toolbar actions on narrow screens. */
-  .toolbar-brand {
-    overflow: hidden;
-  }
-
+  /* Minimal mobile toolbar: app icon, Home, Admin, and the panel toggle. */
   .toolbar-brand__logo {
-    height: 22px;
-    max-width: 100%;
-    object-fit: contain;
-    object-position: left center;
+    display: none;
   }
 
-  .browser-toolbar .icon-button--labeled {
-    width: 32px;
-    min-width: 32px;
-    padding: 0;
+  .toolbar-brand__icon {
+    display: block;
   }
 
-  .browser-toolbar .icon-button__label {
+  .address-form__input,
+  .toolbar-separator,
+  .browser-toolbar .icon-button--labeled,
+  .browser-toolbar .toolbar-github,
+  #back-button,
+  #refresh-button {
     display: none;
   }
 
