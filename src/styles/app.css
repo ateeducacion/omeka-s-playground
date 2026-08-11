@@ -986,8 +986,7 @@ button.danger:hover {
     display: none;
   }
 
-  .toolbar-separator,
-  #admin-button {
+  .toolbar-separator {
     display: none;
   }
 
