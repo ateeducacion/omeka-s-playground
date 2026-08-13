@@ -21,7 +21,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",
     "@playwright/test": "^1.62.1",
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.2"
   },
   "overrides": {
     "@php-wasm/universal": "$@php-wasm/universal",
