@@ -9,6 +9,11 @@ import {
 } from "../shared/blueprint.js";
 import { loadPlaygroundConfig } from "../shared/config.js";
 import {
+  captureException,
+  captureMessage,
+  initMonitoring,
+} from "../shared/monitoring.js";
+import {
   DEFAULT_OMEKA_VERSION,
   DEFAULT_PHP_VERSION,
   getCompatiblePhpVersions,
@@ -429,6 +434,7 @@ function bindShellChannel() {
         remoteFrameBooted = false;
         setUiLocked(false);
         appendLog(message.detail, true);
+        captureMessage(message.detail, "error", { source: "runtime" });
         if (!latestPhpInfoHtml) {
           capturePhpInfoViaWorker("bootstrap-error");
         }
@@ -604,6 +610,19 @@ async function main() {
   appendLog(
     `Runtime selection: php=${currentPhpVersion}, omeka=${currentOmekaVersion}, runtime=${currentRuntimeId}`,
   );
+
+  // Error monitoring (Sentry) — a no-op unless config.sentry.dsn is set.
+  // See docs/architecture/adr/ADR-0028-sentry-error-monitoring.md
+  initMonitoring({
+    dsn: config.sentry?.dsn,
+    environment: config.sentry?.environment,
+    release: BUILD_VERSION,
+    tags: {
+      runtime: currentRuntimeId,
+      omekaVersion: currentOmekaVersion,
+      phpVersion: currentPhpVersion,
+    },
+  });
   currentPath = shouldForceCleanBoot
     ? preferredPath
     : shouldBypassSavedLogin
@@ -751,4 +770,5 @@ els.reset.addEventListener("click", () => {
 main().catch((error) => {
   setUiLocked(false);
   appendLog(String(error?.stack || error?.message || error), true);
+  captureException(error, { source: "shell-main" });
 });

@@ -4,6 +4,9 @@
   "addonProxyPath": "/__addon_proxy__",
   "addonProxyUrl": "https://zip-proxy.erseco.workers.dev/",
   "phpCorsProxyUrl": "https://zip-proxy.erseco.workers.dev/?url=",
+  "sentry": {
+    "dsn": "https://7481b585a56a736587724327eee09387@o4510456164712448.ingest.de.sentry.io/4511915921834064"
+  },
   "siteTitle": "Omeka S Playground",
   "landingPath": "/admin",
   "locale": "en_US",
