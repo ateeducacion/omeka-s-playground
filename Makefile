@@ -17,7 +17,7 @@ OMEKA_REF_BRANCH ?=
 #   make bundle OMEKA_VERSION=4.1.1
 #   make bundle OMEKA_VERSION=4.3.0-alpha OMEKA_REF=https://github.com/<org>/omeka-s.git OMEKA_REF_BRANCH=<branch>
 
-.PHONY: help up deps prepare bundle bundle-all bundle-4.1.1 bundle-4.2.1 bundle-4.3.0-alpha serve clean reset test lint format
+.PHONY: help up deps build-version prepare bundle bundle-all bundle-4.1.1 bundle-4.2.1 bundle-4.3.0-alpha serve clean reset test lint format
 
 help:
 	@printf '%s\n' \
@@ -46,7 +46,12 @@ help:
 deps:
 	npm install
 
-prepare: deps
+# Build metadata (the deployment Build ID) is generated, never committed.
+# CI exports BUILD_VERSION so every invocation in one pipeline run reuses it.
+build-version:
+	npm run build:version
+
+prepare: deps build-version
 	npm run sync-browser-deps
 	npm run prepare-runtime
 	npm run build-worker
@@ -80,7 +85,9 @@ clean:
 	rm -rf assets/manifests/*
 	touch assets/omeka/.gitkeep assets/manifests/.gitkeep
 
-test:
+# src/generated/build-version.js is generated and git-ignored; several tests
+# (and the modules they import) expect it to exist.
+test: build-version
 	node --test tests/*.test.mjs
 
 test-e2e:

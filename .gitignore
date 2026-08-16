@@ -10,3 +10,7 @@ assets/omeka/*
 assets/manifests/*
 !assets/manifests/.gitkeep
 .omc/
+
+# Generated build metadata (the deployment Build ID) — never committed.
+src/generated/
+assets/build-version.json

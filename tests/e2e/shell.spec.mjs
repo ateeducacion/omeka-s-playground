@@ -21,6 +21,37 @@ test("boots the Omeka runtime and serves the scoped site frame", async ({
   await waitForRuntimeReady(page);
 });
 
+test("serves build metadata matching the Build ID shown in the info panel", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await waitForRuntimeReady(page);
+
+  const metadata = await page.evaluate(async () => {
+    const response = await fetch(
+      new URL("assets/build-version.json", window.location.href),
+      { cache: "no-store" },
+    );
+    return response.ok ? response.json() : null;
+  });
+
+  expect(metadata).not.toBeNull();
+  expect(metadata.buildVersion).toMatch(
+    /^\d{8}T\d{6}Z-(?:[0-9a-f]{8}|nogit)(?:-dirty)?$/,
+  );
+  expect(metadata).toMatchObject({
+    gitSha: expect.any(String),
+    generatedAt: expect.any(String),
+    dirty: expect.any(Boolean),
+  });
+
+  // The deployed artifact and the UI must report the same build.
+  await page.locator("#panel-toggle-button").click();
+  await expect(page.locator("#build-id-value")).toHaveText(
+    metadata.buildVersion,
+  );
+});
+
 test("toggles the runtime side panel", async ({ page }) => {
   await page.goto("/");
   await waitForRuntimeReady(page);
