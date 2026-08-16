@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "prepare-runtime": "node ./scripts/prepare-runtime.mjs",
+    "build:version": "node ./scripts/write-build-version.mjs",
     "sync-browser-deps": "node ./scripts/sync-browser-deps.mjs",
     "build-worker": "node ./scripts/esbuild.worker.mjs",
     "bundle": "./scripts/build-omeka-bundle.sh",

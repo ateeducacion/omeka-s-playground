@@ -51,6 +51,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Compute the deployment Build ID once and export it, so every later step
+      # (make prepare runs again via make bundle-all) reuses this exact value.
+      # Both the GitHub Pages artifact and the Cloudflare deploy below ship the
+      # same _site, and therefore report the same Build ID.
+      # See docs/architecture/adr/ADR-0029-build-identification-and-cache-versioning.md
+      - name: Compute Build ID
+        env:
+          # actions/checkout resolves a throwaway merge commit on pull_request;
+          # record the PR head commit so the Build ID stays traceable to source.
+          BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          build_version="$(node scripts/write-build-version.mjs --print-version)"
+          echo "BUILD_VERSION=$build_version" >> "$GITHUB_ENV"
+          echo "Build ID: $build_version" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Prepare runtime assets
         run: make prepare
 

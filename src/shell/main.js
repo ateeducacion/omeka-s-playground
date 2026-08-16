@@ -71,6 +71,8 @@ const els = {
   configApply: document.querySelector("#config-apply"),
   runtimeIdChip: document.querySelector("#runtime-id-chip"),
   runtimeIdValue: document.querySelector("#runtime-id-value"),
+  buildIdChip: document.querySelector("#build-id-chip"),
+  buildIdValue: document.querySelector("#build-id-value"),
   infoPanel: document.querySelector("#info-panel"),
   infoTab: document.querySelector("#info-tab"),
   sidePanel: document.querySelector("#side-panel"),
@@ -612,7 +614,8 @@ async function main() {
   );
 
   // Error monitoring (Sentry) — a no-op unless config.sentry.dsn is set.
-  // See docs/architecture/adr/ADR-0028-sentry-error-monitoring.md
+  // The Playground Build ID is the Sentry release, so an issue names the exact
+  // deployed artifact. See ADR-0028 and ADR-0029.
   initMonitoring({
     dsn: config.sentry?.dsn,
     environment: config.sentry?.environment,
@@ -623,6 +626,17 @@ async function main() {
       phpVersion: currentPhpVersion,
     },
   });
+
+  // Build ID in the Runtime panel: the deployed Playground artifact, kept
+  // distinct from the Omeka S version running inside it.
+  if (els.buildIdValue) {
+    els.buildIdValue.textContent = BUILD_VERSION;
+  }
+  if (els.buildIdChip) {
+    els.buildIdChip.title = `Copy Playground build ID (${BUILD_VERSION})`;
+  }
+  // One startup line so a copied runtime log always names the deployed build.
+  appendLog(`Playground build ${BUILD_VERSION}`);
   currentPath = shouldForceCleanBoot
     ? preferredPath
     : shouldBypassSavedLogin
@@ -657,6 +671,19 @@ async function main() {
       label.textContent = "✓ copied";
       setTimeout(() => {
         label.textContent = original;
+      }, 1400);
+    });
+  }
+  if (els.buildIdChip) {
+    els.buildIdChip.addEventListener("click", () => {
+      navigator.clipboard?.writeText(BUILD_VERSION);
+      const label = els.buildIdValue;
+      if (!label) {
+        return;
+      }
+      label.textContent = "✓ copied";
+      setTimeout(() => {
+        label.textContent = BUILD_VERSION;
       }, 1400);
     });
   }

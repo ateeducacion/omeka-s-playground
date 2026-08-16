@@ -29,6 +29,65 @@ node --check src/runtime/bootstrap.js
 node --check src/runtime/vfs.js
 ```
 
+## The Build ID
+
+Every build is stamped with a **Build ID** that names one deployed artifact:
+
+```text
+20260816T065012Z-9e39f37d
+└──── UTC build time ───┘ └ commit ┘
+```
+
+It is deliberately **not** a semantic version — the playground ships a rolling
+release. Because the timestamp is the *build* time (not the commit time), rebuilding
+an unchanged commit still produces a new ID, so two deployments of the same source
+are distinguishable:
+
+```text
+20260816T065012Z-9e39f37d   # rebuild
+20260823T060003Z-9e39f37d   # same source, new artifact
+```
+
+A local build appends `-dirty` when the working tree has uncommitted changes. CI
+builds are never dirty.
+
+Generate it locally — `make prepare` and `make test` already do this for you:
+
+```bash
+npm run build:version                                 # write the metadata files
+node scripts/write-build-version.mjs --print-version  # print the ID only
+BUILD_VERSION=20260816T065012Z-9e39f37d npm run build:version   # pin an exact ID
+```
+
+Where to find it:
+
+| Where | What you get |
+|-------|--------------|
+| Info panel → **Runtime → Playground build** | The running build, click to copy. |
+| Runtime log | One `Playground build …` line at startup. |
+| `assets/build-version.json` | `buildVersion`, `generatedAt`, `gitSha`, `dirty`. |
+| `src/generated/build-version.js` | `BUILD_VERSION` for app code. |
+| Sentry | The issue's `release`. |
+
+Both generated files are git-ignored: nothing hand-maintains an identifier. This
+replaced an earlier scheme where `scripts/esbuild.worker.mjs` wrote a content hash of
+the worker bundle into a **committed** `src/generated/build-version.js` — that value
+could not distinguish two builds of the same source, and it churned in git.
+
+The `Deploy Pages` workflow computes the ID once and exports it through
+`$GITHUB_ENV`, so every later step (including the second `make prepare` that
+`make bundle-all` triggers) reuses it, and the GitHub Pages artifact and the
+Cloudflare Pages deploy of the same `_site` report the same build.
+
+The Build ID is also the cache version: it keys the Service Worker's
+`omeka-static-…` cache (activation drops older generations), the `sw.js?v=…`
+registration, and the versioned worker URL. It does **not** key persistent user
+data — deploying invalidates code caches without wiping a visitor's site.
+
+The Build ID identifies the Playground itself, never the Omeka S version running
+inside it — those are shown separately. See
+[ADR-0029](architecture/adr/ADR-0029-build-identification-and-cache-versioning.md).
+
 ## Documentation maintenance
 
 Documentation source lives in `docs/`, and the site configuration lives in `mkdocs.yml`.
