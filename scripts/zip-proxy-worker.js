@@ -22,7 +22,7 @@
 //    (feat/x) are handled losslessly.
 //    &release=latest resolves the repo's current latest release via the
 //    GitHub API instead of a fixed tag. &asset-pattern={glob} picks a release
-//    asset by a shell-style glob (e.g. "epubviewer-*.tar.gz") instead of an
+//    asset by a shell-style glob (e.g. "package-*.tar.gz") instead of an
 //    exact &asset= filename, so a blueprint URL keeps working release after
 //    release without pinning a version. Both require a successful GitHub API
 //    call — unlike &asset= with an exact &release= tag, there is no
@@ -440,7 +440,7 @@ async function handleReleaseAsset(
 
 // Matches a release asset name against a shell-style glob (only `*` and `?`
 // are wildcards; everything else is matched literally). Lets a blueprint URL
-// pin to an asset shape (e.g. "epubviewer-*.tar.gz") instead of an exact
+// pin to an asset shape (e.g. "package-*.tar.gz") instead of an exact
 // versioned filename, so it keeps resolving across releases.
 function findAssetByPattern(assets, pattern) {
   const regex = globToRegExp(pattern);
@@ -1608,7 +1608,7 @@ function landingPageHtml(origin) {
         <span class="method">GET</span>
         <span class="endpoint-name">Release Asset (pattern)</span>
       </div>
-      <div class="endpoint-desc">Download a release asset matched by a glob instead of an exact filename — handy when the filename embeds a version, e.g. <code>epubviewer-*.tar.gz</code>. Combine with <code>release=latest</code> for a URL that never needs updating.</div>
+      <div class="endpoint-desc">Download a release asset matched by a glob instead of an exact filename — handy when the filename embeds a version, e.g. <code>package-*.tar.gz</code>. Combine with <code>release=latest</code> for a URL that never needs updating.</div>
       <div class="url-box">${base}/?repo=<span class="param">{owner/repo}</span>&amp;release=<span class="param">{tag|latest}</span>&amp;asset-pattern=<span class="param">{glob}</span></div>
     </div>
 
