@@ -4,9 +4,14 @@ import { loadPlaygroundConfig } from "../shared/config.js";
 import { resolveRuntimeConfig } from "../shared/omeka-versions.js";
 import { buildScopedSitePath } from "../shared/paths.js";
 import { createShellChannel } from "../shared/protocol.js";
+import {
+  createServiceWorkerUnsupportedError,
+  isServiceWorkerSupported,
+} from "../shared/service-worker-support.js";
 import { saveSessionState } from "../shared/storage.js";
 
 const overlayEl = document.querySelector(".remote-boot__card");
+const titleEl = document.querySelector("#remote-title");
 const statusEl = document.querySelector("#remote-status");
 const frameEl = document.querySelector("#remote-frame");
 const progressFillEl = document.querySelector("#progress-fill");
@@ -48,7 +53,13 @@ function emit(scopeId, message) {
 }
 
 async function registerRuntimeServiceWorker(scopeId, runtimeId, config) {
-  if (navigator.serviceWorker.controller) {
+  // Checked before any property access: in iOS Safari private browsing (and
+  // any insecure context) navigator.serviceWorker does not exist at all.
+  if (!isServiceWorkerSupported()) {
+    throw createServiceWorkerUnsupportedError();
+  }
+
+  if (navigator.serviceWorker?.controller) {
     return navigator.serviceWorker.ready;
   }
 
@@ -63,18 +74,21 @@ async function registerRuntimeServiceWorker(scopeId, runtimeId, config) {
     updateViaCache: "none",
   });
 
-  await navigator.serviceWorker.ready;
+  await navigator.serviceWorker?.ready;
   return registration;
 }
 
 async function waitForServiceWorkerControl() {
-  if (!navigator.serviceWorker.controller) {
-    await new Promise((resolve) => {
-      navigator.serviceWorker.addEventListener("controllerchange", resolve, {
-        once: true,
-      });
-    });
+  // Read the container once: with no container there is nothing to wait for,
+  // and awaiting a listener that can never fire would hang the boot forever.
+  const container = navigator.serviceWorker;
+  if (!container || container.controller) {
+    return;
   }
+
+  await new Promise((resolve) => {
+    container.addEventListener("controllerchange", resolve, { once: true });
+  });
 }
 
 async function waitForPhpWorkerReady(scopeId, runtimeId, worker) {
@@ -239,12 +253,10 @@ async function bootstrapRemote() {
   await waitForServiceWorkerControl();
   setRemoteProgress("Service Worker ready and controlling this tab.", 0.12);
 
-  if (navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      kind: "configure-service-worker",
-      addonProxyUrl: config.addonProxyUrl || null,
-    });
-  }
+  navigator.serviceWorker?.controller?.postMessage({
+    kind: "configure-service-worker",
+    addonProxyUrl: config.addonProxyUrl || null,
+  });
 
   if (!phpWorker) {
     const workerUrl = new URL(
@@ -320,9 +332,17 @@ bootstrapRemote().catch((error) => {
   const url = new URL(window.location.href);
   const scopeId = url.searchParams.get("scope");
   setOverlayVisible(true);
+  // The overlay is the only thing the user sees here, so relabel it: leaving
+  // "Preparing…" above a failure message reads as a boot still in progress.
+  if (titleEl) {
+    titleEl.textContent = "The playground cannot start";
+  }
   setRemoteProgress(String(error?.message || error));
   emit(scopeId, {
     kind: "error",
+    // The shell owns the monitoring client; the error name lets it tell an
+    // unsupported browser apart from a genuine runtime failure.
+    errorName: error?.name || "Error",
     detail: String(error?.stack || error?.message || error),
   });
 });
