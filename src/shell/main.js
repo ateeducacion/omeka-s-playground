@@ -28,6 +28,13 @@ import {
 } from "../shared/paths.js";
 import { createShellChannel } from "../shared/protocol.js";
 import {
+  createServiceWorkerUnsupportedError,
+  isServiceWorkerSupported,
+  isServiceWorkerUnsupportedError,
+  SERVICE_WORKER_UNSUPPORTED_ERROR_NAME,
+  SERVICE_WORKER_UNSUPPORTED_MESSAGE,
+} from "../shared/service-worker-support.js";
+import {
   clearScopeSession,
   getOrCreateScopeId,
   loadSessionState,
@@ -157,6 +164,12 @@ async function ensureRuntimeServiceWorker() {
     return;
   }
 
+  // Bail out before touching navigator.serviceWorker: reading .register off
+  // an undefined property is the crash we are avoiding, not a fallback.
+  if (!isServiceWorkerSupported()) {
+    throw createServiceWorkerUnsupportedError();
+  }
+
   const swUrl = new URL("../../sw.js", import.meta.url);
   // Cache-bust the SW by the per-build worker-bundle hash so a redeploy is
   // always picked up (the old static config.bundleVersion was manual).
@@ -170,9 +183,9 @@ async function ensureRuntimeServiceWorker() {
     updateViaCache: "none",
   });
   await registration.update();
-  await navigator.serviceWorker.ready;
+  await navigator.serviceWorker?.ready;
 
-  if (!navigator.serviceWorker.controller) {
+  if (!navigator.serviceWorker?.controller) {
     const alreadyReloaded =
       window.sessionStorage.getItem(CONTROL_RELOAD_KEY) === "1";
     if (!alreadyReloaded) {
@@ -190,7 +203,16 @@ async function updateFrame() {
     serviceWorkerReady = ensureRuntimeServiceWorker();
   }
 
-  await serviceWorkerReady;
+  try {
+    await serviceWorkerReady;
+  } catch (error) {
+    // Without a Service Worker nothing downstream can load, so stop here and
+    // explain why instead of pointing the iframe at a route nobody serves.
+    serviceWorkerReady = null;
+    reportServiceWorkerFailure(error);
+    return;
+  }
+
   const url = resolveRemoteUrl(scopeId, currentRuntimeId, currentPath);
   if (pendingCleanBoot) {
     url.searchParams.set("clean", "1");
@@ -199,8 +221,67 @@ async function updateFrame() {
     url.searchParams.set("reload", String(remoteReloadToken));
   }
   remoteFrameBooted = false;
+  // srcdoc wins over src, so a previously rendered error page has to go
+  // before a retry can load the runtime again.
+  els.frame.removeAttribute("srcdoc");
   els.frame.src = url.toString();
   pendingCleanBoot = false;
+}
+
+function reportServiceWorkerFailure(error) {
+  if (isServiceWorkerUnsupportedError(error)) {
+    // An environment limitation, not a regression: report it as a warning
+    // under its own source so it groups apart from real runtime failures.
+    captureMessage(SERVICE_WORKER_UNSUPPORTED_MESSAGE, "warning", {
+      source: "service-worker-unsupported",
+    });
+    showBlockingError(SERVICE_WORKER_UNSUPPORTED_MESSAGE);
+    return;
+  }
+
+  captureException(error, { source: "service-worker-registration" });
+  showBlockingError(
+    `The playground could not register its Service Worker: ${
+      error?.message || error
+    }`,
+  );
+}
+
+/**
+ * Surface a fatal boot failure where the user is actually looking. The log
+ * panel starts collapsed, so logging alone leaves an unexplained blank frame.
+ */
+function showBlockingError(message) {
+  appendLog(message, true);
+  setUiLocked(false);
+  setActivePanel("logs");
+  expandSidePanel();
+
+  if (els.frame) {
+    els.frame.removeAttribute("src");
+    els.frame.srcdoc = `<!doctype html><meta charset="utf-8"><style>
+      html,body{height:100%}
+      body{margin:0;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:#fff;color:#1f2937;font:15px/1.6 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+      div{max-width:44ch;text-align:center}
+      strong{display:block;margin-bottom:8px;font-size:17px}
+    </style><div role="alert"><strong>The playground cannot start</strong>${escapeHtml(
+      message,
+    )}</div>`;
+  }
+}
+
+function expandSidePanel() {
+  els.sidePanel.classList.remove("is-collapsed");
+  els.workspace.classList.remove("is-panel-collapsed");
+  els.panelToggle.setAttribute("aria-expanded", "true");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function postToRemote(message) {
@@ -436,7 +517,16 @@ function bindShellChannel() {
         remoteFrameBooted = false;
         setUiLocked(false);
         appendLog(message.detail, true);
-        captureMessage(message.detail, "error", { source: "runtime" });
+        if (message.errorName === SERVICE_WORKER_UNSUPPORTED_ERROR_NAME) {
+          // Reported by the remote host, which has no monitoring client of
+          // its own. Same classification as the shell-side check: a warning
+          // on its own source, not a runtime error.
+          captureMessage(SERVICE_WORKER_UNSUPPORTED_MESSAGE, "warning", {
+            source: "service-worker-unsupported",
+          });
+        } else {
+          captureMessage(message.detail, "error", { source: "runtime" });
+        }
         if (!latestPhpInfoHtml) {
           capturePhpInfoViaWorker("bootstrap-error");
         }
@@ -455,7 +545,7 @@ function bindShellChannel() {
 }
 
 function bindServiceWorkerMessages() {
-  navigator.serviceWorker.addEventListener("message", (event) => {
+  navigator.serviceWorker?.addEventListener("message", (event) => {
     const message = event.data;
     if (message?.kind === "sw-debug") {
       appendLog(`[sw] ${message.detail}`);
