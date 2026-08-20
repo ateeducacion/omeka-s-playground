@@ -1,3 +1,4 @@
+import { fetchBootAsset } from "../../lib/omeka-loader.js";
 import {
   buildManifestFilename,
   DEFAULT_OMEKA_VERSION,
@@ -11,7 +12,13 @@ export function buildManifestUrl(omekaVersion) {
 
 export async function fetchManifest({ omekaVersion } = {}) {
   const versioned = buildManifestUrl(omekaVersion);
-  const response = await fetch(versioned, { cache: "no-cache" });
+  // This is the first request of the whole boot, so a network-level rejection
+  // here is the one most likely to reach monitoring — name the phase.
+  const response = await fetchBootAsset(
+    versioned,
+    { cache: "no-cache" },
+    "manifest",
+  );
   if (response.ok) {
     const manifest = await response.json();
     manifest._manifestUrl = versioned.toString();
@@ -25,7 +32,11 @@ export async function fetchManifest({ omekaVersion } = {}) {
   // Fall back to the legacy default manifest for installs that haven't
   // regenerated per-version assets yet.
   const fallback = resolveProjectUrl("assets/manifests/latest.json");
-  const fallbackResponse = await fetch(fallback, { cache: "no-cache" });
+  const fallbackResponse = await fetchBootAsset(
+    fallback,
+    { cache: "no-cache" },
+    "manifest fallback",
+  );
   if (!fallbackResponse.ok) {
     throw new Error(
       `Unable to load Omeka manifest (version=${omekaVersion || "default"}): ${response.status}`,
