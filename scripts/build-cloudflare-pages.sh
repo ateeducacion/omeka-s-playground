@@ -10,6 +10,8 @@ mkdir -p _site/docs _site/dist
 rsync -a ./ ./_site/ \
   --exclude ".git/" \
   --exclude ".github/" \
+  --exclude ".agents/" \
+  --exclude ".claude/" \
   --exclude ".venv/" \
   --exclude ".cache/" \
   --exclude "_site/" \
