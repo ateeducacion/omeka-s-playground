@@ -371,7 +371,13 @@ Use those as references, but prefer the actual conventions in this repository wh
 
 ## Skills
 
-`.agents/skills/` vendors three upstream skills for tools this project is built with. They are installed with the GitHub CLI, which copies the skill into
+`.agents/skills/` contains one in-house domain skill and vendors three upstream skills for tools this project is built with.
+
+| In-house skill | Read it before |
+|----------------|----------------|
+| `omeka-s-internals` | Changing Omeka installation, services/APIs, modules/themes, sites, users, resources/media, jobs, SQLite behavior, or Omeka-specific blueprint provisioning |
+
+Vendored skills are installed with the GitHub CLI, which copies the skill into
 `.agents/skills/<name>/` (the directory GitHub Copilot, Codex, Cursor, Gemini CLI and most
 other agents read) and records the upstream repository, path and tree SHA in the `SKILL.md`
 frontmatter so the copy can be refreshed later (`gh skill add` is an alias of `gh skill install`):
