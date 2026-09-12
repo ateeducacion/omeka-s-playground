@@ -22,7 +22,7 @@ on:
 
 # Least privilege: the default token gets nothing; the job requests exactly
 # what pushing the update branch and opening the PR needs. Checkout and the skill updater use version tags by project preference;
-# create-pull-request stays pinned to a commit SHA.
+# create-pull-request also uses its major version tag.
 permissions: {}
 
 concurrency:
@@ -46,7 +46,7 @@ jobs:
 
       - name: Open pull request
         if: steps.update.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(deps): update agent skills"
           title: "chore(deps): update agent skills"
