@@ -1,6 +1,6 @@
 ---
 name: omeka-s-internals
-description: Omeka S domain expert for this php-wasm playground. Use when changing Omeka installation, services and APIs, modules or themes, sites, users, items, item sets, media, jobs, SQLite behavior, or Omeka-specific blueprint provisioning.
+description: Change Omeka S installation, modules/themes, resource provisioning, or SQLite/WASM integration in this playground.
 metadata:
   author: omeka-s-playground
   version: "1.0"
@@ -8,7 +8,10 @@ metadata:
 
 # Omeka S Internals
 
-Use Omeka's own services and lifecycle while preserving the browser/WASM constraints proven in this repository. The local implementation is authoritative: start with `src/runtime/bootstrap.js`, `src/runtime/addons.js`, `docs/blueprint-json.md`, and `docs/development.md` rather than assuming a normal server install.
+Use Omeka's services and lifecycle while preserving the browser/WASM constraints.
+For boot/install changes inspect `src/runtime/bootstrap.js`; for addon changes use
+`src/runtime/addons.js`; for blueprint shapes use [the reference](../../../docs/blueprint-json.md).
+Read [development](../../../docs/development.md) when working on local tooling.
 
 ## Boot and installation
 
@@ -62,6 +65,8 @@ Prefer `ApiManager` for resources. Use Doctrine repositories for existence check
 - Each PHP execution is stateless apart from files, database, and sessions. Do not rely on PHP globals or open Doctrine connections surviving the next request.
 
 ## Verification
+
+Apply the checks relevant to the changed behavior.
 
 - [ ] Install completes from a clean scope and reload replays the journal without reinstalling.
 - [ ] Modules reach the requested state across continuation boots; their roles/services exist before dependent resources.
