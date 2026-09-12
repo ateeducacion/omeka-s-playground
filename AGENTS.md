@@ -119,13 +119,17 @@ Load a skill when the task needs its guidance; apply only relevant checks.
 | Skill | Use for |
 |-------|---------|
 | [omeka-s-internals](.agents/skills/omeka-s-internals/SKILL.md) | Application-specific PHP, install, plugins/addons, and provisioning |
+| [wp-playground-php-wasm](.agents/skills/wp-playground-php-wasm/SKILL.md) | PHP runtime, adapters, ini, networking |
+| [wasm-browser-runtime](.agents/skills/wasm-browser-runtime/SKILL.md) | MEMFS, extraction, journaling, routing/recovery |
+| [e2e-playwright](.agents/skills/e2e-playwright/SKILL.md) | Playwright test authoring and debugging |
+| [unit-testing](.agents/skills/unit-testing/SKILL.md) | Node unit tests and PHP generator checks |
 | [security-audit](.agents/skills/security-audit/SKILL.md) | Application vulnerability audits |
 | [github-actions-hardening](.agents/skills/github-actions-hardening/SKILL.md) | Writing or reviewing .github/workflows/*.yml |
 | [playwright-cli](.agents/skills/playwright-cli/SKILL.md) | Terminal-driven browser exploration |
 
 ### Skill maintenance
 
-Canonical skills live in `.agents/skills/`; `.claude/skills/` contains symlinks to
+Installed skills live in `.agents/skills/`; `.claude/skills/` contains symlinks to
 those directories. Keep one copy. `gh skills` is an alias of `gh skill`.
 
 ```bash
@@ -138,8 +142,25 @@ ln -s ../../.agents/skills/security-audit .claude/skills/security-audit
 The three vendored skills are `security-audit` (cloudflare/security-audit-skill),
 `github-actions-hardening` (github/awesome-copilot), and `playwright-cli`
 (microsoft/playwright-cli). Keep their contents and `metadata.github-*` provenance
-verbatim. Fix upstream and reinstall; do not edit the local copies. In-house skills
-have no GitHub provenance and are maintained here.
+verbatim. Fix upstream and reinstall; do not edit the local copies. Domain skills
+remain local and have no GitHub provenance.
+
+The four technical skills (`wp-playground-php-wasm`, `wasm-browser-runtime`,
+`e2e-playwright`, `unit-testing`) are shared from `ateeducacion/moodle-playground`
+and installed with `gh skills`. Keep their installed content/provenance unchanged;
+fix the source in Moodle, merge it, then update here through the normal PR flow.
+Application-specific guidance belongs in [runtime references](.agents/references/php-wasm-runtime.md)
+and [testing references](.agents/references/playground-testing.md), outside the
+installed folders so updates cannot overwrite it. Domain/blueprint skills stay local.
+
+To install or refresh a shared skill from the merged source, use its exact path:
+
+```bash
+gh skills install ateeducacion/moodle-playground .agents/skills/wp-playground-php-wasm --agent github-copilot --force
+```
+
+Use the corresponding path for each of the other three skills; do not install all
+Moodle skills. Keep matching `.claude/skills/` symlinks to the installed directories.
 
 `.github/workflows/update-agent-skills.yml` opens weekly update PRs. Review prompt
 diffs as behavior changes. Scope manual updates to `.agents/skills` so unrelated
