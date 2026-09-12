@@ -173,3 +173,7 @@ actions use commit SHAs with version comments. Apply requested hardening edits.
 Use the CLI skill for terminal browser exploration, not its plan/generate flow
 for test authoring. Do not install WordPress Blueprint skills: shared step names
 hide incompatible schemas; this project's schema and blueprint docs are authoritative.
+
+Maintainer preference: use `actions/checkout@v7` and
+`devantler-tech/actions/update-agent-skills@v13.3.3`; prefer the floating major
+`v13` when upstream provides it. These two actions are exceptions to SHA pinning.
