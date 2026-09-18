@@ -362,6 +362,19 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+async function fetchPassThrough(passthroughRequest, url, request) {
+  try {
+    return await fetch(passthroughRequest);
+  } catch {
+    return fetch(url.href, {
+      method: request.method,
+      credentials: request.credentials === "omit" ? "omit" : "same-origin",
+      cache: "reload",
+      redirect: "follow",
+    });
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   // Firefox neuters event.request.body once this handler yields to the event
   // loop, so buffer the body synchronously now — before any await — for the
@@ -371,13 +384,20 @@ self.addEventListener("fetch", (event) => {
   // error"), which broke every POST/PUT form submission. The buffered bytes
   // are forwarded to the PHP worker in place of the stream. Cloning leaves
   // event.request intact for the pass-through fetch() branches.
-  const bufferedBody = ["GET", "HEAD"].includes(event.request.method)
+  //
+  // Chrome can also abort the original Request after that await, so
+  // fetch(event.request) on the shell (`/?blueprint=…`) rejects with
+  // TypeError: Failed to fetch and the FetchEvent dies. Always pass through
+  // a clone taken before any await, and retry with a fresh URL fetch.
+  const request = event.request;
+  const passthroughRequest = request.clone();
+  const bufferedBody = ["GET", "HEAD"].includes(request.method)
     ? null
-    : event.request.clone().arrayBuffer().catch(() => null);
+    : request.clone().arrayBuffer().catch(() => null);
   event.respondWith((async () => {
-    const url = new URL(event.request.url);
+    const url = new URL(request.url);
     if (url.origin !== self.location.origin) {
-      return fetch(event.request);
+      return fetchPassThrough(passthroughRequest, url, request);
     }
 
     // Cache-first for the immutable runtime assets under /dist/ (WASM + intl .so),
@@ -396,6 +416,17 @@ self.addEventListener("fetch", (event) => {
       return handleInternalProxyRequest(event.request, url);
     }
 
+    // Shell HTML must never be treated as an Omeka request. After an await,
+    // Chrome may abort the original navigation Request (`/?blueprint=…`).
+    if (
+      request.method === "GET" &&
+      (strippedPath === "/" ||
+        strippedPath === "/index.html" ||
+        strippedPath === "/remote.html")
+    ) {
+      return fetchPassThrough(passthroughRequest, url, request);
+    }
+
     const scopedRequest = await resolveScopedRequest(event, url);
     if (!scopedRequest) {
       const strippedPathname = strippedPath;
@@ -411,7 +442,7 @@ self.addEventListener("fetch", (event) => {
           },
         });
       }
-      return fetch(event.request);
+      return fetchPassThrough(passthroughRequest, url, request);
     }
 
     const { scopeId, runtimeId, requestPath } = scopedRequest;
