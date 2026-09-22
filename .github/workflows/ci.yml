@@ -2,8 +2,14 @@ name: Tests
 
 on:
   push:
+    paths-ignore:
+      - '.agents/skills/**'
+      - '.claude/skills/**'
     branches: ["main"]
   pull_request:
+    paths-ignore:
+      - '.agents/skills/**'
+      - '.claude/skills/**'
     branches: ["main"]
 
 # Least-privilege GITHUB_TOKEN: the test/lint/e2e jobs only read the repo.
