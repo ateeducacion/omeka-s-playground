@@ -429,6 +429,13 @@ function installBridgeListener() {
           );
         }
       }
+    }).catch((error) => {
+      // Keep the queue usable: if the error path above throws, a rejected
+      // requestQueue would silently skip every later request.
+      postShell({
+        kind: "error",
+        detail: `[worker] request handler failed: ${error?.message || error}`,
+      });
     });
   });
 }
