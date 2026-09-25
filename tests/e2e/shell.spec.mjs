@@ -214,3 +214,18 @@ test("seeds blueprint content only once (content marker is journaled)", async ({
   // The fix: the content-seeded marker is persisted, so re-seeding is skipped.
   expect(marker.seeded).toBe(true);
 });
+
+test("opens the blueprint landing page after autologin", async ({ page }) => {
+  const blueprint = { landingPage: "/admin/setting" };
+  const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");
+  await page.goto(`/?blueprint=${payload}`);
+  await waitForRuntimeReady(page);
+
+  await expect(page.locator("#address-input")).toHaveValue("/admin/setting");
+  await expect(
+    page
+      .frameLocator("#site-frame")
+      .frameLocator("#remote-frame")
+      .locator("h1"),
+  ).toHaveText(/Global settings/u);
+});

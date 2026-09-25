@@ -1567,7 +1567,11 @@ export async function bootstrapOmeka({
 
   if (effectiveConfig.autologin) {
     const autologin = await performAutologin(php, effectiveConfig, publish);
-    readyPath = autologin.ok ? autologin.path : autologin.path || readyPath;
+    // A successful login keeps the blueprint landing page; only a failed one
+    // falls back to the login form.
+    if (!autologin.ok) {
+      readyPath = autologin.path || readyPath;
+    }
     if (autologin.warning) {
       publish(`[warning] ${autologin.warning}`, 0.92);
     }
