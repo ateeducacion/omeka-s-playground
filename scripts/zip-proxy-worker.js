@@ -104,7 +104,9 @@ export default {
 async function handleGitHubProxy(params, env) {
   const repo = params.get("repo");
 
-  if (!repo?.includes("/")) {
+  // repo is interpolated into authenticated GitHub API paths, so accept only
+  // a plain owner/name pair (no extra segments, no dot-segments).
+  if (!isValidRepoSlug(repo)) {
     return jsonResponse({ error: "Invalid repo format. Use owner/repo." }, 400);
   }
 
@@ -156,6 +158,9 @@ async function handleGitHubProxy(params, env) {
 
   // Pull request
   if (params.has("pr")) {
+    if (!/^\d+$/u.test(params.get("pr"))) {
+      return jsonResponse({ error: "Invalid pr. Use a PR number." }, 400);
+    }
     return handlePullRequest(repo, params.get("pr"), env);
   }
 
@@ -208,6 +213,16 @@ async function proxyFirstAvailableZip(urls) {
 // ---------------------------------------------------------------------------
 // Atom feeds
 // ---------------------------------------------------------------------------
+
+const REPO_SLUG = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
+
+function isValidRepoSlug(repo) {
+  return (
+    typeof repo === "string" &&
+    REPO_SLUG.test(repo) &&
+    repo.split("/").every((part) => part !== "." && part !== "..")
+  );
+}
 
 async function handleAtomFeed(repo, type) {
   const validTypes = ["releases", "tags"];
@@ -713,7 +728,9 @@ async function handleGenericProxy(targetUrl, request) {
     // (the CDN serving the actual file). Authorize that CDN host as a redirect
     // target while still running the SSRF guard.
     const isAuthorizedRedirect = isNextcloudShareUrl(parsedUrl)
-      ? (candidate) => candidate.hostname === parsedUrl.hostname
+      ? (candidate) =>
+          candidate.hostname === parsedUrl.hostname &&
+          NEXTCLOUD_REDIRECT_PATH.test(candidate.pathname)
       : isDropboxShareUrl(parsedUrl)
         ? (candidate) =>
             isSupportedGenericProxyUrl(candidate) || isDropboxCdnUrl(candidate)
@@ -736,6 +753,13 @@ async function handleGenericProxy(targetUrl, request) {
       "Content-Type",
       headers.get("Content-Type") || defaultGenericContentType(parsedUrl),
     );
+    // See docs/architecture/adr/ADR-0031-proxy-worker-response-sandboxing.md
+    // Consumers read these bodies with fetch(). Never let upstream content
+    // (e.g. HTML from an arbitrary Nextcloud host) act as a document or set
+    // cookies on the proxy origin.
+    headers.delete("Set-Cookie");
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Content-Security-Policy", "sandbox");
 
     if (!headers.get("Content-Disposition") && looksLikeZipUrl(parsedUrl)) {
       headers.set(
@@ -1086,6 +1110,11 @@ function isGoogleDriveDirectFileUrl(url) {
 // redirect hop, so this is not an open proxy into internal infrastructure.
 const NEXTCLOUD_SHARE_PATH =
   /^(?:\/index\.php)?\/s\/[A-Za-z0-9._-]+(?:\/download)?\/?$/u;
+
+// Same-host redirect targets a share download may legitimately hop through
+// (the share itself, or the signed public DAV / WebDAV endpoints).
+const NEXTCLOUD_REDIRECT_PATH =
+  /^\/(?:index\.php\/)?s\/|^\/(?:public|remote)\.php\//u;
 
 function isNextcloudShareUrl(url) {
   return NEXTCLOUD_SHARE_PATH.test(url.pathname);
