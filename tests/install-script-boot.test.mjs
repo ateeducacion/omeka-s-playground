@@ -66,3 +66,17 @@ describe("playground-install.php blueprint settings", () => {
     );
   });
 });
+
+describe("playground-install.php install state", () => {
+  it("does not overwrite the persisted $state while looping over modules", () => {
+    // $state is written to the install state file (manifest, blueprint, addons)
+    // and read back on the next boot to detect bundle version changes. Reusing
+    // the name for a module's target state wrote a string such as "activate".
+    const assignments = bootstrapSrc.match(/^\s*\$state\s*=/gmu) || [];
+    assert.equal(
+      assignments.length,
+      1,
+      "only the install state array may assign $state",
+    );
+  });
+});

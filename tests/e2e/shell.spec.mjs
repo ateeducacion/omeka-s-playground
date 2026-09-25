@@ -233,3 +233,18 @@ test("applies blueprint global settings", async ({ page }) => {
     .locator('input[name$="pagination_per_page"]');
   await expect(perPage).toHaveValue("13");
 });
+
+test("opens the blueprint landing page after autologin", async ({ page }) => {
+  const blueprint = { landingPage: "/admin/setting" };
+  const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");
+  await page.goto(`/?blueprint=${payload}`);
+  await waitForRuntimeReady(page);
+
+  await expect(page.locator("#address-input")).toHaveValue("/admin/setting");
+  await expect(
+    page
+      .frameLocator("#site-frame")
+      .frameLocator("#remote-frame")
+      .locator("h1"),
+  ).toHaveText(/Global settings/u);
+});
