@@ -36,9 +36,12 @@ if [ ! -d "$CLONE_DIR/.git" ]; then
   rm -rf "$CLONE_DIR"
   git clone --depth 1 --branch "$REF_BRANCH" "$REF_URL" "$CLONE_DIR" >&2
 else
-  git -C "$CLONE_DIR" fetch --depth 1 origin "$REF_BRANCH" >&2
-  git -C "$CLONE_DIR" checkout "$REF_BRANCH" >&2
-  git -C "$CLONE_DIR" reset --hard "origin/$REF_BRANCH" >&2
+  # The cached clone is shallow and single-branch, so a plain fetch of another
+  # branch creates no origin/<branch> ref. Fetch into an explicit refspec and
+  # (re)point the local branch at it, also following a changed OMEKA_REF.
+  git -C "$CLONE_DIR" remote set-url origin "$REF_URL"
+  git -C "$CLONE_DIR" fetch --depth 1 origin "+refs/heads/$REF_BRANCH:refs/remotes/origin/$REF_BRANCH" >&2
+  git -C "$CLONE_DIR" checkout --force -B "$REF_BRANCH" "origin/$REF_BRANCH" >&2
 fi
 
 printf '%s\n' "$CLONE_DIR"
