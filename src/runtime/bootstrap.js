@@ -735,6 +735,12 @@ if ($shouldRerunBootstrap) {
   exit(0);
 }
 
+// Apply blueprint global settings after every module is installed, so they
+// override module defaults. Like siteOptions, they are re-applied on each boot.
+foreach (($blueprint['settings'] ?? []) as $settingKey => $settingValue) {
+  $settings->set((string) $settingKey, $settingValue);
+}
+
 // Create blueprint users only after all modules are installed and active, so
 // module-defined roles (e.g. IsolatedSites' "site_editor") are registered and
 // pass user validation, and apply each user's per-user settings.

@@ -214,3 +214,22 @@ test("seeds blueprint content only once (content marker is journaled)", async ({
   // The fix: the content-seeded marker is persisted, so re-seeding is skipped.
   expect(marker.seeded).toBe(true);
 });
+
+test("applies blueprint global settings", async ({ page }) => {
+  // A later settings map overrides an earlier one.
+  const blueprint = {
+    settings: [{ pagination_per_page: 7 }, { pagination_per_page: 13 }],
+  };
+  const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");
+  await page.goto(`/?blueprint=${payload}`);
+  await waitForRuntimeReady(page);
+
+  await page.locator("#address-input").fill("/admin/setting");
+  await page.locator("#address-input").press("Enter");
+
+  const perPage = page
+    .frameLocator("#site-frame")
+    .frameLocator("#remote-frame")
+    .locator('input[name$="pagination_per_page"]');
+  await expect(perPage).toHaveValue("13");
+});

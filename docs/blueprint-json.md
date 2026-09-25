@@ -20,7 +20,8 @@ The shell loads a blueprint, normalizes missing values, and stores the active ve
 - set install metadata such as title, locale, and timezone
 - create and authenticate the primary admin account
 - create additional users and apply per-user settings
-- install or activate modules and themes
+- download, install, or activate modules and themes
+- apply global settings
 - create item sets, items, and media
 - create one or more sites, assign per-site user permissions, and pick the default
 - choose the landing page after boot
@@ -40,10 +41,11 @@ The most important top-level properties are:
 | `phpConstants` | PHP constants defined before Omeka boots | Name → boolean / string / number; see [PHP constants](#php-constants) |
 | `landingPage` | Initial post-boot path | Should usually begin with `/` |
 | `siteOptions` | Install-wide defaults | Title, locale, timezone |
+| `settings` | Global Omeka settings | Setting id → value, or a list of such maps merged in order; see [Global settings](#global-settings) |
 | `login` | Credentials used by autologin | Usually mirror the first user |
 | `users` | Omeka users to create | First user becomes the effective admin source; each may carry `settings` |
-| `themes` | Themes to install | Supports bundled, URL, and `omeka.org` sources |
-| `modules` | Modules to install or activate | Module names must stay unique |
+| `themes` | Themes to install | Supports bundled, URL, and `omeka.org` sources; optional `version` |
+| `modules` | Modules to download, install, or activate | Optional `version`; a repeated name overrides the earlier entry |
 | `itemSets` | Collections created before items | Referenced by item titles later |
 | `items` | Sample resources and media | Media currently uses URL sources; `items[].sites` assigns sites by slug |
 | `site` | A single public site | Optional; legacy shorthand for a one-entry `sites` |
@@ -79,6 +81,28 @@ configuration without the playground engine knowing anything module-specific. Fo
 the eXeLearning module declares `"phpConstants": { "EXELEARNING_UNSAFE_LEGACY_IFRAME": true }`
 so its demo renders the content iframe same-origin (the php-wasm service worker cannot serve
 an opaque subframe); a real Omeka install never defines that constant.
+
+## Global settings
+
+`settings` writes Omeka global settings (the `setting` table) by id. It accepts a map, or a
+list of maps merged in order, where a later map overrides earlier values:
+
+```json
+{
+  "settings": [
+    { "installation_title": "Classroom Demo", "pagination_per_page": 50 },
+    { "locale": "es" }
+  ]
+}
+```
+
+- Values are stored as-is (strings, numbers, booleans, arrays, or objects).
+- Settings are applied after every module is installed, so they override module defaults,
+  and after `siteOptions`, so for example `installation_title` wins over `siteOptions.title`.
+- Like `siteOptions`, they are re-applied on every boot of the same scope.
+- When the blueprint defines sites, `default_site` is set afterwards from them; use `setAsDefault` instead.
+- `$import` references from the [shared blueprint specification](https://github.com/omeka-s-contrib/omeka-s-blueprints)
+  are not supported yet and are rejected.
 
 ## Example
 
@@ -215,7 +239,7 @@ That sample installs `Common` first and then `EasyAdmin`. It is the better file 
 ### Keep it stable
 
 - Prefer bundled addons or known-good `omeka.org` slugs before remote ZIP URLs.
-- Avoid duplicate module or theme names; `src/shared/blueprint.js` rejects duplicates.
+- Avoid accidental duplicate module or theme names. The last occurrence wins, and a warning is logged when it changes the earlier definition.
 - Keep `landingPage` simple and explicit. `/admin` is the safest default for contributor-oriented blueprints.
 
 ### Keep it maintainable
@@ -233,7 +257,9 @@ These conventions come from the current implementation, not generic JSON style a
 - User roles such as `admin` and `supervisor` are normalized to Omeka roles like `global_admin` and `site_admin`.
 - Addon names must be a single path segment; slashes and traversal-like names are rejected.
 - Remote addon URLs are absolutized against the current page URL.
-- `modules[].state` currently supports `install` and `activate`.
+- `modules[].state` supports `download` (place files only), `install`, and `activate` (default).
+- `modules[].version` and `themes[].version` are accepted but informational: the Playground does not pin versions yet.
+- Duplicate module or theme names (case-insensitive) follow the shared specification: the last occurrence wins and takes its position in the list.
 - `items[].media[].type` currently supports `url`.
 - `sites` takes precedence over the singular `site`; exactly one site is forced to be the default (the first one if none is flagged), and duplicate site slugs are rejected.
 - `sites[].permissions[].role` is clamped to one of `viewer`, `editor`, `admin` (defaults to `viewer`); a permission whose `user` email matches no created user is skipped with a warning.
