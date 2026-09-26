@@ -52,7 +52,7 @@ function emit(scopeId, message) {
   channel.close();
 }
 
-async function registerRuntimeServiceWorker(scopeId, runtimeId, config) {
+async function registerRuntimeServiceWorker(scopeId, runtimeId) {
   // Checked before any property access: in iOS Safari private browsing (and
   // any insecure context) navigator.serviceWorker does not exist at all.
   if (!isServiceWorkerSupported()) {
@@ -249,7 +249,7 @@ async function bootstrapRemote() {
     progress: 0.08,
   });
 
-  await registerRuntimeServiceWorker(scopeId, runtime.id, config);
+  await registerRuntimeServiceWorker(scopeId, runtime.id);
   await waitForServiceWorkerControl();
   setRemoteProgress("Service Worker ready and controlling this tab.", 0.12);
 

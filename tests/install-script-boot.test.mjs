@@ -30,6 +30,7 @@ describe("playground-install.php boot preamble", () => {
   it("boots through Omeka's bootstrap.php (carries the override autoloader)", () => {
     assert.ok(
       /require\s+'\$\{OMEKA_ROOT\}\/bootstrap\.php'/.test(preamble),
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal JS template source being matched
       "install stub must require ${OMEKA_ROOT}/bootstrap.php",
     );
   });
@@ -43,6 +44,7 @@ describe("playground-install.php boot preamble", () => {
 
   it("still applies the configured timezone after bootstrap", () => {
     assert.ok(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal JS template source being matched
       preamble.includes("date_default_timezone_set('${config.timezone}')"),
       "install stub must set the configured timezone",
     );

@@ -334,9 +334,23 @@ function forwardToPhpWorker({ serializedRequest, runtimeId, scopeId }) {
   });
 }
 
+// Only the remote host page may reconfigure the worker. Omeka pages and any
+// HTML they render (uploaded media, module output) share this origin, so
+// without this check they could reroute every addon download through their
+// own proxy.
+function isRemoteHostClient(source) {
+  try {
+    return stripAppBasePath(new URL(source?.url).pathname) === "/remote.html";
+  } catch {
+    return false;
+  }
+}
+
 self.addEventListener("message", (event) => {
   if (event.data?.kind === "configure-service-worker") {
-    addonProxyUrlOverride = event.data.addonProxyUrl || null;
+    if (isRemoteHostClient(event.source)) {
+      addonProxyUrlOverride = event.data.addonProxyUrl || null;
+    }
   }
 });
 
