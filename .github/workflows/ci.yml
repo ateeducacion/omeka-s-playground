@@ -28,14 +28,12 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Syntax check
-        run: |
-          node --check src/shared/blueprint.js
-          node --check src/runtime/bootstrap.js
-          node --check lib/streaming-tar-extract.js
-          node --check scripts/lib/tar-ustar.mjs
+      # Bundling resolves every import reachable from the PHP worker, which
+      # unit tests (importing sources directly) cannot.
+      - name: Build worker bundle
+        run: npm run build-worker
 
       - name: Run tests
         run: make test
@@ -61,7 +59,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
