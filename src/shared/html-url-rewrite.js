@@ -177,7 +177,7 @@ export function rewriteHtmlDocument(html, scope) {
     // before interpolating it back between the quotes, otherwise a decoded
     // value containing a quote could close the attribute early and inject HTML
     // into the playground iframe (reflected XSS).
-    (match, prefix, rawValue, suffix) =>
+    (_match, prefix, rawValue, suffix) =>
       `${prefix}${escapeHtml(rewriteHtmlAttributeUrl(rawValue, scope))}${suffix}`,
   );
 }
