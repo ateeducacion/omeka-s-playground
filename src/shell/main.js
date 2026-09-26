@@ -387,7 +387,10 @@ function capturePhpInfoViaWorker(reason = "manual") {
   appendLog(`Requesting PHP runtime diagnostics (${reason}).`);
 
   if (els.frame?.contentWindow) {
-    els.frame.contentWindow.postMessage({ kind: "capture-phpinfo" }, "*");
+    els.frame.contentWindow.postMessage(
+      { kind: "capture-phpinfo" },
+      window.location.origin,
+    );
   } else {
     appendLog("Cannot capture PHP info: remote frame not available.", true);
   }
