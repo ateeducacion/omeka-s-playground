@@ -93,6 +93,7 @@
             "required": ["name"],
             "properties": {
               "name": { "type": "string" },
+              "version": { "type": "string" },
               "source": {
                 "oneOf": [
                   {
@@ -127,6 +128,13 @@
         ]
       }
     },
+    "settings": {
+      "description": "Global settings. Either a map of setting id => value, or a list of maps merged in order.",
+      "oneOf": [
+        { "$ref": "#/$defs/settingsMap" },
+        { "type": "array", "items": { "$ref": "#/$defs/settingsMap" } }
+      ]
+    },
     "modules": {
       "type": "array",
       "items": {
@@ -140,8 +148,10 @@
               "name": { "type": "string" },
               "state": {
                 "type": "string",
-                "enum": ["install", "activate"]
+                "description": "download = place files only; install = install; activate = install and enable.",
+                "enum": ["download", "install", "activate"]
               },
+              "version": { "type": "string" },
               "source": {
                 "oneOf": [
                   {
@@ -274,6 +284,12 @@
     }
   },
   "$defs": {
+    "settingsMap": {
+      "type": "object",
+      "description": "A map of global setting id => value.",
+      "propertyNames": { "not": { "const": "$import" } },
+      "additionalProperties": true
+    },
     "sitePermissions": {
       "type": "array",
       "description": "Per-site user permissions, by user email.",
