@@ -34,7 +34,7 @@ Default admin credentials come from `playground.config.json`:
 | Runtime host | `remote.html`, `src/remote/main.js` | Registers the service worker and hosts the scoped runtime |
 | Routing | `sw.js`, `php-worker.js` | Maps browser requests into the WASM PHP runtime |
 | Boot logic | `src/runtime/bootstrap.js` | Installs Omeka, applies blueprint state, handles autologin |
-| Blueprint schema | `assets/blueprints/blueprint-schema.json` | Documents the accepted `blueprint.json` shape |
+| Blueprint schema | [shared `v0` schema](https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json) | Documents the accepted `blueprint.json` shape |
 | Default blueprint | `assets/blueprints/default.blueprint.json` | Baseline demo content and first-boot configuration |
 | Docs config | `mkdocs.yml`, `docs/` | Source and navigation for this documentation site |
 

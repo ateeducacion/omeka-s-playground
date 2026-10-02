@@ -8,10 +8,12 @@ The default file is:
 
 `assets/blueprints/default.blueprint.json`
 
-It is inspired by WordPress Playground blueprints, but it is **not** the upstream WordPress schema. The authoritative implementation for this project is:
+It follows the shared [Omeka S blueprint format](https://github.com/omeka-s-contrib/omeka-s-blueprints), also used by [Omeka-S-Cli](https://github.com/GhentCDH/Omeka-S-Cli). Settings that only make sense in the browser live under `x-playground`. It is inspired by WordPress Playground blueprints, but it is **not** the upstream WordPress schema.
 
-- schema: `assets/blueprints/blueprint-schema.json`
+- schema: [`v0`](https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json), the latest `v0.x.y` release of the shared format
 - normalization logic: `src/shared/blueprint.js`
+
+Blueprints written for the earlier Playground format keep working; see [Legacy format](#legacy-format).
 
 ## How the repository uses it
 
@@ -34,35 +36,72 @@ The most important top-level properties are:
 
 | Property | Purpose | Notes |
 | --- | --- | --- |
-| `$schema` | Editor/schema reference | Point at the repository schema when possible |
+| `$schema` | Editor/schema reference | `https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json` |
 | `meta` | Human-readable metadata | Good place for title, author, and description |
 | `preferredVersions` | Informational runtime targets | Useful for intent, not a strict installer lockfile |
-| `debug.enabled` | Enables development-style diagnostics | Helpful for install/debug sessions |
-| `phpConstants` | PHP constants defined before Omeka boots | Name → boolean / string / number; see [PHP constants](#php-constants) |
-| `landingPage` | Initial post-boot path | Should usually begin with `/` |
-| `siteOptions` | Install-wide defaults | Title, locale, timezone |
+| `install` | Install values | `title`, `locale`, `timezone`, and the first administrator in `admin` (`name`, `email`, `password`) |
 | `settings` | Global Omeka settings | Setting id → value, or a list of such maps merged in order; see [Global settings](#global-settings) |
-| `login` | Credentials used by autologin | Usually mirror the first user |
-| `users` | Omeka users to create | First user becomes the effective admin source; each may carry `settings` |
-| `themes` | Themes to install | Supports bundled, URL, and `omeka.org` sources; optional `version` |
-| `modules` | Modules to download, install, or activate | Optional `version`; a repeated name overrides the earlier entry |
+| `users` | Omeka users to create | Each may carry `settings`; `install.admin` goes first |
+| `themes` | Themes to install | See [Add-on sources](#add-on-sources) |
+| `modules` | Modules to download, install, or activate | See [Add-on sources](#add-on-sources); a repeated name overrides the earlier entry |
+| `files` | Files placed in the Omeka S installation | See [Files](#files) |
 | `itemSets` | Collections created before items | Referenced by item titles later |
 | `items` | Sample resources and media | Media currently uses URL sources; `items[].sites` assigns sites by slug |
-| `site` | A single public site | Optional; legacy shorthand for a one-entry `sites` |
-| `sites` | One or more public sites with per-site permissions | Takes precedence over `site`; one is the default |
+| `sites` | One or more public sites with per-site permissions | One is the default |
+| `x-playground` | Browser runtime settings | `landingPage`, `login`, `debug`, `phpConstants`; see [Playground settings](#playground-settings-x-playground) |
+
+## Playground settings (`x-playground`)
+
+Other consumers of the format ignore this block.
+
+| Property | Purpose | Notes |
+| --- | --- | --- |
+| `landingPage` | Initial post-boot path | Should usually begin with `/` |
+| `login` | Credentials used by autologin | Defaults to `install.admin`, else the first user |
+| `debug.enabled` | Enables development-style diagnostics | Helpful for install/debug sessions |
+| `phpConstants` | PHP constants defined before Omeka boots | Name → boolean / string / number; see [PHP constants](#php-constants) |
+
+## Add-on sources
+
+`modules[].source` and `themes[].source` are a single string:
+
+- a ZIP URL, used as is (it already pins a release, so it wins over `version`);
+- a GitHub repository, as `gh:owner/repo` or `https://github.com/owner/repo(.git)`: the archive of the `#ref` in the source, else of `version` (a tag or branch), else of the default branch;
+- nothing: the add-on shipped with the core is used (e.g. the `default` theme); otherwise the name is looked up in the omeka.org catalog (`s_module.json` / `s_theme.json`), at `version` or the latest release.
+
+Other git hosts, `git@` URLs and other schemes are rejected. A release resolved from the catalog is cached, so later boots do not fetch the catalog again; change `version` to move to another release.
+
+## Files
+
+`files` places files in the Omeka S installation after modules and themes, for example a module config file or an extra asset bundle for a module:
+
+```json
+{
+  "files": [
+    { "source": "./config/cleanurl.config.php", "destination": "config/cleanurl.config.php" },
+    { "source": "https://example.org/editor.zip", "destination": "modules/ExeLearning/dist/static", "extract": true }
+  ]
+}
+```
+
+- `destination` is relative to the Omeka S root; absolute paths and `..` segments are rejected.
+- With `extract: true`, `source` is a ZIP extracted into `destination`; a single top-level folder in the archive is stripped, as with add-on ZIPs.
+- Files are cached by source and re-applied on every boot, because the Omeka S root is rebuilt from the core bundle.
 
 ## PHP constants
 
-`phpConstants` defines PHP constants in the runtime's `auto_prepend` file, which runs
+`x-playground.phpConstants` defines PHP constants in the runtime's `auto_prepend` file, which runs
 **before Omeka boots**, so they are visible to module `defined()` / `getenv()` checks. Each
 entry is emitted as a guarded `define()`:
 
 ```json
 {
-  "phpConstants": {
-    "MY_FLAG": true,
-    "MY_LABEL": "demo",
-    "MY_LIMIT": 50
+  "x-playground": {
+    "phpConstants": {
+      "MY_FLAG": true,
+      "MY_LABEL": "demo",
+      "MY_LIMIT": 50
+    }
   }
 }
 ```
@@ -78,7 +117,7 @@ if (!defined('MY_LIMIT')) { define('MY_LIMIT', 50); }
 Values may be boolean, string or number; constant names must match `^[A-Z_][A-Z0-9_]*$`
 (other names are skipped). This lets a module's own blueprint enable module-specific
 configuration without the playground engine knowing anything module-specific. For example,
-the eXeLearning module declares `"phpConstants": { "EXELEARNING_UNSAFE_LEGACY_IFRAME": true }`
+the eXeLearning module declares the `EXELEARNING_UNSAFE_LEGACY_IFRAME` constant
 so its demo renders the content iframe same-origin (the php-wasm service worker cannot serve
 an opaque subframe); a real Omeka install never defines that constant.
 
@@ -98,8 +137,8 @@ list of maps merged in order, where a later map overrides earlier values:
 
 - Values are stored as-is (strings, numbers, booleans, arrays, or objects).
 - Settings are applied after every module is installed, so they override module defaults,
-  and after `siteOptions`, so for example `installation_title` wins over `siteOptions.title`.
-- Like `siteOptions`, they are re-applied on every boot of the same scope.
+  and after `install`, so for example `installation_title` wins over `install.title`.
+- Like `install`, they are re-applied on every boot of the same scope.
 - When the blueprint defines sites, `default_site` is set afterwards from them; use `setAsDefault` instead.
 - `$import` references from the [shared blueprint specification](https://github.com/omeka-s-contrib/omeka-s-blueprints)
   are not supported yet and are rejected.
@@ -108,39 +147,19 @@ list of maps merged in order, where a later map overrides earlier values:
 
 ```json
 {
-  "$schema": "./assets/blueprints/blueprint-schema.json",
+  "$schema": "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json",
   "meta": {
     "title": "Demo classroom blueprint",
     "author": "ateeducacion",
     "description": "Creates a reusable demo site with sample media."
   },
-  "debug": {
-    "enabled": false
-  },
-  "landingPage": "/admin",
-  "siteOptions": {
+  "install": {
     "title": "Classroom Demo",
     "locale": "es",
-    "timezone": "Atlantic/Canary"
+    "timezone": "Atlantic/Canary",
+    "admin": { "name": "admin", "email": "admin@example.com", "password": "password" }
   },
-  "login": {
-    "email": "admin@example.com",
-    "password": "password"
-  },
-  "users": [
-    {
-      "username": "admin",
-      "email": "admin@example.com",
-      "password": "password",
-      "role": "global_admin"
-    }
-  ],
-  "themes": [
-    {
-      "name": "Foundation",
-      "source": { "type": "omeka.org", "slug": "foundation-s" }
-    }
-  ],
+  "themes": ["foundation"],
   "modules": [
     { "name": "CSVImport", "state": "activate" }
   ],
@@ -160,11 +179,12 @@ list of maps merged in order, where a later map overrides earlier values:
       ]
     }
   ],
-  "site": {
-    "title": "Demo Site",
-    "slug": "demo-site",
-    "theme": "Foundation",
-    "setAsDefault": true
+  "sites": [
+    { "title": "Demo Site", "slug": "demo-site", "theme": "foundation", "setAsDefault": true }
+  ],
+  "x-playground": {
+    "landingPage": "/admin",
+    "debug": { "enabled": false }
   }
 }
 ```
@@ -177,13 +197,12 @@ to specific sites. This is what makes access-control modules such as
 in the browser: give a user a per-site role, flip a per-user setting, and assign
 items to individual sites.
 
-- `sites[]` accepts the same fields as the singular `site` (`title`, `slug`,
-  `summary`, `theme`, `isPublic`, `setAsDefault`) plus `permissions`.
+- `sites[]` accepts `title`, `slug`, `summary`, `theme`, `isPublic`,
+  `setAsDefault` and `permissions`.
 - `sites[].permissions[]` grants an existing blueprint **user** (by email) a
   site role of `viewer`, `editor`, or `admin`.
 - Exactly one site is the default. If no entry sets `setAsDefault: true`, the
-  first one is used. The legacy singular `site` still works and is treated as a
-  one-entry `sites` list (keeping its historical default of `setAsDefault: true`).
+  first one is used.
 - `users[].settings` is an object written verbatim to each user's settings
   (`user_setting`), e.g. `limit_to_granted_sites`.
 - `items[].sites` lists the site slugs (titles are also accepted and slugified)
@@ -238,14 +257,14 @@ That sample installs `Common` first and then `EasyAdmin`. It is the better file 
 
 ### Keep it stable
 
-- Prefer bundled addons or known-good `omeka.org` slugs before remote ZIP URLs.
+- Prefer bundled add-ons or omeka.org releases (no `source`, with a `version`) before remote ZIP URLs.
 - Avoid accidental duplicate module or theme names. The last occurrence wins, and a warning is logged when it changes the earlier definition.
-- Keep `landingPage` simple and explicit. `/admin` is the safest default for contributor-oriented blueprints.
+- Keep `x-playground.landingPage` simple and explicit. `/admin` is the safest default for contributor-oriented blueprints.
 
 ### Keep it maintainable
 
-- Treat the first user as the canonical admin account because normalization uses it to derive effective admin config.
-- Keep `login` aligned with the first user unless you have a strong reason not to.
+- Declare the administrator in `install.admin`; it becomes the first user and the autologin account.
+- Only set `x-playground.login` to sign in as another user.
 - Use a small number of representative sample items instead of large demo datasets that slow down resets and reviews.
 - Prefer relative media URLs for repository-bundled samples when possible.
 
@@ -253,15 +272,15 @@ That sample installs `Common` first and then `EasyAdmin`. It is the better file 
 
 These conventions come from the current implementation, not generic JSON style advice:
 
-- `landingPage` is normalized to start with `/`.
-- User roles such as `admin` and `supervisor` are normalized to Omeka roles like `global_admin` and `site_admin`.
+- `x-playground.landingPage` is normalized to start with `/`.
+- Any role id is accepted, including roles added by modules (e.g. `guest`). As a Playground convenience, `admin` and `supervisor` are mapped to `global_admin` and `site_admin`.
 - Addon names must be a single path segment; slashes and traversal-like names are rejected.
 - Remote addon URLs are absolutized against the current page URL.
 - `modules[].state` supports `download` (place files only), `install`, and `activate` (default).
-- `modules[].version` and `themes[].version` are accepted but informational: the Playground does not pin versions yet.
+- `modules[].version` and `themes[].version` select the omeka.org release, or the tag/branch of a GitHub source.
 - Duplicate module or theme names (case-insensitive) follow the shared specification: the last occurrence wins and takes its position in the list.
 - `items[].media[].type` currently supports `url`.
-- `sites` takes precedence over the singular `site`; exactly one site is forced to be the default (the first one if none is flagged), and duplicate site slugs are rejected.
+- Exactly one site is forced to be the default (the first one if none is flagged), and duplicate site slugs are rejected.
 - `sites[].permissions[].role` is clamped to one of `viewer`, `editor`, `admin` (defaults to `viewer`); a permission whose `user` email matches no created user is skipped with a warning.
 - `items[].sites` entries are slugified to match site slugs; items with no match fall back to the default site.
 - `users[].settings` keys are written verbatim to `user_setting`; values are stored as-is.
@@ -271,10 +290,10 @@ If you change the semantics of any of those rules, update both the schema and th
 ## How to validate changes
 
 1. Edit the blueprint JSON.
-2. Compare it with `assets/blueprints/blueprint-schema.json`.
+2. Validate it against the [`v0` schema](https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json) (editors do it from `$schema`).
 3. Start the app and trigger a clean boot by importing the blueprint or using a new scope.
 4. Confirm the expected landing page, users, modules, themes, and sample content appear.
-5. If something fails during boot, temporarily enable `debug.enabled`.
+5. If something fails during boot, temporarily enable `x-playground.debug.enabled`.
 
 Useful targeted checks:
 
@@ -287,7 +306,7 @@ node --check src/runtime/bootstrap.js
 
 - **Using the upstream WordPress Playground schema as if it were identical.** This repository implements its own Omeka-specific blueprint format.
 - **Adding hidden assumptions to runtime code instead of the blueprint.** That makes the setup harder to reason about.
-- **Leaving `login` out of sync with the first user.** Autologin can become confusing.
+- **Setting `x-playground.login` to a user the blueprint does not create.** Autologin fails.
 - **Using fragile remote ZIP URLs.** If the URL needs unusual redirects or post-install steps, it may not work in-browser.
 - **Overloading the blueprint with too much sample content.** Large initial datasets slow resets and make review harder.
 
@@ -295,7 +314,7 @@ node --check src/runtime/bootstrap.js
 
 ### The playground boots but lands on the wrong page
 
-Check `landingPage`, current shell session state, and whether autologin bypassed a saved `/login` path.
+Check `x-playground.landingPage`, current shell session state, and whether autologin bypassed a saved `/login` path.
 
 ### A module or theme does not install
 
@@ -308,3 +327,19 @@ Confirm the URL resolves correctly from the deployed base path or local dev serv
 ### A blueprint import appears to do nothing
 
 The shell only applies imported data after parsing and normalization. Check the browser console, shell logs, and whether the payload is valid JSON/base64url for `blueprint-data`.
+
+## Legacy format
+
+Blueprints written for the earlier Playground format still load. Each legacy key maps onto the shared format; when both forms are present, the shared one wins.
+
+| Legacy | Shared format |
+| --- | --- |
+| `siteOptions` | `install` (`title`, `locale`, `timezone`) |
+| `login` | `install.admin`, or `x-playground.login` for another account |
+| `landingPage`, `debug`, `phpConstants` | `x-playground.landingPage`, `x-playground.debug`, `x-playground.phpConstants` |
+| `site` | `sites` with one entry (ignored when `sites` is present) |
+| `source: { "type": "url", "url": "…" }` | `source: "…"` |
+| `source: { "type": "omeka.org", "slug": "…" }`, `{ "type": "bundled" }` | no `source` (resolved by `name`) |
+| `modules[].assets: [{ "url", "destination" }]` | `files: [{ "source", "destination": "modules/<name>/<destination>", "extract": true }]` |
+
+The editor's **Export** always writes the shared format. The previous schema stays at `assets/blueprints/blueprint-schema.json` for blueprints that still point to it.

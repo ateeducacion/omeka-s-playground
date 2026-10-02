@@ -1,7 +1,6 @@
 {
-  "$schema": "./assets/blueprints/blueprint-schema.json",
-  "landingPage": "/admin",
-  "siteOptions": {
+  "$schema": "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json",
+  "install": {
     "title": "Omeka Playground Test",
     "locale": "es",
     "timezone": "Atlantic/Canary"
@@ -17,25 +16,22 @@
   "modules": [
     {
       "name": "Common",
-      "state": "activate",
-      "source": {
-        "type": "omeka.org",
-        "slug": "Common"
-      }
+      "state": "activate"
     },
     {
       "name": "EasyAdmin",
-      "state": "activate",
-      "source": {
-        "type": "omeka.org",
-        "slug": "EasyAdmin"
-      }
+      "state": "activate"
     }
   ],
-  "site": {
-    "title": "Demo Site",
-    "slug": "demo",
-    "theme": "default",
-    "setAsDefault": true
+  "sites": [
+    {
+      "title": "Demo Site",
+      "slug": "demo",
+      "theme": "default",
+      "setAsDefault": true
+    }
+  ],
+  "x-playground": {
+    "landingPage": "/admin"
   }
 }

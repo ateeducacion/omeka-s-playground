@@ -94,36 +94,29 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
 
 ### What blueprints can configure
 
-- Landing page, installation title, locale, and timezone
-- Debug mode for Omeka/PHP error visibility
-- Admin and additional users
-- A default site with a theme selection
+Blueprints use the shared [Omeka S blueprint format](https://github.com/omeka-s-contrib/omeka-s-blueprints), also understood by Omeka-S-Cli; browser-only settings go under `x-playground`. Blueprints in the earlier Playground format still load.
+
+- Installation title, locale, timezone, and the administrator
+- Landing page, autologin account, debug mode, and PHP constants (`x-playground`)
+- Additional users, global settings, and files placed in the installation
+- One or more sites with a theme and per-site permissions
 - Item sets and items with remote media
-- Module installation/activation from bundled addons, direct ZIP URLs, or `omeka.org` slugs
-- Theme installation from bundled addons, direct ZIP URLs, or `omeka.org` slugs
+- Modules and themes shipped with the core, from the omeka.org catalog, from ZIP URLs, or from GitHub repositories
 
 ### Example
 
 ```json
 {
-  "$schema": "./assets/blueprints/blueprint-schema.json",
-  "debug": { "enabled": true },
-  "landingPage": "/s/demo",
-  "siteOptions": {
+  "$schema": "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json",
+  "install": {
     "title": "Demo Omeka",
     "locale": "es",
-    "timezone": "Atlantic/Canary"
+    "timezone": "Atlantic/Canary",
+    "admin": { "name": "admin", "email": "admin@example.com", "password": "password" }
   },
-  "users": [
-    { "username": "admin", "email": "admin@example.com", "password": "password", "role": "global_admin" }
-  ],
   "modules": [
     { "name": "CSVImport", "state": "activate" },
-    {
-      "name": "Mapping",
-      "state": "activate",
-      "source": { "type": "url", "url": "https://example.com/Mapping.zip" }
-    }
+    { "name": "Mapping", "state": "activate", "source": "https://example.com/Mapping.zip" }
   ],
   "itemSets": [{ "title": "Demo Collection" }],
   "items": [
@@ -133,16 +126,17 @@ A default blueprint is bundled at [`assets/blueprints/default.blueprint.json`](a
       "media": [{ "type": "url", "url": "https://example.com/photo.jpg", "title": "Photo" }]
     }
   ],
-  "site": {
-    "title": "Demo Site",
-    "slug": "demo",
-    "theme": "default",
-    "setAsDefault": true
+  "sites": [
+    { "title": "Demo Site", "slug": "demo", "theme": "default", "setAsDefault": true }
+  ],
+  "x-playground": {
+    "landingPage": "/s/demo",
+    "debug": { "enabled": true }
   }
 }
 ```
 
-The full schema is at [`assets/blueprints/blueprint-schema.json`](assets/blueprints/blueprint-schema.json).
+See [blueprint.json](docs/blueprint-json.md) for every field and the [shared schema](https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json).
 
 ---
 

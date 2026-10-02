@@ -248,3 +248,32 @@ test("opens the blueprint landing page after autologin", async ({ page }) => {
       .locator("h1"),
   ).toHaveText(/Global settings/u);
 });
+
+test("boots a blueprint in the shared format", async ({ page }) => {
+  const blueprint = {
+    install: { title: "Shared Format Demo" },
+    files: [
+      {
+        source: "./assets/blueprints/default.blueprint.json",
+        destination: "blueprint-files-test.json",
+      },
+    ],
+    "x-playground": { landingPage: "/admin/setting" },
+  };
+  const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");
+  await page.goto(`/?blueprint=${payload}`);
+  await waitForRuntimeReady(page);
+
+  const remote = page.frameLocator("#site-frame").frameLocator("#remote-frame");
+  await expect(page.locator("#address-input")).toHaveValue("/admin/setting");
+  await expect(remote.locator('input[name$="installation_title"]')).toHaveValue(
+    "Shared Format Demo",
+  );
+
+  // the file was placed in the Omeka S root
+  await page.locator("#address-input").fill("/blueprint-files-test.json");
+  await page.locator("#address-input").press("Enter");
+  await expect(remote.locator("body")).toContainText(
+    "Default Omeka S Playground Blueprint",
+  );
+});

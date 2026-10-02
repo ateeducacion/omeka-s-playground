@@ -60,8 +60,10 @@ Generated output lives in `assets/omeka/`, `assets/manifests/`, and `dist/`.
 - Changes to `outboundHttp`, `addonProxyPath`, or `addonProxyUrl` need checks of
   both local proxy and production proxy paths. PHP sockets do not provide arbitrary
   internet access; preserve proxy/allowlist policy and untrusted archive validation.
-- Blueprint schema, `src/shared/blueprint.js`, runtime consumption, and
-  [blueprint docs](docs/blueprint-json.md) form one contract; update them together.
+- The blueprint follows the shared [Omeka S blueprint format](https://github.com/omeka-s-contrib/omeka-s-blueprints)
+  (Playground-only settings under `x-playground`, legacy keys kept as aliases).
+  `src/shared/blueprint.js`, runtime consumption, and [blueprint docs](docs/blueprint-json.md)
+  form one contract; format changes go to the shared spec first.
 
 Use [development](docs/development.md) for local workflow and
 [WordPress Playground notes](docs/wordpress-playground.md) for upstream integration.
@@ -172,7 +174,7 @@ first-party `actions/*` stay on major tags maintained by Dependabot; third-party
 actions use commit SHAs with version comments. Apply requested hardening edits.
 Use the CLI skill for terminal browser exploration, not its plan/generate flow
 for test authoring. Do not install WordPress Blueprint skills: shared step names
-hide incompatible schemas; this project's schema and blueprint docs are authoritative.
+hide incompatible schemas; the shared Omeka S schema and this project's blueprint docs are authoritative.
 
 Maintainer preference: use `actions/checkout@v7` and
 `devantler-tech/actions/update-agent-skills@v13.3.3`; prefer the floating major
