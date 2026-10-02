@@ -169,16 +169,101 @@ describe("normalizeBlueprint", () => {
     assert.equal(result.modules[0].assets[0].destination, "dist/static");
   });
 
-  it("throws on duplicate module names", () => {
+  it("keeps the last occurrence of a duplicate module, in its position", (t) => {
+    const warn = t.mock.method(console, "warn", () => {});
+    const result = normalizeBlueprint(
+      {
+        modules: [
+          { name: "Foo", state: "install" },
+          { name: "Bar" },
+          { name: "foo", state: "activate" },
+        ],
+      },
+      baseConfig,
+    );
+    assert.deepEqual(
+      result.modules.map((module) => [module.name, module.state]),
+      [
+        ["Bar", "activate"],
+        ["foo", "activate"],
+      ],
+    );
+    assert.equal(warn.mock.callCount(), 1);
+    assert.match(
+      warn.mock.calls[0].arguments[0],
+      /"foo" is declared more than once/u,
+    );
+  });
+
+  it("does not warn when a duplicate theme repeats the same definition", (t) => {
+    const warn = t.mock.method(console, "warn", () => {});
+    const result = normalizeBlueprint(
+      { themes: ["Foundation", { name: "Foundation" }] },
+      baseConfig,
+    );
+    assert.equal(result.themes.length, 1);
+    assert.equal(warn.mock.callCount(), 0);
+  });
+
+  it("accepts the download module state", () => {
+    const result = normalizeBlueprint(
+      { modules: [{ name: "Log", state: "download" }] },
+      baseConfig,
+    );
+    assert.equal(result.modules[0].state, "download");
+  });
+
+  it("keeps module and theme versions", () => {
+    const result = normalizeBlueprint(
+      {
+        modules: [{ name: "Common", version: "3.4.60" }],
+        themes: [{ name: "Foundation", version: " 1.6.0 " }],
+      },
+      baseConfig,
+    );
+    assert.equal(result.modules[0].version, "3.4.60");
+    assert.equal(result.themes[0].version, "1.6.0");
+  });
+
+  it("normalizes settings given as a map", () => {
+    const result = normalizeBlueprint(
+      { settings: { installation_title: "Demo", pagination_per_page: 50 } },
+      baseConfig,
+    );
+    assert.deepEqual(result.settings, {
+      installation_title: "Demo",
+      pagination_per_page: 50,
+    });
+  });
+
+  it("merges settings given as a list, later maps winning", () => {
+    const result = normalizeBlueprint(
+      {
+        settings: [
+          { locale: "en_US", media_alt_text_property: "dcterms:title" },
+          { locale: "es" },
+        ],
+      },
+      baseConfig,
+    );
+    assert.deepEqual(result.settings, {
+      locale: "es",
+      media_alt_text_property: "dcterms:title",
+    });
+  });
+
+  it("defaults settings to an empty map", () => {
+    assert.deepEqual(normalizeBlueprint({}, baseConfig).settings, {});
+  });
+
+  it("rejects settings $import references", () => {
     assert.throws(
       () =>
         normalizeBlueprint(
-          {
-            modules: [{ name: "Foo" }, { name: "Foo" }],
-          },
+          { settings: [{ $import: "./settings.json" }] },
           baseConfig,
         ),
-      /duplicate entry/u,
+      /\$import/u,
     );
   });
 

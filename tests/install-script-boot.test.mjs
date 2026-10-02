@@ -51,6 +51,24 @@ describe("playground-install.php boot preamble", () => {
   });
 });
 
+describe("playground-install.php blueprint settings", () => {
+  it("applies global settings after modules are installed, before users", () => {
+    const moduleContinue = bootstrapSrc.indexOf(
+      'echo "omeka-playground-bootstrap-continue',
+    );
+    const settingsLoop = bootstrapSrc.indexOf("$blueprint['settings']");
+    const usersLoop = bootstrapSrc.indexOf("$upsertUser($userSpec)");
+    assert.ok(
+      settingsLoop !== -1,
+      "install stub must apply blueprint settings",
+    );
+    assert.ok(
+      moduleContinue < settingsLoop && settingsLoop < usersLoop,
+      "settings must be applied after module installs so they override module defaults",
+    );
+  });
+});
+
 describe("playground-install.php install state", () => {
   it("does not overwrite the persisted $state while looping over modules", () => {
     // $state is written to the install state file (manifest, blueprint, addons)

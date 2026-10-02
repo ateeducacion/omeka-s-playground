@@ -366,56 +366,101 @@ function normalizeAddonAssets(input) {
     .filter(Boolean);
 }
 
+// Duplicate names (case-insensitive) follow the shared blueprint spec: the last
+// occurrence wins and takes the last position, so a later entry can override an
+// earlier one. A warning is logged only when the override changes the entry.
 function normalizeAddonCollection(input, kind) {
   if (!Array.isArray(input)) {
     return [];
   }
 
-  const seen = new Set();
-  return input
-    .map((entry) => {
-      const normalized = {
-        name: String(entry?.name || entry || "").trim(),
-        source: normalizeAddonSource(entry?.source),
-      };
+  const byName = new Map();
+  for (const normalized of input.map((entry) =>
+    normalizeAddonEntry(entry, kind),
+  )) {
+    if (!normalized) {
+      continue;
+    }
+    const key = normalized.name.toLowerCase();
+    const previous = byName.get(key);
+    if (previous && JSON.stringify(previous) !== JSON.stringify(normalized)) {
+      console.warn(
+        `[blueprint] ${kind} "${normalized.name}" is declared more than once; the later definition overrides the earlier one.`,
+      );
+    }
+    byName.delete(key);
+    byName.set(key, normalized);
+  }
+  return [...byName.values()];
+}
 
-      const assets = normalizeAddonAssets(entry?.assets);
-      if (assets.length) {
-        normalized.assets = assets;
+function normalizeAddonEntry(entry, kind) {
+  const normalized = {
+    name: String(entry?.name || entry || "").trim(),
+    source: normalizeAddonSource(entry?.source),
+  };
+
+  const version = String(entry?.version || "").trim();
+  if (version) {
+    normalized.version = version;
+  }
+
+  const assets = normalizeAddonAssets(entry?.assets);
+  if (assets.length) {
+    normalized.assets = assets;
+  }
+
+  if (kind === "module") {
+    normalized.state =
+      String(entry?.state || "activate")
+        .trim()
+        .toLowerCase() || "activate";
+  }
+
+  if (!normalized.name) {
+    return null;
+  }
+
+  if (
+    /[\\/]/u.test(normalized.name) ||
+    normalized.name === "." ||
+    normalized.name === ".."
+  ) {
+    throw new Error(
+      `Blueprint ${kind} name "${normalized.name}" must be a single path segment.`,
+    );
+  }
+
+  return normalized;
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+// Global settings: a map of setting id => value, or a list of maps merged in
+// order (later maps win). `$import` references are part of the shared spec but
+// not supported here yet, so they are rejected instead of silently dropped.
+function normalizeSettings(input) {
+  const maps = Array.isArray(input) ? input : [input];
+  const settings = {};
+  for (const map of maps) {
+    if (!isPlainObject(map)) {
+      continue;
+    }
+    if ("$import" in map) {
+      throw new Error(
+        "Blueprint settings $import references are not supported yet.",
+      );
+    }
+    for (const [key, value] of Object.entries(map)) {
+      const settingKey = String(key).trim();
+      if (settingKey) {
+        settings[settingKey] = value;
       }
-
-      if (kind === "module") {
-        normalized.state =
-          String(entry?.state || "activate")
-            .trim()
-            .toLowerCase() || "activate";
-      }
-
-      if (!normalized.name) {
-        return null;
-      }
-
-      if (
-        /[\\/]/u.test(normalized.name) ||
-        normalized.name === "." ||
-        normalized.name === ".."
-      ) {
-        throw new Error(
-          `Blueprint ${kind} name "${normalized.name}" must be a single path segment.`,
-        );
-      }
-
-      const dedupeKey = normalized.name.toLowerCase();
-      if (seen.has(dedupeKey)) {
-        throw new Error(
-          `Blueprint ${kind}s cannot include duplicate entry "${normalized.name}".`,
-        );
-      }
-      seen.add(dedupeKey);
-
-      return normalized;
-    })
-    .filter(Boolean);
+    }
+  }
+  return settings;
 }
 
 export function getBlueprintSchemaUrl() {
@@ -583,6 +628,7 @@ export function normalizeBlueprint(input, config) {
     sites,
     themes: normalizeAddonCollection(blueprint.themes, "theme"),
     modules: normalizeAddonCollection(blueprint.modules, "module"),
+    settings: normalizeSettings(blueprint.settings),
     itemSets: Array.isArray(blueprint.itemSets)
       ? blueprint.itemSets
           .map((itemSet) => ({

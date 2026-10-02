@@ -215,6 +215,25 @@ test("seeds blueprint content only once (content marker is journaled)", async ({
   expect(marker.seeded).toBe(true);
 });
 
+test("applies blueprint global settings", async ({ page }) => {
+  // A later settings map overrides an earlier one.
+  const blueprint = {
+    settings: [{ pagination_per_page: 7 }, { pagination_per_page: 13 }],
+  };
+  const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");
+  await page.goto(`/?blueprint=${payload}`);
+  await waitForRuntimeReady(page);
+
+  await page.locator("#address-input").fill("/admin/setting");
+  await page.locator("#address-input").press("Enter");
+
+  const perPage = page
+    .frameLocator("#site-frame")
+    .frameLocator("#remote-frame")
+    .locator('input[name$="pagination_per_page"]');
+  await expect(perPage).toHaveValue("13");
+});
+
 test("opens the blueprint landing page after autologin", async ({ page }) => {
   const blueprint = { landingPage: "/admin/setting" };
   const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");
