@@ -1,5 +1,5 @@
 {
-  "$schema": "./blueprint-schema.json",
+  "$schema": "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json",
   "meta": {
     "title": "Default Omeka S Playground Blueprint",
     "author": "omeka-s-playground",
@@ -9,18 +9,15 @@
     "php": "8.3",
     "omeka": "4.2.1"
   },
-  "debug": {
-    "enabled": false
-  },
-  "landingPage": "/admin",
-  "siteOptions": {
+  "install": {
     "title": "Omeka S Playground",
     "locale": "en_US",
-    "timezone": "UTC"
-  },
-  "login": {
-    "email": "admin@example.com",
-    "password": "password"
+    "timezone": "UTC",
+    "admin": {
+      "name": "admin",
+      "email": "admin@example.com",
+      "password": "password"
+    }
   },
   "users": [
     {
@@ -44,7 +41,9 @@
       "title": "The Garden of Earthly Delights",
       "description": "Public domain sample item created automatically from the default blueprint.",
       "creator": "Hieronymus Bosch",
-      "itemSets": ["Playground Collection"],
+      "itemSets": [
+        "Playground Collection"
+      ],
       "media": [
         {
           "type": "url",
@@ -57,7 +56,9 @@
       "title": "Thomas Carlyle Oil Painting 1868",
       "description": "Public domain sample item bundled with the default blueprint.",
       "creator": "George Frederic Watts",
-      "itemSets": ["Playground Collection"],
+      "itemSets": [
+        "Playground Collection"
+      ],
       "media": [
         {
           "type": "url",
@@ -70,7 +71,9 @@
       "title": "Beethoven Sample Audio",
       "description": "Public domain Beethoven recording bundled with the playground sample blueprint.",
       "creator": "Ludwig van Beethoven",
-      "itemSets": ["Playground Collection"],
+      "itemSets": [
+        "Playground Collection"
+      ],
       "media": [
         {
           "type": "url",
@@ -80,12 +83,20 @@
       ]
     }
   ],
-  "site": {
-    "title": "Omeka S Playground Site",
-    "slug": "playground",
-    "theme": "default",
-    "summary": "Default public site created from the browser blueprint.",
-    "isPublic": true,
-    "setAsDefault": true
+  "sites": [
+    {
+      "title": "Omeka S Playground Site",
+      "slug": "playground",
+      "theme": "default",
+      "summary": "Default public site created from the browser blueprint.",
+      "isPublic": true,
+      "setAsDefault": true
+    }
+  ],
+  "x-playground": {
+    "debug": {
+      "enabled": false
+    },
+    "landingPage": "/admin"
   }
 }

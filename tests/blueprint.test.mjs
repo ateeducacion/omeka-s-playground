@@ -471,11 +471,11 @@ describe("buildDefaultBlueprint", () => {
     assert.ok(result.preferredVersions.omeka);
   });
 
-  it("uses config values for siteOptions", () => {
+  it("uses config values for install", () => {
     const result = buildDefaultBlueprint(baseConfig);
-    assert.equal(result.siteOptions.title, "Test Playground");
-    assert.equal(result.siteOptions.locale, "es_ES");
-    assert.equal(result.siteOptions.timezone, "Europe/Madrid");
+    assert.equal(result.install.title, "Test Playground");
+    assert.equal(result.install.locale, "es_ES");
+    assert.equal(result.install.timezone, "Europe/Madrid");
   });
 
   it("creates default user from config.admin", () => {
