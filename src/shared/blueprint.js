@@ -664,8 +664,10 @@ export function normalizeBlueprint(input, config) {
         email.split("@")[0] ||
         `user-${index + 1}`,
     ).trim();
+    // The password is optional in the shared format: any user without one
+    // gets the configured admin password, as install.admin does.
     const password = String(
-      user?.password || fallbackUser.password || "",
+      user?.password || fallback.users[0].password || "",
     ).trim();
 
     if (!email || !password) {
