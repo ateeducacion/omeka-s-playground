@@ -277,3 +277,30 @@ test("boots a blueprint in the shared format", async ({ page }) => {
     "Default Omeka S Playground Blueprint",
   );
 });
+
+test("installs a module that runs INSERT IGNORE", async ({ page, baseURL }) => {
+  // Modules built on Common (e.g. AdvancedSearch) run MySQL's INSERT IGNORE
+  // on install; the fixture module does the same, so boot fails if the
+  // SQLite layer stops translating it.
+  const blueprint = {
+    modules: [
+      {
+        name: "InsertIgnoreProbe",
+        state: "activate",
+        source: new URL("/tests/e2e/fixtures/InsertIgnoreProbe.zip", baseURL)
+          .href,
+      },
+    ],
+    "x-playground": { landingPage: "/admin/module" },
+  };
+  const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");
+  await page.goto(`/?blueprint=${payload}`);
+  await waitForRuntimeReady(page);
+
+  await expect(
+    page
+      .frameLocator("#site-frame")
+      .frameLocator("#remote-frame")
+      .locator("body"),
+  ).toContainText("Insert Ignore Probe");
+});
