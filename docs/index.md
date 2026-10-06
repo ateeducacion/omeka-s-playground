@@ -55,7 +55,7 @@ WordPress Playground is the main architectural reference for this repository. Th
 - the same deferred initialization pattern (`loadWebRuntime()` → `new PHP()` → wrapper)
 - a compatibility layer (`php-compat.js`) that adapts the @php-wasm API for Omeka's bootstrap
 
-What changes here is the payload: this repository boots **Omeka S**, not WordPress, and the browser blueprint format is implemented in `src/shared/blueprint.js` and validated by `assets/blueprints/blueprint-schema.json`.
+What changes here is the payload: this repository boots **Omeka S**, not WordPress, and the blueprint uses the shared [Omeka S blueprint format](https://github.com/omeka-s-contrib/omeka-s-blueprints), normalized in `src/shared/blueprint.js`.
 
 ## Published documentation
 

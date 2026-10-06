@@ -3,7 +3,11 @@ import {
   buildEffectivePlaygroundConfig,
   normalizeBlueprint,
 } from "../shared/blueprint.js";
-import { materializeBlueprintAddons, mountPersistedAddons } from "./addons.js";
+import {
+  materializeBlueprintAddons,
+  materializeBlueprintFiles,
+  mountPersistedAddons,
+} from "./addons.js";
 import { buildManifestState, fetchManifest } from "./manifest.js";
 import { resolveProxyUrl } from "./networking.js";
 import { mountReadonlyCore } from "./vfs.js";
@@ -1470,6 +1474,14 @@ export async function bootstrapOmeka({
   }
   publish("Preparing blueprint modules and themes.", 0.52);
   const addonsState = await materializeBlueprintAddons({
+    php,
+    blueprint: normalizedBlueprint,
+    omekaRoot: OMEKA_ROOT,
+    publish,
+    config: effectiveConfig,
+  });
+
+  await materializeBlueprintFiles({
     php,
     blueprint: normalizedBlueprint,
     omekaRoot: OMEKA_ROOT,

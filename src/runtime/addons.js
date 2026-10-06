@@ -1,5 +1,9 @@
 import { streamZipEntries } from "../../lib/omeka-loader.js";
 import {
+  OMEKA_CATALOG_URLS,
+  resolveCatalogRelease,
+} from "../shared/omeka-catalog.js";
+import {
   patchEasyAdminGitLabArchiveFallback,
   patchEasyAdminSqliteSessionSupport,
 } from "./easyadmin-patches.js";
@@ -9,6 +13,8 @@ export const PERSIST_ADDONS_ROOT = "/persist/addons";
 const MODULES_ROOT = `${PERSIST_ADDONS_ROOT}/modules`;
 const THEMES_ROOT = `${PERSIST_ADDONS_ROOT}/themes`;
 const MANIFESTS_ROOT = `${PERSIST_ADDONS_ROOT}/manifests`;
+const FILES_ROOT = `${PERSIST_ADDONS_ROOT}/files`;
+const FILES_MANIFEST = `${MANIFESTS_ROOT}/files.json`;
 const EASY_ADMIN_CACHE_DIR = "data/playground-cache";
 const EASY_ADMIN_REMOTE_SOURCES = [
   {
@@ -223,6 +229,27 @@ async function resolveOmekaOrgSource(kind, source, proxyBaseUrl) {
     pageUrl,
     downloadUrl,
   };
+}
+
+// An add-on without a source that the core does not ship: resolve its name
+// through the omeka.org catalog. The fingerprint does not need the download URL,
+// so a cached add-on boots without fetching the catalog again.
+function catalogSource(kind, spec) {
+  return {
+    type: "omeka.org-catalog",
+    fingerprint: `catalog:${kind}:${spec.name}:${spec.version || "latest"}`,
+    downloadUrl: null,
+    pageUrl: null,
+    slug: null,
+  };
+}
+
+async function resolveCatalogDownloadUrl(kind, spec, proxyBaseUrl) {
+  const bytes = await fetchBytes(
+    buildDownloadUrl(OMEKA_CATALOG_URLS[kind], proxyBaseUrl),
+  );
+  const catalog = JSON.parse(new TextDecoder().decode(bytes));
+  return resolveCatalogRelease(catalog, spec.name, spec.version);
 }
 
 async function fetchBytes(url) {
@@ -565,6 +592,23 @@ function getPersistedAddonPath(kind, name) {
   return `${getCollectionRoot(kind)}/${name}`;
 }
 
+// Copy the persisted blueprint files onto the Omeka S root, which is rebuilt
+// from the readonly core on every boot. Archives overlay their directory.
+function mountPersistedFiles(FS, omekaRoot) {
+  for (const file of readJsonSync(FS, FILES_MANIFEST)?.files || []) {
+    if (!pathExists(FS, file.persistedPath)) {
+      continue;
+    }
+    const target = resolveAssetTarget(omekaRoot, file.destination);
+    if (file.extract) {
+      copyTreeSync(FS, file.persistedPath, target);
+    } else {
+      ensureDirSync(FS, target.split("/").slice(0, -1).join("/") || "/");
+      FS.writeFile(target, FS.readFile(file.persistedPath));
+    }
+  }
+}
+
 export async function mountPersistedAddons({ php, omekaRoot }) {
   const binary = await php.binary;
   const { FS } = binary;
@@ -592,6 +636,8 @@ export async function mountPersistedAddons({ php, omekaRoot }) {
       ensureAddonMount(FS, targetPath, sourcePath);
     }
   }
+
+  mountPersistedFiles(FS, omekaRoot);
 }
 
 // Normalize the optional `assets` list on an add-on spec. Each asset overlays
@@ -637,10 +683,14 @@ async function materializeAddon({
   publish,
   proxyBaseUrl,
 }) {
-  const source = await resolveSource(kind, spec, proxyBaseUrl);
+  let source = await resolveSource(kind, spec, proxyBaseUrl);
   const persistedPath = getPersistedAddonPath(kind, spec.name);
   const manifestPath = getManifestPath(kind, spec.name);
   const mountPath = `${getMountRoot(omekaRoot, kind)}/${spec.name}`;
+
+  if (source.type === "bundled" && !pathExists(FS, mountPath)) {
+    source = catalogSource(kind, spec);
+  }
 
   if (source.type === "bundled") {
     return {
@@ -666,8 +716,11 @@ async function materializeAddon({
     removeNodeIfPresent(FS, persistedPath);
     ensureDirSync(FS, persistedPath);
 
+    const downloadUrl =
+      source.downloadUrl ??
+      (await resolveCatalogDownloadUrl(kind, spec, proxyBaseUrl));
     const zipBytes = await fetchBytes(
-      buildDownloadUrl(source.downloadUrl, proxyBaseUrl),
+      buildDownloadUrl(downloadUrl, proxyBaseUrl),
     );
     publish(`Extracting ${kind} "${spec.name}".`, 0.57);
     await writeArchiveToFs(FS, persistedPath, zipBytes);
@@ -766,4 +819,64 @@ export async function materializeBlueprintAddons({
   }
 
   return summary;
+}
+
+/**
+ * Fetch the blueprint `files` (cached under /persist by source and extract flag)
+ * and place them in the Omeka S root, after the add-ons so they can overlay them.
+ */
+export async function materializeBlueprintFiles({
+  php,
+  blueprint,
+  omekaRoot,
+  publish,
+  config,
+}) {
+  const binary = await php.binary;
+  const { FS } = binary;
+  const proxyBaseUrl = resolveProxyUrl(config);
+  const previous = new Map(
+    (readJsonSync(FS, FILES_MANIFEST)?.files || []).map((file) => [
+      file.persistedPath,
+      file,
+    ]),
+  );
+
+  const files = [];
+  for (const file of blueprint.files || []) {
+    const fingerprint = `${file.source}|extract:${file.extract}`;
+    const persistedPath = `${FILES_ROOT}/${sanitizeSegment(file.destination, "file")}`;
+    // validates the destination before anything is downloaded
+    resolveAssetTarget(omekaRoot, file.destination);
+
+    const cached = previous.get(persistedPath);
+    if (cached?.fingerprint !== fingerprint || !pathExists(FS, persistedPath)) {
+      publish(`Fetching file "${file.destination}".`, 0.55);
+      removeNodeIfPresent(FS, persistedPath);
+      const bytes = await fetchBytes(
+        buildDownloadUrl(file.source, proxyBaseUrl),
+      );
+      if (file.extract) {
+        await writeArchiveToFs(FS, persistedPath, bytes);
+      } else {
+        ensureDirSync(FS, FILES_ROOT);
+        FS.writeFile(persistedPath, bytes);
+      }
+    }
+    previous.delete(persistedPath);
+    files.push({
+      destination: file.destination,
+      extract: file.extract,
+      fingerprint,
+      persistedPath,
+    });
+  }
+
+  // files no longer in the blueprint
+  for (const stale of previous.keys()) {
+    removeNodeIfPresent(FS, stale);
+  }
+  writeJsonSync(FS, FILES_MANIFEST, { files });
+  mountPersistedFiles(FS, omekaRoot);
+  return files;
 }

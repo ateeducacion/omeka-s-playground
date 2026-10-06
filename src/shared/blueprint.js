@@ -3,10 +3,16 @@ import {
   DEFAULT_PHP_VERSION,
   resolveOmekaVersion,
 } from "./omeka-versions.js";
-import { resolveProjectUrl } from "./paths.js";
 import { SNAPSHOT_VERSION } from "./protocol.js";
 
 const BLUEPRINT_KEY_PREFIX = "omeka-playground:blueprint";
+
+// The shared Omeka S blueprint format (omeka-s-contrib/omeka-s-blueprints):
+// the floating v0 schema, which never gets breaking changes. Blueprints in the
+// earlier Playground format (siteOptions, login, landingPage, site, object
+// sources, modules[].assets) keep working as legacy aliases.
+export const SHARED_BLUEPRINT_SCHEMA_URL =
+  "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json";
 
 function hasWindow() {
   return typeof window !== "undefined";
@@ -151,10 +157,11 @@ function normalizePath(path, fallback = "/") {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+// Any role id is valid (modules register their own, e.g. guest). The aliases
+// below are a Playground convenience, not part of the shared format.
 function normalizeRole(role, fallback = "global_admin") {
-  const normalized = String(role || fallback)
-    .trim()
-    .toLowerCase();
+  const value = String(role || fallback).trim();
+  const normalized = value.toLowerCase();
   const aliases = {
     admin: "global_admin",
     globaladmin: "global_admin",
@@ -164,7 +171,7 @@ function normalizeRole(role, fallback = "global_admin") {
     supervisor: "site_admin",
   };
 
-  return aliases[normalized] || normalized;
+  return aliases[normalized] || value;
 }
 
 function slugify(value, fallback = "playground") {
@@ -307,7 +314,54 @@ function normalizeSites(blueprint, fallbackTitle) {
   return sites;
 }
 
-function normalizeAddonSource(input) {
+function githubArchiveUrl(owner, repo, ref) {
+  return `https://github.com/${owner}/${repo}/archive/${encodeURI(ref)}.zip`;
+}
+
+// A shared-format source string: a ZIP URL, a GitHub repository URL or
+// gh:owner/repo[#ref]. GitHub repositories become archive downloads of the ref,
+// the version or HEAD. Other git hosts and schemes are rejected.
+function normalizeAddonSourceString(input, version) {
+  const text = input.trim();
+  if (!text) {
+    return { type: "bundled" };
+  }
+
+  const [location, hashRef = ""] = text.split("#", 2);
+  const ref = hashRef || version || "HEAD";
+  const shortRepo = /^gh:([\w.-]+)\/([\w.-]+)$/u.exec(location);
+  if (shortRepo) {
+    return {
+      type: "url",
+      url: githubArchiveUrl(shortRepo[1], shortRepo[2], ref),
+    };
+  }
+
+  const githubRepo =
+    /^https:\/\/(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/u.exec(
+      location,
+    );
+  if (githubRepo) {
+    return {
+      type: "url",
+      url: githubArchiveUrl(githubRepo[1], githubRepo[2], ref),
+    };
+  }
+
+  if (/\.git$/u.test(location) || /^[a-z][a-z0-9+.-]*:(?!\/\/)/iu.test(text)) {
+    throw new Error(
+      `Blueprint add-on source "${text}" is not supported by the Playground: use a ZIP URL, a GitHub repository URL or gh:owner/repo.`,
+    );
+  }
+
+  return { type: "url", url: absolutizeUrl(text) };
+}
+
+function normalizeAddonSource(input, version = "") {
+  if (typeof input === "string") {
+    return normalizeAddonSourceString(input, version);
+  }
+
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { type: "bundled" };
   }
@@ -395,12 +449,12 @@ function normalizeAddonCollection(input, kind) {
 }
 
 function normalizeAddonEntry(entry, kind) {
+  const version = String(entry?.version || "").trim();
   const normalized = {
     name: String(entry?.name || entry || "").trim(),
-    source: normalizeAddonSource(entry?.source),
+    source: normalizeAddonSource(entry?.source, version),
   };
 
-  const version = String(entry?.version || "").trim();
   if (version) {
     normalized.version = version;
   }
@@ -438,6 +492,34 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+// Root `files`: files placed in the Omeka S installation. The destination must
+// stay inside the Omeka S root (relative, no '..' segment), as in the schema.
+function normalizeFiles(input) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input.filter(isPlainObject).map((file) => {
+    const destination = String(file.destination || "").trim();
+    const segments = destination.replaceAll("\\", "/").split("/");
+    if (
+      !destination ||
+      segments[0] === "" ||
+      /^[A-Za-z]:/u.test(destination) ||
+      segments.includes("..")
+    ) {
+      throw new Error(
+        `Blueprint file destination "${destination}" must be a path inside the Omeka S root.`,
+      );
+    }
+    const source = absolutizeUrl(file.source || "");
+    if (!source) {
+      throw new Error(`Blueprint file "${destination}" requires a source.`);
+    }
+    return { source, destination, extract: file.extract === true };
+  });
+}
+
 // Global settings: a map of setting id => value, or a list of maps merged in
 // order (later maps win). `$import` references are part of the shared spec but
 // not supported here yet, so they are rejected instead of silently dropped.
@@ -463,15 +545,9 @@ function normalizeSettings(input) {
   return settings;
 }
 
-export function getBlueprintSchemaUrl() {
-  return resolveProjectUrl(
-    "assets/blueprints/blueprint-schema.json",
-  ).toString();
-}
-
 export function buildDefaultBlueprint(config) {
   return {
-    $schema: getBlueprintSchemaUrl(),
+    $schema: SHARED_BLUEPRINT_SCHEMA_URL,
     meta: {
       title: `${config.siteTitle} Blueprint`,
       author: "omeka-s-playground",
@@ -489,18 +565,10 @@ export function buildDefaultBlueprint(config) {
         config.runtimes?.[0]?.omekaVersion ||
         DEFAULT_OMEKA_VERSION,
     },
-    debug: {
-      enabled: false,
-    },
-    landingPage: "/admin",
-    siteOptions: {
+    install: {
       title: config.siteTitle,
       locale: config.locale,
       timezone: config.timezone,
-    },
-    login: {
-      email: config.admin.email,
-      password: config.admin.password,
     },
     users: [
       {
@@ -536,7 +604,29 @@ export function buildDefaultBlueprint(config) {
         ],
       },
     ],
+    "x-playground": {
+      landingPage: "/admin",
+      debug: { enabled: false },
+    },
   };
+}
+
+// install.admin is the first global administrator: it goes first in the user
+// list, merged with a user that has the same email.
+function withInstallAdmin(users, admin) {
+  if (!isPlainObject(admin) || !admin.email) {
+    return users;
+  }
+  const email = String(admin.email).trim();
+  const same = users.find((user) => user?.email === email) || {};
+  const first = {
+    ...same,
+    email,
+    username: admin.name || same.username || same.name,
+    password: admin.password || same.password,
+    role: "global_admin",
+  };
+  return [first, ...users.filter((user) => user?.email !== email)];
 }
 
 export function normalizeBlueprint(input, config) {
@@ -545,10 +635,24 @@ export function normalizeBlueprint(input, config) {
       ? structuredClone(input)
       : {};
   const fallback = buildDefaultBlueprint(config);
-  const users =
-    Array.isArray(blueprint.users) && blueprint.users.length > 0
-      ? blueprint.users
-      : fallback.users;
+  // Shared format first, then the legacy Playground keys.
+  const install = isPlainObject(blueprint.install) ? blueprint.install : {};
+  const legacyInstall = isPlainObject(blueprint.siteOptions)
+    ? blueprint.siteOptions
+    : {};
+  const runtime = isPlainObject(blueprint["x-playground"])
+    ? blueprint["x-playground"]
+    : {};
+  const login = isPlainObject(runtime.login)
+    ? runtime.login
+    : isPlainObject(blueprint.login)
+      ? blueprint.login
+      : install.admin || {};
+  const blueprintUsers = withInstallAdmin(
+    Array.isArray(blueprint.users) ? blueprint.users : [],
+    install.admin,
+  );
+  const users = blueprintUsers.length > 0 ? blueprintUsers : fallback.users;
 
   const normalizedUsers = users.map((user, index) => {
     const fallbackUser = index === 0 ? fallback.users[0] : {};
@@ -583,7 +687,7 @@ export function normalizeBlueprint(input, config) {
     };
   });
 
-  const sites = normalizeSites(blueprint, fallback.siteOptions.title);
+  const sites = normalizeSites(blueprint, fallback.install.title);
   // `site` (singular) is kept for backward compatibility and resolves to the
   // default site (or the first one) so existing consumers keep working.
   const activeSite =
@@ -606,28 +710,34 @@ export function normalizeBlueprint(input, config) {
         fallback.preferredVersions.omeka,
     },
     debug: {
-      enabled: blueprint.debug?.enabled === true,
+      enabled: (runtime.debug ?? blueprint.debug)?.enabled === true,
     },
-    phpConstants: normalizePhpConstants(blueprint.phpConstants),
+    phpConstants: normalizePhpConstants(
+      runtime.phpConstants ?? blueprint.phpConstants,
+    ),
     landingPage: normalizePath(
-      blueprint.landingPage || blueprint.landingPath || fallback.landingPage,
-      fallback.landingPage,
+      runtime.landingPage ||
+        blueprint.landingPage ||
+        blueprint.landingPath ||
+        fallback["x-playground"].landingPage,
+      fallback["x-playground"].landingPage,
     ),
     siteOptions: {
-      title: blueprint.siteOptions?.title || fallback.siteOptions.title,
-      locale: blueprint.siteOptions?.locale || fallback.siteOptions.locale,
+      title: install.title || legacyInstall.title || fallback.install.title,
+      locale: install.locale || legacyInstall.locale || fallback.install.locale,
       timezone:
-        blueprint.siteOptions?.timezone || fallback.siteOptions.timezone,
+        install.timezone || legacyInstall.timezone || fallback.install.timezone,
     },
     login: {
-      email: blueprint.login?.email || normalizedUsers[0].email,
-      password: blueprint.login?.password || normalizedUsers[0].password,
+      email: login.email || normalizedUsers[0].email,
+      password: login.password || normalizedUsers[0].password,
     },
     users: normalizedUsers,
     site: activeSite,
     sites,
     themes: normalizeAddonCollection(blueprint.themes, "theme"),
     modules: normalizeAddonCollection(blueprint.modules, "module"),
+    files: normalizeFiles(blueprint.files),
     settings: normalizeSettings(blueprint.settings),
     itemSets: Array.isArray(blueprint.itemSets)
       ? blueprint.itemSets
@@ -696,8 +806,76 @@ export function buildEffectivePlaygroundConfig(config, blueprint) {
   };
 }
 
+function exportAddon(addon) {
+  const entry = { name: addon.name };
+  if (addon.state) {
+    entry.state = addon.state;
+  }
+  if (addon.version) {
+    entry.version = addon.version;
+  }
+  // bundled and omeka.org sources resolve by name in the shared format
+  if (addon.source?.type === "url") {
+    entry.source = addon.source.url;
+  }
+  return entry;
+}
+
+// Legacy modules[].assets become root files, extracted into the add-on.
+function exportFiles(normalized) {
+  const assetFiles = (addons, dir) =>
+    addons.flatMap((addon) =>
+      (addon.assets || []).map((asset) => ({
+        source: asset.url,
+        destination: `${dir}/${addon.name}/${asset.destination}`,
+        extract: true,
+      })),
+    );
+  return [
+    ...assetFiles(normalized.modules, "modules"),
+    ...assetFiles(normalized.themes, "themes"),
+    ...normalized.files,
+  ];
+}
+
+/** The active blueprint in the shared format, for the editor's Export. */
 export function exportBlueprintPayload(config, blueprint) {
-  return normalizeBlueprint(blueprint, config);
+  const normalized = normalizeBlueprint(blueprint, config);
+  const [admin] = normalized.users;
+  const runtime = {
+    landingPage: normalized.landingPage,
+    debug: normalized.debug,
+  };
+  if (Object.keys(normalized.phpConstants).length) {
+    runtime.phpConstants = normalized.phpConstants;
+  }
+  if (normalized.login.email !== admin.email) {
+    runtime.login = normalized.login;
+  }
+  const files = exportFiles(normalized);
+
+  return {
+    $schema: SHARED_BLUEPRINT_SCHEMA_URL,
+    meta: normalized.meta,
+    preferredVersions: normalized.preferredVersions,
+    install: {
+      ...normalized.siteOptions,
+      admin: {
+        name: admin.username,
+        email: admin.email,
+        password: admin.password,
+      },
+    },
+    modules: normalized.modules.map(exportAddon),
+    themes: normalized.themes.map(exportAddon),
+    ...(files.length ? { files } : {}),
+    settings: normalized.settings,
+    users: normalized.users,
+    itemSets: normalized.itemSets,
+    items: normalized.items,
+    sites: normalized.sites,
+    "x-playground": runtime,
+  };
 }
 
 export function saveActiveBlueprint(scopeId, blueprint) {

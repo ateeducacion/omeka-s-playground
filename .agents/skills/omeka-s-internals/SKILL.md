@@ -51,9 +51,9 @@ Prefer `ApiManager` for resources. Use Doctrine repositories for existence check
 - Provision in dependency order: install -> modules/themes -> users -> sites/permissions -> vocabularies/properties -> item sets -> items -> media.
 - Upsert users by email and sites by slug. Use partial API updates when preserving unspecified fields matters.
 - Site permissions reference real user IDs and accepted site roles. Unknown users should produce a warning, not a broken relation.
-- The first blueprint user is the effective admin identity. Keep a `global_admin` authenticated while provisioning protected resources.
+- The first blueprint user (`install.admin` when set) is the effective admin identity. Keep a `global_admin` authenticated while provisioning protected resources.
 - Content seeding is guarded by `/persist/runtime/content-seeded.json`, keyed to the bundle manifest. Do not reseed on ordinary reloads or deleted/edited demo content will reappear.
-- Blueprint schema, normalization, and runtime consumption form one contract. Change `assets/blueprints/blueprint-schema.json`, `src/shared/blueprint.js`, runtime code, docs, and tests together.
+- The blueprint follows the shared format (omeka-s-contrib/omeka-s-blueprints); Playground-only settings live under `x-playground`, and the legacy keys stay accepted as aliases. Change `src/shared/blueprint.js`, runtime code, docs, and tests together; format changes go to the shared spec first.
 - Browser REST reads can be public, but writes return 403 without API keys. Provision through the internal API manager or authenticated admin controllers; do not weaken Omeka authentication.
 
 ## SQLite and WASM constraints
