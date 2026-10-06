@@ -109,6 +109,15 @@ describe("install and x-playground", () => {
     assert.equal(result.users[0].password, "admin");
   });
 
+  it("takes the configured password for any user without one (it is optional)", () => {
+    const result = normalize({
+      install: { admin: { name: "Admin", email: "admin@example.com" } },
+      users: [{ email: "editor@example.com", role: "editor" }],
+    });
+    assert.equal(result.users[1].email, "editor@example.com");
+    assert.equal(result.users[1].password, "admin");
+  });
+
   it("merges install.admin with a user that has the same email", () => {
     const result = normalize({
       install: { admin: { email: "boss@example.com" } },
