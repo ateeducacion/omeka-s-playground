@@ -1,0 +1,11 @@
+[
+  { "$import": "./more-vocabularies.json" },
+  {
+    "prefix": "pgtest",
+    "namespaceUri": "https://example.org/omeka-s-playground/test#",
+    "label": "Playground Test",
+    "comment": "Vocabulary of the Playground end-to-end tests.",
+    "format": "turtle",
+    "source": "../vocabularies/playground-test.ttl"
+  }
+]

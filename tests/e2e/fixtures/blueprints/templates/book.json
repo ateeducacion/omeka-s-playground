@@ -1,0 +1,40 @@
+{
+  "o:label": "Test Book",
+  "o:resource_class": {
+    "vocabulary_namespace_uri": "https://example.org/omeka-s-playground/test#",
+    "vocabulary_label": "Playground Test",
+    "local_name": "Book",
+    "label": "Book"
+  },
+  "o:title_property": {
+    "vocabulary_namespace_uri": "http://purl.org/dc/terms/",
+    "vocabulary_label": "Dublin Core",
+    "local_name": "title",
+    "label": "Title"
+  },
+  "o:description_property": null,
+  "o:resource_template_property": [
+    {
+      "o:alternate_label": "Book title",
+      "o:alternate_comment": null,
+      "o:is_required": true,
+      "o:is_private": false,
+      "data_types": [{ "name": "literal", "label": "Text" }],
+      "vocabulary_namespace_uri": "http://purl.org/dc/terms/",
+      "vocabulary_label": "Dublin Core",
+      "local_name": "title",
+      "label": "Title"
+    },
+    {
+      "o:alternate_label": null,
+      "o:alternate_comment": null,
+      "o:is_required": false,
+      "o:is_private": false,
+      "data_types": [{ "name": "literal", "label": "Text" }],
+      "vocabulary_namespace_uri": "https://example.org/omeka-s-playground/test#",
+      "vocabulary_label": "Playground Test",
+      "local_name": "isbn",
+      "label": "ISBN"
+    }
+  ]
+}

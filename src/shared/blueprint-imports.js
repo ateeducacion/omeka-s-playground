@@ -1,0 +1,302 @@
+// `$import` resolution for the shared Omeka S blueprint format.
+//
+// A list entry `{ "$import": "<url>" }` is replaced in place by the entries of
+// the referenced document: a list, or a single entry. Imported documents may
+// import further documents. References resolve against the document that
+// contains them (RFC 3986), as the relative `source` of `files`,
+// `vocabularies` and `resourceTemplates` entries do. A document without a URL
+// (an inline ?blueprint= payload, an uploaded file, the editor) can only use
+// absolute references. Entry identity and "last one wins" are applied later,
+// by normalizeBlueprint(), so they also hold for blueprints without imports.
+
+// Keys whose entries may be `$import` references (as in the shared schema).
+const LIST_KEYS = [
+  "modules",
+  "themes",
+  "files",
+  "vocabularies",
+  "resourceTemplates",
+  "users",
+  "itemSets",
+  "items",
+];
+
+// Entry fields that hold a path or URL relative to the declaring document.
+const ASSET_FIELDS = {
+  files: "source",
+  vocabularies: "source",
+  resourceTemplates: "source",
+};
+
+// Bound on nested imports, on top of the cycle check.
+const MAX_IMPORT_DEPTH = 16;
+
+export class BlueprintImportError extends Error {
+  name = "BlueprintImportError";
+}
+
+export class BlueprintSchemaError extends Error {
+  name = "BlueprintSchemaError";
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isReference(entry) {
+  return isPlainObject(entry) && "$import" in entry;
+}
+
+/**
+ * Resolve every `$import` of a blueprint document into a single, inlined
+ * blueprint. Relative asset sources of inline entries are resolved against
+ * `baseUrl` when there is one; imported entries always resolve against the
+ * document that declares them.
+ *
+ * @param {object} document The raw blueprint.
+ * @param {{baseUrl?: string|null, fetchJson?: Function, validateImported?: Function|null}} [options]
+ *   `fetchJson(url)` returns the parsed JSON of a URL; `validateImported(key,
+ *   document)` returns the schema errors of an imported document.
+ */
+export async function resolveBlueprintImports(document, options = {}) {
+  const {
+    baseUrl = null,
+    fetchJson = fetchJsonDocument,
+    validateImported = null,
+  } = options;
+  if (!isPlainObject(document)) {
+    throw new BlueprintImportError("Blueprint must be a JSON object.");
+  }
+  const root = baseUrl ? stripHash(baseUrl) : null;
+  const context = { fetchJson, validateImported, chain: root ? [root] : [] };
+  const blueprint = { ...document };
+
+  for (const key of LIST_KEYS) {
+    if (Array.isArray(blueprint[key])) {
+      blueprint[key] = await resolveList(blueprint[key], key, root, context);
+    }
+  }
+  if (Array.isArray(blueprint.settings)) {
+    blueprint.settings = await resolveSettingsList(
+      blueprint.settings,
+      root,
+      context,
+    );
+  }
+  return blueprint;
+}
+
+/**
+ * Turn a reference into an absolute http(s) URL. GitHub/GitLab file
+ * references (gh:owner/repo[@ref]:path, gl:group/repo[@ref]:path, "blob" page
+ * URLs) become their raw download URLs, as in Omeka-S-Cli.
+ */
+export function resolveReference(reference, baseUrl) {
+  const text = String(reference ?? "").trim();
+  if (!text) {
+    throw new BlueprintImportError("An $import reference cannot be empty.");
+  }
+  const raw = toRawUrl(text);
+  let url;
+  try {
+    url = raw
+      ? new URL(raw)
+      : baseUrl
+        ? new URL(text, toRawUrl(baseUrl) || baseUrl)
+        : new URL(text);
+  } catch {
+    throw new BlueprintImportError(
+      `"${text}" cannot be resolved: a relative reference needs a blueprint loaded from a URL (?blueprint-url=), and this one has none.`,
+    );
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new BlueprintImportError(
+      `"${text}" uses the unsupported scheme "${url.protocol}"; use an http(s) URL or a path relative to the blueprint.`,
+    );
+  }
+  url.hash = "";
+  return url.toString();
+}
+
+/**
+ * A copy of the document without its `$import` entries, for the synchronous
+ * checks of the editor. Throws if a reference could never be resolved.
+ */
+export function withoutImportReferences(document) {
+  if (!isPlainObject(document)) {
+    return document;
+  }
+  const copy = { ...document };
+  for (const key of [...LIST_KEYS, "settings"]) {
+    if (Array.isArray(copy[key])) {
+      copy[key] = copy[key].filter((entry) => {
+        if (isReference(entry)) {
+          resolveReference(entry.$import, null);
+          return false;
+        }
+        return true;
+      });
+    }
+  }
+  return copy;
+}
+
+async function resolveList(list, key, documentUrl, context) {
+  const resolved = [];
+  for (const entry of list) {
+    if (!isReference(entry)) {
+      resolved.push(resolveAssetField(entry, key, documentUrl));
+      continue;
+    }
+    const { url, data } = await importDocument(
+      entry,
+      key,
+      documentUrl,
+      context,
+    );
+    const entries = Array.isArray(data) ? data : [data];
+    context.chain.push(url);
+    try {
+      resolved.push(...(await resolveList(entries, key, url, context)));
+    } finally {
+      context.chain.pop();
+    }
+  }
+  return resolved;
+}
+
+// settings: a list of maps and references, merged in order by the normalizer;
+// an imported document is a map or such a list.
+async function resolveSettingsList(list, documentUrl, context) {
+  const resolved = [];
+  for (const entry of list) {
+    if (!isReference(entry)) {
+      resolved.push(entry);
+      continue;
+    }
+    const { url, data } = await importDocument(
+      entry,
+      "settings",
+      documentUrl,
+      context,
+    );
+    context.chain.push(url);
+    try {
+      resolved.push(
+        ...(Array.isArray(data)
+          ? await resolveSettingsList(data, url, context)
+          : [data]),
+      );
+    } finally {
+      context.chain.pop();
+    }
+  }
+  return resolved;
+}
+
+async function importDocument(entry, key, documentUrl, context) {
+  const where = documentUrl ? ` in ${documentUrl}` : "";
+  let url;
+  try {
+    url = resolveReference(entry.$import, documentUrl);
+  } catch (error) {
+    throw new BlueprintImportError(
+      `Blueprint ${key} $import${where}: ${error.message}`,
+    );
+  }
+  if (context.chain.includes(url)) {
+    throw new BlueprintImportError(
+      `Circular $import: ${[...context.chain, url].join(" -> ")}`,
+    );
+  }
+  if (context.chain.length >= MAX_IMPORT_DEPTH) {
+    throw new BlueprintImportError(
+      `Blueprint $import of ${url}${where} exceeds the maximum nesting depth (${MAX_IMPORT_DEPTH}).`,
+    );
+  }
+
+  let data;
+  try {
+    data = await context.fetchJson(url);
+  } catch (error) {
+    throw new BlueprintImportError(
+      `Unable to import ${url} (${key}${where}): ${error.message}`,
+    );
+  }
+  if (!isPlainObject(data) && !Array.isArray(data)) {
+    throw new BlueprintImportError(
+      `Imported ${key} document ${url} must be a JSON list or object.`,
+    );
+  }
+  if (context.validateImported) {
+    const document = key === "settings" || Array.isArray(data) ? data : [data];
+    const errors = context.validateImported(key, document);
+    if (errors.length) {
+      throw new BlueprintSchemaError(
+        `Imported ${key} document ${url} does not match the shared blueprint schema: ${errors.join("; ")}`,
+      );
+    }
+  }
+  return { url, data };
+}
+
+function resolveAssetField(entry, key, documentUrl) {
+  const field = ASSET_FIELDS[key];
+  const value = isPlainObject(entry) ? entry[field] : undefined;
+  if (!field || !documentUrl || typeof value !== "string" || !value.trim()) {
+    return entry;
+  }
+  try {
+    return { ...entry, [field]: resolveReference(value, documentUrl) };
+  } catch (error) {
+    throw new BlueprintImportError(
+      `Blueprint ${key} ${field} in ${documentUrl}: ${error.message}`,
+    );
+  }
+}
+
+function stripHash(url) {
+  const parsed = new URL(url);
+  parsed.hash = "";
+  return parsed.toString();
+}
+
+const GITHUB_BLOB = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/u;
+const GITHUB_SHORT = /^gh:([^/@:]+)\/([^/@:]+)(?:@([^:]+))?:(.+)$/u;
+const GITLAB_BLOB = /^(https?:\/\/[^/]+\/.+)\/-\/blob\/(.+)$/u;
+const GITLAB_SHORT = /^gl:([^@:]+)(?:@([^:]+))?:(.+)$/u;
+
+function toRawUrl(reference) {
+  const page = reference.replace(/#.*$/u, "");
+  let match = GITHUB_BLOB.exec(page);
+  if (match) {
+    return `https://raw.githubusercontent.com/${match[1]}/${match[2]}/${match[3]}`;
+  }
+  match = GITHUB_SHORT.exec(reference);
+  if (match) {
+    return `https://raw.githubusercontent.com/${match[1]}/${match[2]}/${match[3] || "HEAD"}/${match[4]}`;
+  }
+  match = GITLAB_BLOB.exec(page);
+  if (match) {
+    return `${match[1]}/-/raw/${match[2]}`;
+  }
+  match = GITLAB_SHORT.exec(reference);
+  if (match) {
+    return `https://gitlab.com/${match[1]}/-/raw/${match[2] || "HEAD"}/${match[3]}`;
+  }
+  return null;
+}
+
+/** Fetch and parse a JSON document, with the URL in every error. */
+export async function fetchJsonDocument(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`not valid JSON (${error.message})`);
+  }
+}

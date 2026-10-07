@@ -1,0 +1,27 @@
+{
+  "o:label": "Needs Missing",
+  "o:resource_template_property": [
+    {
+      "o:alternate_label": null,
+      "o:alternate_comment": null,
+      "o:is_required": false,
+      "o:is_private": false,
+      "data_types": [{ "name": "literal", "label": "Text" }],
+      "vocabulary_namespace_uri": "http://purl.org/dc/terms/",
+      "vocabulary_label": "Dublin Core",
+      "local_name": "title",
+      "label": "Title"
+    },
+    {
+      "o:alternate_label": null,
+      "o:alternate_comment": null,
+      "o:is_required": false,
+      "o:is_private": false,
+      "data_types": [{ "name": "numeric:integer", "label": "Integer" }],
+      "vocabulary_namespace_uri": "https://example.org/not-installed#",
+      "vocabulary_label": "Not installed",
+      "local_name": "thing",
+      "label": "Thing"
+    }
+  ]
+}

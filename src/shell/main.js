@@ -41,6 +41,7 @@ import {
   saveSessionState,
 } from "../shared/storage.js";
 import { initBlueprintEditor } from "./blueprint-editor.js";
+import { loadBlueprintSchemaValidator } from "./blueprint-schema-loader.js";
 
 const els = {
   addressForm: document.querySelector("#address-form"),
@@ -86,6 +87,10 @@ const els = {
   workspace: document.querySelector("#workspace"),
 };
 
+const BLUEPRINT_ERROR_NAMES = new Set([
+  "BlueprintImportError",
+  "BlueprintSchemaError",
+]);
 const scopeId = getOrCreateScopeId();
 let config;
 const blueprintEditor = initBlueprintEditor(
@@ -662,7 +667,9 @@ function applyConfigAndReset() {
 
 async function main() {
   config = await loadPlaygroundConfig();
-  activeBlueprint = await resolveBlueprintForShell(scopeId, config);
+  activeBlueprint = await resolveBlueprintForShell(scopeId, config, {
+    schema: await loadBlueprintSchemaValidator(),
+  });
   updateBlueprintTextarea();
 
   // Reset the persisted env when the blueprint changed since the last boot in
@@ -889,6 +896,12 @@ els.reset.addEventListener("click", () => {
 
 main().catch((error) => {
   setUiLocked(false);
+  // An invalid blueprint is the author's error, not the Playground's: show
+  // its message alone and keep it out of error monitoring.
+  if (BLUEPRINT_ERROR_NAMES.has(error?.name)) {
+    appendLog(`${error.name}: ${error.message}`, true);
+    return;
+  }
   appendLog(String(error?.stack || error?.message || error), true);
   captureException(error, { source: "shell-main" });
 });

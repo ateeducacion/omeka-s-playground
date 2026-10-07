@@ -10,8 +10,11 @@ The default file is:
 
 It follows the shared [Omeka S blueprint format](https://github.com/omeka-s-contrib/omeka-s-blueprints), also used by [Omeka-S-Cli](https://github.com/GhentCDH/Omeka-S-Cli). Settings that only make sense in the browser live under `x-playground`. It is inspired by WordPress Playground blueprints, but it is **not** the upstream WordPress schema.
 
-- schema: [`v0`](https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json), the latest `v0.x.y` release of the shared format
-- normalization logic: `src/shared/blueprint.js`
+- schema: [`v0`](https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json), the latest `v0.x.y` release of the shared format (local copy: `assets/blueprints/shared/v0/blueprint-schema.json`)
+- loading, `$import` and normalization: `src/shared/blueprint-imports.js`, `src/shared/blueprint.js`
+- what the Playground does with each key: [Support matrix](#support-matrix)
+
+The same `blueprint.json` can be used by the Playground and by [Omeka-S-Cli](https://github.com/GhentCDH/Omeka-S-Cli) (`blueprint:deploy`, which the [`erseco/alpine-omeka-s`](https://github.com/erseco/alpine-omeka-s) Docker image runs from `OMEKA_BLUEPRINT`). Options for one of them go under its own `x-` key (`x-playground` here); the other ignores it.
 
 Blueprints written for the earlier Playground format keep working; see [Legacy format](#legacy-format).
 
@@ -23,6 +26,7 @@ The shell loads a blueprint, normalizes missing values, and stores the active ve
 - create and authenticate the primary admin account
 - create additional users and apply per-user settings
 - download, install, or activate modules and themes
+- import RDF vocabularies and resource templates
 - apply global settings
 - create item sets, items, and media
 - create one or more sites, assign per-site user permissions, and pick the default
@@ -45,10 +49,14 @@ The most important top-level properties are:
 | `themes` | Themes to install | See [Add-on sources](#add-on-sources) |
 | `modules` | Modules to download, install, or activate | See [Add-on sources](#add-on-sources); a repeated name overrides the earlier entry |
 | `files` | Files placed in the Omeka S installation | See [Files](#files) |
+| `vocabularies` | RDF vocabularies to import | See [Vocabularies](#vocabularies) |
+| `resourceTemplates` | Resource-template exports to import | See [Resource templates](#resource-templates) |
 | `itemSets` | Collections created before items | Referenced by item titles later |
 | `items` | Sample resources and media | Media currently uses URL sources; `items[].sites` assigns sites by slug |
 | `sites` | One or more public sites with per-site permissions | One is the default |
 | `x-playground` | Browser runtime settings | `landingPage`, `login`, `debug`, `phpConstants`; see [Playground settings](#playground-settings-x-playground) |
+
+Every list except `sites` can also hold [`$import`](#imports-import) entries.
 
 ## Playground settings (`x-playground`)
 
@@ -87,6 +95,7 @@ Other git hosts, `git@` URLs and other schemes are rejected. A release resolved 
 - `destination` is relative to the Omeka S root; absolute paths and `..` segments are rejected.
 - With `extract: true`, `source` is a ZIP extracted into `destination`; a single top-level folder in the archive is stripped, as with add-on ZIPs.
 - Files are cached by source and re-applied on every boot, because the Omeka S root is rebuilt from the core bundle.
+- A relative `source` resolves against the file that declares it (see [Relative paths](#relative-paths)).
 
 ## PHP constants
 
@@ -140,8 +149,8 @@ list of maps merged in order, where a later map overrides earlier values:
   and after `install`, so for example `installation_title` wins over `install.title`.
 - Like `install`, they are re-applied on every boot of the same scope.
 - When the blueprint defines sites, `default_site` is set afterwards from them; use `setAsDefault` instead.
-- `$import` references from the [shared blueprint specification](https://github.com/omeka-s-contrib/omeka-s-blueprints)
-  are not supported yet and are rejected.
+- In the list form, entries can be [`$import`](#imports-import) references. An imported document
+  is a map, or a list of maps and further references; everything is merged in order.
 
 ## Example
 
@@ -268,6 +277,180 @@ That sample installs `Common` first and then `EasyAdmin`. It is the better file 
 - Use a small number of representative sample items instead of large demo datasets that slow down resets and reviews.
 - Prefer relative media URLs for repository-bundled samples when possible.
 
+## Imports (`$import`)
+
+Any entry of `modules`, `themes`, `files`, `vocabularies`, `resourceTemplates`, `users`,
+`itemSets`, `items` and the list form of `settings` can be a reference to another JSON file:
+
+```json
+{
+  "modules": ["Common", { "$import": "./partials/modules.json" }],
+  "vocabularies": [{ "$import": "https://example.org/shared/vocabularies.json" }]
+}
+```
+
+- The referenced file holds more entries of the same list, or a single entry, and they are spliced in place of the reference.
+- An imported file can import further files. A cycle stops the boot with the chain of files
+  (`Circular $import: a.json -> b.json -> a.json`); importing the same file twice from different places is fine. Nesting is limited to 16 levels.
+- The reference is an `http(s)` URL, a path relative to the file that contains it, or a GitHub/GitLab file reference as Omeka-S-Cli accepts them:
+  `gh:owner/repo[@ref]:path`, `gl:group/repo[@ref]:path`, or a `github.com/…/blob/…` or `…/-/blob/…` page URL (turned into the raw file URL). Other schemes (`file:`, `data:`, …) are rejected.
+- Imported files are fetched by the browser, like `?blueprint-url=` itself, so their host must allow CORS (GitHub raw files do).
+- A failed download, a file that is not JSON, or a file that is not a list or an object stops the boot with the file's URL. When the blueprint declares the shared `$schema`, every imported file is also validated against the schema of its list.
+- `sites` does not take `$import` in the shared schema; such an entry is rejected instead of being ignored.
+
+### Relative paths
+
+Relative paths resolve against the file that contains them (RFC 3986), not against the root blueprint:
+
+| Where | Relative to |
+| --- | --- |
+| `$import` in the blueprint | the blueprint URL |
+| `$import` in an imported file | that imported file |
+| `files[].source`, `vocabularies[].source`, `resourceTemplates[].source` | the file that declares the entry |
+
+How the blueprint arrives decides whether it has a URL:
+
+| Blueprint | Base URL |
+| --- | --- |
+| `?blueprint-url=…`, `?blueprint=https://…`, the configured default blueprint | that URL |
+| `?blueprint=<base64>` (also what the editor's **Run** uses), `?blueprint-data=`, an uploaded file | none |
+
+Without a base URL, a relative `$import` stops the boot with an error (the editor and the upload already refuse it), because there is no file to resolve it against. Absolute references still work. For compatibility, relative `files`, `vocabularies` and `resourceTemplates` sources of such a blueprint keep resolving against the Playground page, as before. Media URLs (`items[].media[].url`) always resolve against the Playground page.
+
+## Vocabularies
+
+`vocabularies` imports RDF vocabularies with Omeka's RDF importer, as **Vocabularies › Import new vocabulary** does:
+
+```json
+{
+  "vocabularies": [
+    {
+      "prefix": "lrmi",
+      "namespaceUri": "http://purl.org/dcx/lrmi-terms/",
+      "label": "LRMI",
+      "format": "turtle",
+      "source": "https://www.dublincore.org/specifications/lrmi/lrmi_terms/2022-06-14/lrmi-terms.ttl"
+    }
+  ]
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `source` | Required. URL or relative path of the RDF file |
+| `namespaceUri`, `prefix`, `label` | Required. How the vocabulary appears in Omeka S |
+| `comment` | Vocabulary comment |
+| `format` | `guess` (the default; `auto` means the same), `rdfxml`, `turtle`, `ntriples`, `jsonld`, or any other format name of the importer |
+| `lang` | Preferred language of labels and comments |
+| `labelProperty`, `commentProperty` | Full URIs of the RDF properties to read labels and comments from |
+
+- The source is downloaded by the worker, directly first (RDF hosts such as schema.org and dublincore.org allow CORS) and through the add-on proxy otherwise, and cached under `/persist`, so a reload does not download it again. Change the URL to get a new version.
+- A vocabulary whose **namespace URI** already exists is left as it is, whatever its prefix or label. That is what makes reloads idempotent, and why the vocabularies Omeka installs itself (`dcterms`, `dctype`, `bibo`, `foaf`) do not need to be declared.
+- A different vocabulary that already uses the same prefix makes the import fail, as in the admin form.
+- A failed download, invalid RDF, or an RDF file without terms in `namespaceUri` stops the boot with the vocabulary and its source.
+- Existing vocabularies are not updated from a newer file (Omeka-S-Cli does that only with `--update`).
+
+## Resource templates
+
+`resourceTemplates` imports resource-template JSON exports (**Resource templates › Export**):
+
+```json
+{
+  "resourceTemplates": [
+    { "source": "./templates/book.json" },
+    { "source": "./templates/book.json", "label": "Book (copy)", "ignoreDeps": true }
+  ]
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `source` | Required. URL or relative path of the export |
+| `label` | Label to use instead of the export's `o:label` |
+| `ignoreDeps` | Import even when this installation lacks some of the template's vocabularies, classes, properties or data types; those are left out |
+
+- The export is checked and matched with Omeka's own import code (the admin **Import** form): a file that is not a valid export stops the boot.
+- Classes and properties are matched by namespace URI and local name, never by database id, so the templates can use the vocabularies declared in the same blueprint.
+- Data types are kept when they are registered in this installation (core or module data types). Without `ignoreDeps`, any missing class, property or data type stops the boot with the list of what is missing. With it, the template is imported without them and a warning lists them.
+- A template whose **label** (after `label` overrides it) already exists is left as it is, so reloads are idempotent and the user's edits are kept.
+
+## Provisioning order
+
+On every boot, after Omeka S is installed:
+
+1. Modules and themes are downloaded; modules are installed and activated (with a fresh PHP boot after each module, as module activation requires).
+2. `files` are placed.
+3. `vocabularies`, then `resourceTemplates`, once every module is active (so their data types are registered) and before anything that could use their properties.
+4. `settings`, `users` and their settings, `sites` and permissions.
+5. `itemSets` and `items`, only on the first boot of a scope.
+
+Steps 1 to 4 run on every boot and find what already exists, so a reload neither duplicates nor resets it. Content (step 5) is seeded once per scope, so deleted or edited demo items stay as the user left them. Reset Playground, `?clean=1` or another blueprint starts again from a clean installation.
+
+## Entry identity (last one wins)
+
+When a list (after imports) holds two entries for the same thing, the later one replaces the earlier one entirely (no field merge) and takes the later position, and a warning is logged when they differ. The identity of an entry, compared without case:
+
+| List | Identity |
+| --- | --- |
+| `modules`, `themes` | `name` |
+| `files` | `destination` |
+| `vocabularies` | `namespaceUri` |
+| `resourceTemplates` | `label`, or `source` without a label |
+| `users` | `email` |
+| `itemSets`, `items` | `title` |
+
+`sites` keep their own rule: a repeated `slug` is an error.
+
+The shared specification has not settled these rules yet
+([omeka-s-contrib/omeka-s-blueprints#10](https://github.com/omeka-s-contrib/omeka-s-blueprints/issues/10)):
+which field identifies an entry, whether an override keeps the earlier position, and whether it merges fields.
+The Playground follows Omeka-S-Cli, except for vocabularies, which Omeka-S-Cli identifies by `prefix`; the Playground uses the
+namespace URI, the identity Omeka S enforces and the one both consumers use to find an existing vocabulary.
+The table lives in `ENTRY_IDENTITY` (`src/shared/blueprint.js`) so it can follow the specification.
+
+## Schema validation
+
+The shell validates a blueprint against a local copy of the shared `v0` schema before booting it, so no schema is fetched at boot:
+
+- A blueprint whose `$schema` is the shared `v0` schema (or a `v0.x.y` release) must match it: any error stops the boot as a `BlueprintSchemaError` listing the failing paths, and every `$import`ed file is checked against the schema of its list.
+- Other blueprints (the [legacy format](#legacy-format), or no `$schema`) only get a console warning, so the legacy keys keep working.
+- The editor shows the same schema errors while you type.
+- Errors that the schema cannot see (a download that fails, a cycle, a relative import without a base URL) are reported as `BlueprintImportError`; errors while provisioning Omeka S (an RDF file that does not parse, a template that needs a missing vocabulary) are reported by the runtime with the blueprint entry. Each is reported once, separately.
+
+`npm run build-worker` bundles the validator (Ajv) into `dist/blueprint-schema.bundle.js`. To refresh the local copy after a new `v0.x.y` release, download the published `schema/v0/blueprint-schema.json` over `assets/blueprints/shared/v0/blueprint-schema.json`.
+
+## Support matrix
+
+What the Playground does with each top-level key of the shared format (`v0`):
+
+| Key | Support | Notes |
+| --- | --- | --- |
+| `$schema` | Supported | Selects strict validation for the shared schema |
+| `meta`, `preferredVersions` | Supported | `preferredVersions` picks the runtime when the URL does not |
+| `install` | Supported | `install.admin` is the first user and the autologin account |
+| `modules`, `themes` | Supported | ZIP, GitHub and omeka.org catalog sources; other git hosts and schemes are rejected |
+| `files` | Supported | |
+| `vocabularies` | Supported | All fields; see [Vocabularies](#vocabularies) |
+| `resourceTemplates` | Supported | All fields; see [Resource templates](#resource-templates) |
+| `settings` | Supported | Map or list, with imports |
+| `users` | Supported | A user without `password` gets the configured password |
+| `sites` | Supported | Repeated slugs are rejected rather than overridden |
+| `itemSets`, `items` | Supported | Seeded once per scope; media of type `url` |
+| `$import` | Supported | Every list the schema allows; see [Imports](#imports-import) |
+| `x-playground` | Supported | Playground settings |
+| Other `x-*` keys | Ignored | As the specification requires |
+| Schema validation | Supported | Strict when `$schema` is the shared schema |
+
+Differences from Omeka-S-Cli worth knowing when one blueprint serves both:
+
+- Omeka-S-Cli also reads JSON with comments (`.jsonc`); the Playground reads plain JSON only.
+- Omeka-S-Cli accepts local filesystem paths; the Playground only URLs and paths relative to a blueprint URL.
+- Omeka-S-Cli does not create `itemSets` or `items`, and creates `sites` only after release 0.17.1. The Docker image runs it with `--skip core`, so `install` comes from its environment variables there.
+- Omeka-S-Cli applies `settings` last (after users and sites); the Playground applies them before users. Both apply them after every module.
+- Omeka-S-Cli identifies vocabularies by `prefix`, the Playground by `namespaceUri` (see above).
+- Omeka-S-Cli matches `customvocab:` data types of a template by the custom vocabulary label; the Playground needs the same data type name to be registered (or `ignoreDeps`).
+- Omeka-S-Cli requires the Common module for resource templates; the Playground uses the core import code.
+
 ## Project-specific rules and conventions
 
 These conventions come from the current implementation, not generic JSON style advice:
@@ -278,7 +461,7 @@ These conventions come from the current implementation, not generic JSON style a
 - Remote addon URLs are absolutized against the current page URL.
 - `modules[].state` supports `download` (place files only), `install`, and `activate` (default).
 - `modules[].version` and `themes[].version` select the omeka.org release, or the tag/branch of a GitHub source.
-- Duplicate module or theme names (case-insensitive) follow the shared specification: the last occurrence wins and takes its position in the list.
+- Repeated entries follow [Entry identity](#entry-identity-last-one-wins): the last occurrence wins and takes its position in the list.
 - `items[].media[].type` currently supports `url`.
 - Exactly one site is forced to be the default (the first one if none is flagged), and duplicate site slugs are rejected.
 - `sites[].permissions[].role` is clamped to one of `viewer`, `editor`, `admin` (defaults to `viewer`); a permission whose `user` email matches no created user is skipped with a warning.
@@ -290,7 +473,7 @@ If you change the semantics of any of those rules, update both the schema and th
 ## How to validate changes
 
 1. Edit the blueprint JSON.
-2. Validate it against the [`v0` schema](https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json) (editors do it from `$schema`).
+2. Validate it against the [`v0` schema](https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json): editors do it from `$schema`, and the Playground editor and shell do it too (see [Schema validation](#schema-validation)).
 3. Start the app and trigger a clean boot by importing the blueprint or using a new scope.
 4. Confirm the expected landing page, users, modules, themes, and sample content appear.
 5. If something fails during boot, temporarily enable `x-playground.debug.enabled`.

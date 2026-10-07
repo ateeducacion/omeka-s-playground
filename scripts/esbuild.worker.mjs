@@ -124,6 +124,18 @@ await build({
   },
 });
 
+// The shared-schema validator (Ajv + the local schema copy) for the shell,
+// which is served unbundled and loads it on demand.
+await build({
+  entryPoints: ["src/shared/blueprint-schema.js"],
+  bundle: true,
+  outfile: "dist/blueprint-schema.bundle.js",
+  format: "esm",
+  platform: "browser",
+  target: "es2022",
+  minify: true,
+});
+
 // The cache version lives in src/generated/build-version.js, written by
 // scripts/write-build-version.mjs (`npm run build:version`). It used to be a
 // content hash of this bundle, which could not tell two builds of the same

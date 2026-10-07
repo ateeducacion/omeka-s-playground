@@ -880,3 +880,81 @@ export async function materializeBlueprintFiles({
   mountPersistedFiles(FS, omekaRoot);
   return files;
 }
+
+const SOURCES_ROOT = `${PERSIST_ADDONS_ROOT}/sources`;
+
+/**
+ * Download the `source` of each blueprint vocabulary and resource template
+ * (through the add-on proxy, as files are) and cache it under /persist, so a
+ * reload does not fetch it again. Returns a copy of the blueprint whose entries
+ * carry the `cachedPath` the install script reads.
+ */
+export async function materializeBlueprintSources({
+  php,
+  blueprint,
+  publish,
+  config,
+}) {
+  const binary = await php.binary;
+  const { FS } = binary;
+  const proxyBaseUrl = resolveProxyUrl(config);
+  const staged = structuredClone(blueprint);
+  const kept = new Set();
+
+  const entries = [
+    ...(staged.vocabularies || []).map((entry) => [
+      `vocabulary "${entry.prefix}"`,
+      entry,
+    ]),
+    ...(staged.resourceTemplates || []).map((entry) => [
+      `resource template "${entry.label || entry.source}"`,
+      entry,
+    ]),
+  ];
+  for (const [what, entry] of entries) {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(entry.source),
+    );
+    const name = [...new Uint8Array(digest).slice(0, 16)]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    const cachedPath = `${SOURCES_ROOT}/${name}`;
+    if (!pathExists(FS, cachedPath)) {
+      publish(`Fetching the ${what} source.`, 0.55);
+      // Directly first: RDF hosts such as schema.org and dublincore.org allow
+      // CORS, and the production proxy only serves add-on hosts. Then through
+      // the proxy, for hosts without CORS.
+      let bytes;
+      try {
+        bytes = await fetchBytes(entry.source);
+      } catch (directError) {
+        const proxied = buildDownloadUrl(entry.source, proxyBaseUrl);
+        try {
+          if (proxied === entry.source) {
+            throw directError;
+          }
+          bytes = await fetchBytes(proxied);
+        } catch (error) {
+          throw new Error(
+            `Blueprint ${what}: unable to download ${entry.source} (${error.message}).`,
+          );
+        }
+      }
+      ensureDirSync(FS, SOURCES_ROOT);
+      FS.writeFile(cachedPath, bytes);
+    }
+    entry.cachedPath = cachedPath;
+    kept.add(name);
+  }
+
+  // sources no longer in the blueprint
+  if (pathExists(FS, SOURCES_ROOT)) {
+    for (const name of FS.readdir(SOURCES_ROOT)) {
+      if (name !== "." && name !== ".." && !kept.has(name)) {
+        removeNodeIfPresent(FS, `${SOURCES_ROOT}/${name}`);
+      }
+    }
+  }
+  return staged;
+}
