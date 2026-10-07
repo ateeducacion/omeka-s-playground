@@ -277,6 +277,19 @@ That sample installs `Common` first and then `EasyAdmin`. It is the better file 
 - Use a small number of representative sample items instead of large demo datasets that slow down resets and reviews.
 - Prefer relative media URLs for repository-bundled samples when possible.
 
+## Comments (JSONC)
+
+Blueprints and imported files may contain comments (`//` and `/* */`) and trailing commas, as Omeka-S-Cli reads them (`.jsonc`). This applies to every way a blueprint arrives: `?blueprint-url=`, `?blueprint=`, uploads, the editor and `$import`. JSON tooling and the shared schema only see the parsed document. The editor's **Export** writes plain JSON.
+
+```jsonc
+{
+  "modules": [
+    "Common", // needed by the module below
+    { "$import": "./partials/modules.jsonc" },
+  ],
+}
+```
+
 ## Imports (`$import`)
 
 Any entry of `modules`, `themes`, `files`, `vocabularies`, `resourceTemplates`, `users`,
@@ -397,9 +410,8 @@ When a list (after imports) holds two entries for the same thing, the later one 
 | `vocabularies` | `namespaceUri` |
 | `resourceTemplates` | `label`, or `source` without a label |
 | `users` | `email` |
+| `sites` | `slug` (from the title when there is none) |
 | `itemSets`, `items` | `title` |
-
-`sites` keep their own rule: a repeated `slug` is an error.
 
 The shared specification has not settled these rules yet
 ([omeka-s-contrib/omeka-s-blueprints#10](https://github.com/omeka-s-contrib/omeka-s-blueprints/issues/10)):
@@ -434,7 +446,7 @@ What the Playground does with each top-level key of the shared format (`v0`):
 | `resourceTemplates` | Supported | All fields; see [Resource templates](#resource-templates) |
 | `settings` | Supported | Map or list, with imports |
 | `users` | Supported | A user without `password` gets the configured password |
-| `sites` | Supported | Repeated slugs are rejected rather than overridden |
+| `sites` | Supported | No `$import`, as in the shared schema |
 | `itemSets`, `items` | Supported | Seeded once per scope; media of type `url` |
 | `$import` | Supported | Every list the schema allows; see [Imports](#imports-import) |
 | `x-playground` | Supported | Playground settings |
@@ -443,7 +455,6 @@ What the Playground does with each top-level key of the shared format (`v0`):
 
 Differences from Omeka-S-Cli worth knowing when one blueprint serves both:
 
-- Omeka-S-Cli also reads JSON with comments (`.jsonc`); the Playground reads plain JSON only.
 - Omeka-S-Cli accepts local filesystem paths; the Playground only URLs and paths relative to a blueprint URL.
 - Omeka-S-Cli does not create `itemSets` or `items`, and creates `sites` only after release 0.17.1. The Docker image runs it with `--skip core`, so `install` comes from its environment variables there.
 - Omeka-S-Cli applies `settings` last (after users and sites); the Playground applies them before users. Both apply them after every module.
@@ -463,7 +474,7 @@ These conventions come from the current implementation, not generic JSON style a
 - `modules[].version` and `themes[].version` select the omeka.org release, or the tag/branch of a GitHub source.
 - Repeated entries follow [Entry identity](#entry-identity-last-one-wins): the last occurrence wins and takes its position in the list.
 - `items[].media[].type` currently supports `url`.
-- Exactly one site is forced to be the default (the first one if none is flagged), and duplicate site slugs are rejected.
+- Exactly one site is forced to be the default (the first one if none is flagged).
 - `sites[].permissions[].role` is clamped to one of `viewer`, `editor`, `admin` (defaults to `viewer`); a permission whose `user` email matches no created user is skipped with a warning.
 - `items[].sites` entries are slugified to match site slugs; items with no match fall back to the default site.
 - `users[].settings` keys are written verbatim to `user_setting`; values are stored as-is.

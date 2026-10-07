@@ -2,6 +2,7 @@ import {
   BlueprintImportError,
   BlueprintSchemaError,
   fetchJsonDocument,
+  parseJsonc,
   resolveBlueprintImports,
   withoutImportReferences,
 } from "./blueprint-imports.js";
@@ -146,7 +147,7 @@ export async function decodeBlueprintParam(value) {
   }
 
   try {
-    return JSON.parse(json);
+    return parseJsonc(json);
   } catch {
     throw new Error("Blueprint data payload is not valid JSON.");
   }
@@ -297,16 +298,8 @@ function normalizeSites(blueprint, fallbackTitle) {
     }
   }
 
-  // Reject duplicate slugs so site/permission assignments stay unambiguous.
-  const seenSlugs = new Set();
-  for (const site of sites) {
-    if (seenSlugs.has(site.slug)) {
-      throw new Error(
-        `Blueprint sites cannot include duplicate slug "${site.slug}".`,
-      );
-    }
-    seenSlugs.add(site.slug);
-  }
+  // A repeated slug follows "last one wins", as the other lists do.
+  sites = dedupeLastWins(sites, "sites");
 
   // Guarantee exactly one default site so items without an explicit site land
   // somewhere predictable.
@@ -436,6 +429,7 @@ export const ENTRY_IDENTITY = {
   vocabularies: (entry) => entry.namespaceUri,
   resourceTemplates: (entry) => entry.label || entry.source,
   users: (entry) => entry?.email,
+  sites: (entry) => entry.slug,
   itemSets: (entry) => entry.title,
   items: (entry) => entry.title,
 };

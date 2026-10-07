@@ -230,3 +230,18 @@ test("stops on invalid vocabulary and resource template sources", async ({
     });
   }
 });
+
+test("reads JSONC blueprints and lets a repeated site slug win", async ({
+  page,
+}) => {
+  await page.goto(`/?blueprint-url=${FIXTURES}/comments.blueprint.jsonc`);
+  await waitForRuntimeReady(page);
+  const remote = remoteFrame(page);
+  await expect(remote.getByRole("link", { name: "Final site" })).toHaveCount(1);
+  await expect(remote.getByRole("link", { name: "Draft site" })).toHaveCount(0);
+
+  await open(page, "/admin/setting");
+  await expect(
+    remote.locator('input[name$="pagination_per_page"]'),
+  ).toHaveValue("23");
+});

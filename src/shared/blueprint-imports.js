@@ -295,8 +295,67 @@ export async function fetchJsonDocument(url) {
   }
   const text = await response.text();
   try {
-    return JSON.parse(text);
+    return parseJsonc(text);
   } catch (error) {
     throw new Error(`not valid JSON (${error.message})`);
   }
+}
+
+/**
+ * JSON.parse() that also accepts comments (// and /* *\/) and trailing
+ * commas, as Omeka-S-Cli reads blueprints (.jsonc). Strings are left intact.
+ */
+export function parseJsonc(text) {
+  const source = String(text);
+  let output = "";
+  // A comma that may be trailing, and the last significant character before
+  // it: a comma right after "{", "[" or another comma follows no value, so it
+  // is kept for JSON.parse() to reject ("{,}" is not JSONC either).
+  let pendingComma = -1;
+  let last = "";
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '"') {
+      const start = index;
+      for (
+        index += 1;
+        index < source.length && source[index] !== '"';
+        index += 1
+      ) {
+        if (source[index] === "\\") {
+          index += 1;
+        }
+      }
+      output += source.slice(start, index + 1);
+      pendingComma = -1;
+      last = '"';
+    } else if (char === "/" && source[index + 1] === "/") {
+      while (index < source.length && source[index] !== "\n") {
+        index += 1;
+      }
+      output += "\n";
+    } else if (char === "/" && source[index + 1] === "*") {
+      const end = source.indexOf("*/", index + 2);
+      if (end === -1) {
+        throw new SyntaxError("Unterminated comment");
+      }
+      index = end + 1;
+      output += " ";
+    } else if (char === ",") {
+      pendingComma = ["{", "[", ","].includes(last) ? -1 : output.length;
+      output += char;
+      last = char;
+    } else if ((char === "}" || char === "]") && pendingComma !== -1) {
+      output = `${output.slice(0, pendingComma)} ${output.slice(pendingComma + 1)}${char}`;
+      pendingComma = -1;
+      last = char;
+    } else {
+      if (!/\s/u.test(char)) {
+        pendingComma = -1;
+        last = char;
+      }
+      output += char;
+    }
+  }
+  return JSON.parse(output);
 }

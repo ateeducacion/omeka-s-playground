@@ -1,0 +1,14 @@
+// A blueprint with comments and trailing commas, as Omeka-S-Cli reads them.
+{
+  "$schema": "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json",
+  "install": { "title": "JSONC Demo" },
+  "settings": [
+    { "$import": "./partials/settings.jsonc" } /* a JSONC partial */
+  ],
+  "sites": [
+    { "title": "Draft site", "slug": "demo" },
+    // the later entry with the same slug wins
+    { "title": "Final site", "slug": "demo", "setAsDefault": true }
+  ],
+  "x-playground": { "landingPage": "/admin/site" }
+}

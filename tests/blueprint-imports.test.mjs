@@ -11,6 +11,8 @@ import {
 import {
   BlueprintImportError,
   BlueprintSchemaError,
+  fetchJsonDocument,
+  parseJsonc,
   resolveBlueprintImports,
   resolveReference,
   withoutImportReferences,
@@ -473,5 +475,50 @@ describe("editor and uploaded blueprints", () => {
       () => withoutImportReferences({ items: [{ $import: "./i.json" }] }),
       /cannot be resolved/u,
     );
+  });
+});
+
+describe("JSONC", () => {
+  it("accepts comments and trailing commas, as Omeka-S-Cli does", () => {
+    const text = `{
+      // modules
+      "modules": ["A", /* inline */ "B",],
+      "meta": { "title": "a // not a comment, /* nor this */", },
+      "settings": { "x": "quote \\" // still a string" }, // trailing
+    }`;
+    assert.deepEqual(parseJsonc(text), {
+      modules: ["A", "B"],
+      meta: { title: "a // not a comment, /* nor this */" },
+      settings: { x: 'quote " // still a string' },
+    });
+  });
+
+  it("still rejects what is not JSON", () => {
+    for (const text of [
+      "{ a: 1 }",
+      "[1,,2]",
+      "/* open",
+      "[1] x",
+      // a trailing comma needs a value before it
+      "{,}",
+      "[,]",
+      "[ /* c */ , ]",
+      "[1,,]",
+      '{"a": {,}}',
+    ]) {
+      assert.throws(() => parseJsonc(text), SyntaxError, text);
+    }
+  });
+
+  it("reads fetched blueprints and imports as JSONC", async (t) => {
+    t.mock.method(
+      globalThis,
+      "fetch",
+      async () => new Response('[ "A", // first\n "B", ]'),
+    );
+    assert.deepEqual(await fetchJsonDocument("https://e.org/m.jsonc"), [
+      "A",
+      "B",
+    ]);
   });
 });

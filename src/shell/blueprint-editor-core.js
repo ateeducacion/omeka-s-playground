@@ -1,3 +1,5 @@
+import { parseJsonc } from "../shared/blueprint-imports.js";
+
 /**
  * Pure helpers for the editable Blueprint panel (no DOM access here — see
  * `blueprint-editor.js` for CodeJar wiring). Kept dependency-free so they can
@@ -135,7 +137,7 @@ export function createBlueprintValidationResult(rawText, deps) {
 
   let parsedJson;
   try {
-    parsedJson = JSON.parse(trimmed);
+    parsedJson = parseJsonc(trimmed);
   } catch (error) {
     return {
       valid: false,
