@@ -7,6 +7,7 @@ import {
   parseImportedBlueprintPayload,
   resolveBlueprintForShell,
 } from "../shared/blueprint.js";
+import { parseJsonc } from "../shared/blueprint-imports.js";
 import { loadPlaygroundConfig } from "../shared/config.js";
 import {
   captureException,
@@ -462,7 +463,7 @@ function updateBlueprintTextarea() {
 
 async function importPayload(file) {
   const imported = parseImportedBlueprintPayload(
-    JSON.parse(await file.text()),
+    parseJsonc(await file.text()),
     config,
   );
 

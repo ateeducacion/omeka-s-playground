@@ -384,19 +384,23 @@ describe("normalizeBlueprint", () => {
     assert.equal(result.site.slug, "new-site");
   });
 
-  it("throws on duplicate site slugs", () => {
-    assert.throws(
-      () =>
-        normalizeBlueprint(
-          {
-            sites: [
-              { title: "A", slug: "dup" },
-              { title: "B", slug: "dup" },
-            ],
-          },
-          baseConfig,
-        ),
-      /duplicate slug/u,
+  it("lets a repeated site slug replace the earlier site (last one wins)", () => {
+    const result = normalizeBlueprint(
+      {
+        sites: [
+          { title: "A", slug: "dup" },
+          { title: "C", slug: "other" },
+          { title: "B", slug: "dup" },
+        ],
+      },
+      baseConfig,
+    );
+    assert.deepEqual(
+      result.sites.map((site) => [site.slug, site.title]),
+      [
+        ["other", "C"],
+        ["dup", "B"],
+      ],
     );
   });
 
