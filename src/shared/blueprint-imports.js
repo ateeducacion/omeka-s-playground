@@ -9,7 +9,8 @@
 // absolute references. Entry identity and "last one wins" are applied later,
 // by normalizeBlueprint(), so they also hold for blueprints without imports.
 
-// Keys whose entries may be `$import` references (as in the shared schema).
+// Keys whose entries may be `$import` references: the lists of the shared
+// schema, plus `sites`, which Omeka-S-Cli (0.18) resolves too.
 const LIST_KEYS = [
   "modules",
   "themes",
@@ -17,16 +18,27 @@ const LIST_KEYS = [
   "vocabularies",
   "resourceTemplates",
   "users",
+  "sites",
   "itemSets",
   "items",
 ];
 
-// Entry fields that hold a path or URL relative to the declaring document.
+// Entry fields that hold a path or URL relative to the declaring document. For
+// add-ons only a path (a local ZIP release) is, not a URL or gh:owner/repo.
 const ASSET_FIELDS = {
+  modules: "source",
+  themes: "source",
   files: "source",
   vocabularies: "source",
   resourceTemplates: "source",
 };
+const ADDON_KEYS = ["modules", "themes"];
+
+// An absolute filesystem path (POSIX, backslash, Windows drive) or a file: URL,
+// which a blueprint may not reference (as in Omeka-S-Cli).
+const ABSOLUTE_PATH = /^(?:\/|\\|[A-Za-z]:[\\/]|file:)/iu;
+// A URI scheme of two characters or more (so not a Windows drive letter).
+const URI_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]+:/u;
 
 // Bound on nested imports, on top of the cycle check.
 const MAX_IMPORT_DEPTH = 16;
@@ -63,12 +75,18 @@ export async function resolveBlueprintImports(document, options = {}) {
     baseUrl = null,
     fetchJson = fetchJsonDocument,
     validateImported = null,
+    strictReferences = false,
   } = options;
   if (!isPlainObject(document)) {
     throw new BlueprintImportError("Blueprint must be a JSON object.");
   }
   const root = baseUrl ? stripHash(baseUrl) : null;
-  const context = { fetchJson, validateImported, chain: root ? [root] : [] };
+  const context = {
+    fetchJson,
+    validateImported,
+    strictReferences,
+    chain: root ? [root] : [],
+  };
   const blueprint = { ...document };
 
   for (const key of LIST_KEYS) {
@@ -96,6 +114,11 @@ export function resolveReference(reference, baseUrl) {
   if (!text) {
     throw new BlueprintImportError("An $import reference cannot be empty.");
   }
+  if (ABSOLUTE_PATH.test(text)) {
+    throw new BlueprintImportError(
+      `"${text}" is an absolute path or a file: URL; use a path relative to the blueprint or a URL.`,
+    );
+  }
   const raw = toRawUrl(text);
   let url;
   try {
@@ -118,11 +141,24 @@ export function resolveReference(reference, baseUrl) {
   return url.toString();
 }
 
+// The shared schema's reference is { "$import": "<non-empty string>" } and
+// nothing else; the resolved blueprint cannot show a violation any more.
+function assertReferenceShape(entry, key, where = "") {
+  const extra = Object.keys(entry).filter((name) => name !== "$import");
+  if (extra.length > 0 || typeof entry.$import !== "string") {
+    throw new BlueprintSchemaError(
+      `Blueprint ${key} $import${where} does not match the shared blueprint schema: a reference holds only a "$import" string${extra.length ? ` (unexpected: ${extra.join(", ")})` : ""}.`,
+    );
+  }
+}
+
 /**
  * A copy of the document without its `$import` entries, for the synchronous
- * checks of the editor. Throws if a reference could never be resolved.
+ * checks of the editor and of uploads. Throws if a reference could never be
+ * resolved, or, with `strict` (the shared $schema), if it is not exactly
+ * { "$import": "<string>" }, as loading the blueprint would.
  */
-export function withoutImportReferences(document) {
+export function withoutImportReferences(document, { strict = false } = {}) {
   if (!isPlainObject(document)) {
     return document;
   }
@@ -131,6 +167,9 @@ export function withoutImportReferences(document) {
     if (Array.isArray(copy[key])) {
       copy[key] = copy[key].filter((entry) => {
         if (isReference(entry)) {
+          if (strict) {
+            assertReferenceShape(entry, key);
+          }
           resolveReference(entry.$import, null);
           return false;
         }
@@ -196,6 +235,9 @@ async function resolveSettingsList(list, documentUrl, context) {
 
 async function importDocument(entry, key, documentUrl, context) {
   const where = documentUrl ? ` in ${documentUrl}` : "";
+  if (context.strictReferences) {
+    assertReferenceShape(entry, key, where);
+  }
   let url;
   try {
     url = resolveReference(entry.$import, documentUrl);
@@ -243,7 +285,19 @@ async function importDocument(entry, key, documentUrl, context) {
 function resolveAssetField(entry, key, documentUrl) {
   const field = ASSET_FIELDS[key];
   const value = isPlainObject(entry) ? entry[field] : undefined;
-  if (!field || !documentUrl || typeof value !== "string" || !value.trim()) {
+  if (!field || typeof value !== "string" || !value.trim()) {
+    return entry;
+  }
+  if (ADDON_KEYS.includes(key) && !isAddonPath(value)) {
+    return entry;
+  }
+  // Rejected with or without a base URL, as Omeka-S-Cli does.
+  if (ABSOLUTE_PATH.test(value.trim())) {
+    throw new BlueprintImportError(
+      `Blueprint ${key} ${field}${documentUrl ? ` in ${documentUrl}` : ""}: "${value.trim()}" is an absolute path or a file: URL; use a path relative to the blueprint or a URL.`,
+    );
+  }
+  if (!documentUrl) {
     return entry;
   }
   try {
@@ -253,6 +307,16 @@ function resolveAssetField(entry, key, documentUrl) {
       `Blueprint ${key} ${field} in ${documentUrl}: ${error.message}`,
     );
   }
+}
+
+// Whether an add-on source is a path (a local ZIP release) rather than a URL,
+// a git address or a scheme-prefixed reference such as gh:owner/repo.
+function isAddonPath(value) {
+  const text = value.trim();
+  return (
+    ABSOLUTE_PATH.test(text) ||
+    (!URI_SCHEME.test(text) && !text.startsWith("git@"))
+  );
 }
 
 function stripHash(url) {

@@ -245,3 +245,80 @@ test("reads JSONC blueprints and lets a repeated site slug win", async ({
     remote.locator('input[name$="pagination_per_page"]'),
   ).toHaveValue("23");
 });
+
+test("follows Omeka-S-Cli 0.18: local module ZIP, merged duplicates, imported sites", async ({
+  page,
+}) => {
+  await page.goto(`/?blueprint-url=${FIXTURES}/cli-parity.blueprint.json`);
+  await waitForRuntimeReady(page);
+  const remote = remoteFrame(page);
+
+  // the local ZIP, resolved against the blueprint; the later entry's state wins
+  await expect(remote.locator("body")).toContainText("Insert Ignore Probe");
+  // (the only module, so its Deactivate button means it is active)
+  await expect(remote.locator("body")).toContainText("Deactivate");
+
+  // the imported site, merged with the later entry of the same slug
+  await open(page, "/admin/site");
+  await expect(remote.getByRole("link", { name: "Parity site" })).toHaveCount(
+    1,
+  );
+  await expect(
+    remote.getByRole("link", { name: "Draft parity site" }),
+  ).toHaveCount(0);
+
+  // the creating administrator stays site admin; the editor is added
+  await open(page, "/admin/site/s/parity/users");
+  await expect(remote.locator("body")).toContainText("admin@example.com");
+  await expect(remote.locator("body")).toContainText("Editor");
+
+  // settings are applied last
+  await open(page, "/admin/setting");
+  await expect(
+    remote.locator('input[name$="pagination_per_page"]'),
+  ).toHaveValue("31");
+
+  await page.waitForTimeout(2500);
+  await page.reload({ waitUntil: "commit" });
+  await waitForRuntimeReady(page);
+  await expect(page.locator("#log-panel")).toContainText(
+    'Blueprint site "Parity site" already exists.',
+  );
+  await open(page, "/admin/site");
+  await expect(remote.getByRole("link", { name: "Parity site" })).toHaveCount(
+    1,
+  );
+});
+
+test("installs and signs in as a global_admin declared after another user", async ({
+  page,
+}) => {
+  const blueprint = {
+    $schema:
+      "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json",
+    users: [
+      { email: "editor@example.com", username: "Editor", role: "editor" },
+      {
+        email: "admin2@example.com",
+        username: "Second Admin",
+        password: "secret",
+        role: "global_admin",
+      },
+    ],
+    "x-playground": { landingPage: "/admin/user" },
+  };
+  const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");
+  await page.goto(`/?blueprint=${payload}`);
+  await waitForRuntimeReady(page);
+
+  const remote = remoteFrame(page);
+  // signed in as the declared administrator, who can list users
+  await expect(remote.locator("body")).toContainText("Second Admin");
+  await expect(
+    remote.locator("tr", { hasText: "editor@example.com" }),
+  ).toContainText("Editor");
+  await expect(
+    remote.locator("tr", { hasText: "admin2@example.com" }),
+  ).toContainText("Global Administrator");
+  await expect(page.locator("#log-panel")).not.toContainText("change-role");
+});

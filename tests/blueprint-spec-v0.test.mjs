@@ -95,7 +95,8 @@ describe("install and x-playground", () => {
       result.users.map((user) => [user.email, user.username, user.role]),
       [
         ["boss@example.com", "Boss", "global_admin"],
-        ["editor@example.com", "editor", "editor"],
+        // the display name defaults to the email, as in Omeka-S-Cli
+        ["editor@example.com", "editor@example.com", "editor"],
       ],
     );
     assert.deepEqual(result.login, {
@@ -116,6 +117,75 @@ describe("install and x-playground", () => {
     });
     assert.equal(result.users[1].email, "editor@example.com");
     assert.equal(result.users[1].password, "admin");
+  });
+
+  it("puts the configured administrator first when the blueprint declares none", () => {
+    const result = normalize({
+      users: [{ email: "editor@example.com", role: "editor" }],
+    });
+    assert.deepEqual(
+      result.users.map((user) => [user.email, user.role]),
+      [
+        ["test@example.com", "global_admin"],
+        ["editor@example.com", "editor"],
+      ],
+    );
+    assert.equal(result.login.email, "test@example.com");
+  });
+
+  it("makes a first user that only declares its email an author, as Omeka-S-Cli does", () => {
+    const result = normalize({ users: [{ email: "only@example.com" }] });
+    assert.deepEqual(
+      result.users.map((user) => [user.email, user.role]),
+      [
+        ["test@example.com", "global_admin"],
+        ["only@example.com", "author"],
+      ],
+    );
+    assert.equal(result.login.email, "test@example.com");
+  });
+
+  it("merges the configured administrator with a role-less user of the same email", () => {
+    const result = normalize({
+      users: [
+        { email: "test@example.com", username: "Boss", password: "own" },
+        { email: "editor@example.com", role: "editor" },
+      ],
+    });
+    assert.deepEqual(
+      result.users.map((user) => [
+        user.email,
+        user.username,
+        user.role,
+        user.password,
+      ]),
+      [
+        ["test@example.com", "Boss", "global_admin", "own"],
+        ["editor@example.com", "editor@example.com", "editor", "admin"],
+      ],
+    );
+  });
+
+  it("moves the first declared global_admin to the front: it installs and signs in", () => {
+    const blueprint = {
+      users: [
+        { email: "editor@example.com", role: "editor" },
+        { email: "admin2@example.com", role: "global_admin" },
+        { email: "author@example.com", role: "author" },
+      ],
+    };
+    const result = normalize(blueprint);
+    assert.deepEqual(
+      result.users.map((user) => [user.email, user.role]),
+      [
+        ["admin2@example.com", "global_admin"],
+        ["editor@example.com", "editor"],
+        ["author@example.com", "author"],
+      ],
+    );
+    assert.equal(result.login.email, "admin2@example.com");
+    const effective = buildEffectivePlaygroundConfig(baseConfig, blueprint);
+    assert.equal(effective.admin.email, "admin2@example.com");
   });
 
   it("merges install.admin with a user that has the same email", () => {

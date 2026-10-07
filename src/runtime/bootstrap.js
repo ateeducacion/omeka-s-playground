@@ -790,6 +790,14 @@ if ($blueprint['resourceTemplates'] ?? []) {
   };
   $templateImporter->setPluginManager($serviceManager->get('ControllerPluginManager'));
   $registeredDataTypes = $dataTypeManager->getRegisteredNames();
+  // A custom vocabulary's id differs between installations, so its data type
+  // (customvocab:<id>) is matched by label, as Omeka-S-Cli does.
+  $customVocabsByLabel = [];
+  foreach ($registeredDataTypes as $dataTypeName) {
+    if (str_starts_with($dataTypeName, 'customvocab:')) {
+      $customVocabsByLabel[$dataTypeManager->get($dataTypeName)->getLabel()] = $dataTypeName;
+    }
+  }
   foreach ($blueprint['resourceTemplates'] as $templateSpec) {
     $import = $templateImporter->prepare(json_decode((string) @file_get_contents($templateSpec['cachedPath'] ?? ''), true));
     if (!$import) {
@@ -819,7 +827,13 @@ if ($blueprint['resourceTemplates'] ?? []) {
         $missing[] = 'property ' . $term($templateProperty);
         continue;
       }
-      $dataTypeNames = array_keys($templateProperty['data_types'] ?? []);
+      $dataTypeNames = [];
+      foreach (($templateProperty['data_types'] ?? []) as $dataTypeName => $dataType) {
+        if (str_starts_with($dataTypeName, 'customvocab:') && !in_array($dataTypeName, $registeredDataTypes, true)) {
+          $dataTypeName = $customVocabsByLabel[$dataType['label'] ?? ''] ?? $dataTypeName;
+        }
+        $dataTypeNames[] = $dataTypeName;
+      }
       foreach (array_diff($dataTypeNames, $registeredDataTypes) as $dataTypeName) {
         $missing[] = 'data type ' . $dataTypeName;
       }
@@ -841,12 +855,6 @@ if ($blueprint['resourceTemplates'] ?? []) {
     $debug(sprintf('Imported blueprint resource template "%s".', $label));
   }
   $serviceManager->get('ControllerPluginManager')->setController($playgroundController);
-}
-
-// Apply blueprint global settings after every module is installed, so they
-// override module defaults. Like siteOptions, they are re-applied on each boot.
-foreach (($blueprint['settings'] ?? []) as $settingKey => $settingValue) {
-  $settings->set((string) $settingKey, $settingValue);
 }
 
 // Create blueprint users only after all modules are installed and active, so
@@ -887,7 +895,8 @@ if (!$siteSpecs && is_array($blueprint['site'] ?? null)) {
 }
 
 $siteRepo = $entityManager->getRepository(Omeka\\Entity\\Site::class);
-$siteIdsBySlug = [];
+// Site ids by lower-cased slug and title, for items[].sites.
+$siteIdsByRef = [];
 $defaultSiteId = null;
 foreach ($siteSpecs as $siteSpec) {
   if (!is_array($siteSpec) || empty($siteSpec['title'])) {
@@ -906,63 +915,96 @@ foreach ($siteSpecs as $siteSpec) {
     $themeName = 'default';
   }
 
+  // Without a slug Omeka S derives one from the title, and the title then
+  // identifies the site, as in Omeka-S-Cli.
   $slug = trim((string) ($siteSpec['slug'] ?? ''));
-  $site = $slug !== '' ? $siteRepo->findOneBy(['slug' => $slug]) : null;
-  $payload = [
-    'o:title' => $siteSpec['title'],
-    'o:slug' => $slug,
-    'o:theme' => $themeName,
-    'o:is_public' => array_key_exists('isPublic', $siteSpec) ? (bool) $siteSpec['isPublic'] : true,
-    'o:item_pool' => [],
-  ];
-  if (!empty($siteSpec['summary'])) {
-    $payload['o:summary'] = $siteSpec['summary'];
-  }
-
-  // Grant per-site permissions to users referenced by email.
-  $sitePermissions = [];
-  foreach (($siteSpec['permissions'] ?? []) as $permission) {
-    $permissionEmail = trim((string) ($permission['user'] ?? ''));
-    if ($permissionEmail === '') {
-      continue;
-    }
-    $permissionUser = $findUserByEmail($permissionEmail);
-    if (!$permissionUser) {
-      $warnings[] = sprintf('Site "%s" permission skipped: user "%s" was not found.', $siteSpec['title'], $permissionEmail);
-      continue;
-    }
-    $sitePermissions[] = [
-      'o:user' => ['o:id' => $permissionUser->getId()],
-      'o:role' => trim((string) ($permission['role'] ?? 'viewer')) ?: 'viewer',
-    ];
-  }
-  if ($sitePermissions) {
-    $payload['o:site_permission'] = $sitePermissions;
-  }
+  $title = trim((string) $siteSpec['title']);
+  $site = $siteRepo->findOneBy($slug !== '' ? ['slug' => $slug] : ['title' => $title]);
 
   try {
     if ($site) {
-      $apiManager->update('sites', $site->getId(), $payload, [], ['isPartial' => true]);
-      $siteResponse = $apiManager->read('sites', $site->getId());
+      // An existing site is left as it is (Omeka-S-Cli without --update), so
+      // the user's changes survive a reload.
+      $siteResource = $apiManager->read('sites', $site->getId())->getContent();
+      $debug(sprintf('Blueprint site "%s" already exists.', $title));
     } else {
-      $siteResponse = $apiManager->create('sites', $payload);
+      $payload = [
+        'o:title' => $title,
+        'o:theme' => $themeName,
+        'o:is_public' => array_key_exists('isPublic', $siteSpec) ? (bool) $siteSpec['isPublic'] : true,
+        // as in the admin form and Omeka-S-Cli
+        'o:assign_new_items' => true,
+        'o:item_pool' => [],
+      ];
+      if ($slug !== '') {
+        $payload['o:slug'] = $slug;
+      }
+      if (!empty($siteSpec['summary'])) {
+        $payload['o:summary'] = $siteSpec['summary'];
+      }
+      // Omeka S makes the administrator creating it the owner and a site admin.
+      $siteResource = $apiManager->create('sites', $payload)->getContent();
+      $debug(sprintf('Created site "%s" (#%s).', $title, $siteResource->id()));
+      if (!empty($siteSpec['setAsDefault'])) {
+        $settings->set('default_site', $siteResource->id());
+      }
     }
-
-    $siteResource = $siteResponse->getContent();
-    $siteIdsBySlug[$siteResource->slug()] = $siteResource->id();
-    $debug(sprintf('Provisioned site "%s" (#%s).', $siteSpec['title'], $siteResource->id()));
-
+    $siteIdsByRef[strtolower($siteResource->slug())] = $siteResource->id();
+    $siteIdsByRef += [strtolower($siteResource->title()) => $siteResource->id()];
     if (!empty($siteSpec['setAsDefault'])) {
       $defaultSiteId = $siteResource->id();
-      $settings->set('default_site', $defaultSiteId);
+    }
+
+    // Permissions by email: a missing one is added, a different role is left
+    // as it is, and none is removed (Omeka-S-Cli without --update).
+    $current = [];
+    foreach ($siteResource->sitePermissions() as $sitePermission) {
+      $current[$sitePermission->user()->id()] = $sitePermission->role();
+    }
+    $added = false;
+    foreach (($siteSpec['permissions'] ?? []) as $permission) {
+      $permissionEmail = trim((string) ($permission['user'] ?? ''));
+      if ($permissionEmail === '') {
+        continue;
+      }
+      $permissionUser = $findUserByEmail($permissionEmail);
+      if (!$permissionUser) {
+        $warnings[] = sprintf('Site "%s" permission skipped: user "%s" was not found.', $title, $permissionEmail);
+        continue;
+      }
+      $role = trim((string) ($permission['role'] ?? 'viewer')) ?: 'viewer';
+      $have = $current[$permissionUser->getId()] ?? null;
+      if ($have === $role) {
+        continue;
+      }
+      if ($have !== null) {
+        $warnings[] = sprintf('Site "%s": "%s" has the %s role, the blueprint asks for %s; left as it is.', $title, $permissionEmail, $have, $role);
+        continue;
+      }
+      $current[$permissionUser->getId()] = $role;
+      $added = true;
+    }
+    if ($added) {
+      $sitePermissions = [];
+      foreach ($current as $userId => $role) {
+        $sitePermissions[] = ['o:user' => ['o:id' => $userId], 'o:role' => $role];
+      }
+      $apiManager->update('sites', $siteResource->id(), ['o:site_permission' => $sitePermissions], [], ['isPartial' => true]);
     }
   } catch (Throwable $e) {
-    $warnings[] = sprintf('Unable to provision site "%s": %s', $siteSpec['title'], $describeThrowable($e));
+    $warnings[] = sprintf('Unable to provision site "%s": %s', $title, $describeThrowable($e));
   }
 }
 
-if (!$defaultSiteId && $siteIdsBySlug) {
-  $defaultSiteId = reset($siteIdsBySlug);
+if (!$defaultSiteId && $siteIdsByRef) {
+  $defaultSiteId = reset($siteIdsByRef);
+}
+
+// Global settings come last, as in Omeka-S-Cli, so a module installed above or
+// the sites (default_site) cannot override them. Like install, they are
+// re-applied on every boot.
+foreach (($blueprint['settings'] ?? []) as $settingKey => $settingValue) {
+  $settings->set((string) $settingKey, $settingValue);
 }
 
 $ensureCoreVocabulary();
@@ -1051,8 +1093,8 @@ foreach (($blueprint['items'] ?? []) as $itemSpec) {
   $itemSiteIds = [];
   foreach (($itemSpec['sites'] ?? []) as $itemSiteSlug) {
     $itemSiteSlug = trim((string) $itemSiteSlug);
-    if ($itemSiteSlug !== '' && isset($siteIdsBySlug[$itemSiteSlug])) {
-      $itemSiteIds[] = ['o:id' => $siteIdsBySlug[$itemSiteSlug]];
+    if ($itemSiteSlug !== '' && isset($siteIdsByRef[strtolower($itemSiteSlug)])) {
+      $itemSiteIds[] = ['o:id' => $siteIdsByRef[strtolower($itemSiteSlug)]];
     }
   }
   if (!$itemSiteIds && $defaultSiteId) {

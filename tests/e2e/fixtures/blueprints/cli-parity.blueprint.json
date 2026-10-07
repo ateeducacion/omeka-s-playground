@@ -1,0 +1,25 @@
+{
+  "$schema": "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json",
+  "meta": {
+    "title": "Omeka-S-Cli 0.18 parity",
+    "description": "End-to-end fixture: a local module ZIP, a duplicate merged into its first entry, imported sites and additive site permissions."
+  },
+  "install": { "title": "CLI Parity Demo" },
+  "users": [
+    { "email": "editor@example.com", "username": "Editor", "role": "editor" }
+  ],
+  "modules": [
+    {
+      "name": "InsertIgnoreProbe",
+      "source": "../InsertIgnoreProbe.zip",
+      "state": "install"
+    },
+    { "name": "InsertIgnoreProbe", "state": "activate" }
+  ],
+  "sites": [
+    { "$import": "./partials/sites.json" },
+    { "slug": "parity", "title": "Parity site" }
+  ],
+  "settings": { "pagination_per_page": 31 },
+  "x-playground": { "landingPage": "/admin/module" }
+}

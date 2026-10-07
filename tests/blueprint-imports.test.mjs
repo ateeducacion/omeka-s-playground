@@ -177,8 +177,80 @@ describe("$import", () => {
     );
   });
 
+  it("rejects absolute paths and file: URLs, as Omeka-S-Cli does", () => {
+    for (const reference of [
+      "/etc/passwd",
+      "\\\\server\\share.json",
+      "C:\\blueprints\\a.json",
+      "file:///etc/passwd",
+    ]) {
+      assert.throws(
+        () => resolveReference(reference, ROOT),
+        /is an absolute path or a file: URL/u,
+        reference,
+      );
+    }
+  });
+
+  it("rejects absolute paths and file: URLs in sources of a blueprint without URL too", async () => {
+    for (const blueprint of [
+      { files: [{ source: "/etc/passwd", destination: "x" }] },
+      { files: [{ source: "file:///etc/passwd", destination: "x" }] },
+      { vocabularies: [vocabulary({ source: "C:\\rdf\\v.ttl" })] },
+      { resourceTemplates: [{ source: "/templates/t.json" }] },
+      { modules: [{ name: "M", source: "/tmp/M.zip" }] },
+    ]) {
+      await assert.rejects(
+        loadBlueprintDocument(blueprint, config, {
+          fetchJson: fakeFetch({}).fetchJson,
+        }),
+        (error) =>
+          error instanceof BlueprintImportError &&
+          /is an absolute path or a file: URL/u.test(error.message),
+        JSON.stringify(blueprint),
+      );
+    }
+    // relative sources without a base URL keep resolving against the page
+    const result = await loadBlueprintDocument(
+      { files: [{ source: "./a.php", destination: "a.php" }] },
+      config,
+      { fetchJson: fakeFetch({}).fetchJson },
+    );
+    assert.equal(result.files[0].source, "./a.php");
+  });
+
+  it("resolves a local ZIP of a module or theme against its file, not URLs or gh:", async () => {
+    const result = await load(
+      {
+        modules: [
+          { name: "Local", source: "./zips/Local-1.0.zip" },
+          { name: "Remote", source: "https://e.org/Remote.zip" },
+          { name: "Repo", source: "gh:owner/repo" },
+        ],
+        themes: [{ $import: "partials/themes.json" }],
+      },
+      {
+        "https://example.org/repo/partials/themes.json": [
+          { name: "local-theme", source: "../zips/theme.zip" },
+        ],
+      },
+    );
+    assert.deepEqual(
+      result.modules.map((module) => module.source.url),
+      [
+        "https://example.org/repo/zips/Local-1.0.zip",
+        "https://e.org/Remote.zip",
+        "https://github.com/owner/repo/archive/HEAD.zip",
+      ],
+    );
+    assert.equal(
+      result.themes[0].source.url,
+      "https://example.org/repo/zips/theme.zip",
+    );
+  });
+
   it("rejects schemes other than http(s)", () => {
-    for (const reference of ["file:///etc/passwd", "data:,[]"]) {
+    for (const reference of ["ftp://e.org/a.json", "data:,[]"]) {
       assert.throws(
         () => resolveReference(reference, ROOT),
         /unsupported scheme/u,
@@ -240,6 +312,39 @@ describe("$import", () => {
     );
   });
 
+  it("rejects a reference with other properties when the blueprint declares the shared schema", async () => {
+    const documents = { "https://example.org/repo/m.json": ["A"] };
+    for (const entry of [
+      { $import: "m.json", unexpected: true },
+      { $import: 42 },
+    ]) {
+      await assert.rejects(
+        load(shared({ modules: [entry] }), documents),
+        (error) =>
+          error instanceof BlueprintSchemaError &&
+          /a reference holds only a "\$import" string/u.test(error.message),
+        JSON.stringify(entry),
+      );
+    }
+    // in settings too
+    await assert.rejects(
+      load(shared({ settings: [{ $import: "t.json", x: 1 }] }), {
+        "https://example.org/repo/t.json": { a: 1 },
+      }),
+      /unexpected: x/u,
+    );
+    // in an imported document, its own schema check names that file
+    await assert.rejects(
+      load(shared({ settings: [{ $import: "s.json" }] }), {
+        "https://example.org/repo/s.json": [{ $import: "t.json", x: 1 }],
+        "https://example.org/repo/t.json": { a: 1 },
+      }),
+      (error) =>
+        error instanceof BlueprintSchemaError &&
+        error.message.includes("https://example.org/repo/s.json"),
+    );
+  });
+
   it("merges imported settings in order, nested ones included", async () => {
     const result = await load(
       {
@@ -278,8 +383,8 @@ describe("$import", () => {
   });
 });
 
-describe("last one wins", () => {
-  it("lets a later entry replace an imported one, taking the last position", async () => {
+describe("duplicates (Omeka-S-Cli 0.18)", () => {
+  it("merges a later entry into an imported one, which keeps its position", async () => {
     const result = await load(
       {
         modules: [
@@ -301,9 +406,9 @@ describe("last one wins", () => {
         module.state,
       ]),
       [
+        // shallow merge: the version changes, the state is kept
+        ["common", "2", "install"],
         ["Log", undefined, "activate"],
-        // replaced, not merged: state is not kept from the earlier entry
-        ["common", "2", "activate"],
       ],
     );
   });
@@ -357,13 +462,15 @@ describe("last one wins", () => {
       config,
     );
     assert.deepEqual(
-      result.users.map((user) => user.role),
+      result.users
+        .filter((user) => user.email === "a@e.org")
+        .map((user) => user.role),
       ["author"],
     );
     assert.equal(result.files.length, 1);
     assert.equal(result.files[0].source, "https://e.org/2");
     assert.equal(result.itemSets.length, 1);
-    assert.equal(result.itemSets[0].description, "");
+    assert.equal(result.itemSets[0].description, "1");
     assert.equal(result.items[0].creator, "2");
   });
 });
@@ -470,6 +577,25 @@ describe("editor and uploaded blueprints", () => {
     assert.deepEqual(parsed.blueprint, document);
   });
 
+  it("rejects a reference with other properties as loading would, with the shared schema", () => {
+    const document = shared({
+      modules: [{ $import: "https://e.org/m.json", unexpected: true }],
+    });
+    assert.throws(
+      () => withoutImportReferences(document, { strict: true }),
+      (error) =>
+        error instanceof BlueprintSchemaError &&
+        /unexpected: unexpected/u.test(error.message),
+    );
+    assert.throws(
+      () => parseImportedBlueprintPayload(document, config),
+      BlueprintSchemaError,
+    );
+    // the earlier Playground format is not held to the shared schema
+    const legacy = { modules: [{ $import: "https://e.org/m.json", x: 1 }] };
+    assert.deepEqual(withoutImportReferences(legacy).modules, []);
+  });
+
   it("rejects relative imports that could never be resolved", () => {
     assert.throws(
       () => withoutImportReferences({ items: [{ $import: "./i.json" }] }),
@@ -520,5 +646,127 @@ describe("JSONC", () => {
       "A",
       "B",
     ]);
+  });
+});
+
+describe("sites (Omeka-S-Cli 0.18)", () => {
+  it("imports sites and merges a repeated slug or title into the first one", async () => {
+    const result = await load(
+      {
+        sites: [
+          { $import: "sites.json" },
+          { slug: "main", title: "Main (renamed)", isPublic: false },
+        ],
+      },
+      {
+        "https://example.org/repo/sites.json": [
+          { title: "Main", slug: "main", theme: "default" },
+          { title: "Other" },
+        ],
+      },
+    );
+    assert.deepEqual(
+      result.sites.map((site) => [site.slug, site.title, site.isPublic]),
+      [
+        ["main", "Main (renamed)", false],
+        ["", "Other", true],
+      ],
+    );
+  });
+
+  it("resolves a nested $import inside an imported sites document", async () => {
+    const result = await load(shared({ sites: [{ $import: "sites.json" }] }), {
+      "https://example.org/repo/sites.json": [
+        { $import: "more/sites.json" },
+        { title: "A", slug: "a" },
+      ],
+      "https://example.org/repo/more/sites.json": { title: "B", slug: "b" },
+    });
+    assert.deepEqual(
+      result.sites.map((site) => site.slug),
+      ["b", "a"],
+    );
+  });
+
+  it("still rejects an invalid site inside a nested sites document", async () => {
+    await assert.rejects(
+      load(shared({ sites: [{ $import: "sites.json" }] }), {
+        "https://example.org/repo/sites.json": [{ $import: "more.json" }],
+        "https://example.org/repo/more.json": [{ slug: "no-title" }],
+      }),
+      /Imported sites document https:\/\/example\.org\/repo\/more\.json does not match/u,
+    );
+  });
+
+  it("checks imported sites against the site definition of the schema", async () => {
+    await assert.rejects(
+      load(shared({ sites: [{ $import: "sites.json" }] }), {
+        "https://example.org/repo/sites.json": [{ slug: "no-title" }],
+      }),
+      /Imported sites document https:\/\/example\.org\/repo\/sites\.json does not match the shared blueprint schema: \/0\/ must have required property 'title'/u,
+    );
+  });
+});
+
+describe("cross-references (Omeka-S-Cli 0.18)", () => {
+  it("are reported with the schema errors of a shared-format blueprint", async () => {
+    await assert.rejects(
+      load(
+        shared({
+          install: { admin: { email: "boss@e.org" } },
+          users: [{ email: "editor@e.org" }],
+          itemSets: [{ title: "Set" }],
+          items: [{ title: "I", itemSets: ["set", "Missing"] }],
+          sites: [
+            {
+              title: "S",
+              slug: "bad slug",
+              theme: "freedom",
+              permissions: [
+                { user: "boss@e.org" },
+                { user: "editor@e.org" },
+                { user: "nobody@e.org" },
+              ],
+            },
+          ],
+        }),
+      ),
+      (error) =>
+        error instanceof BlueprintSchemaError &&
+        error.message.includes(
+          "items[0]: references unknown item set 'Missing'",
+        ) &&
+        error.message.includes("site 'S': invalid slug 'bad slug'") &&
+        error.message.includes(
+          "site 'S': theme 'freedom' is not declared in themes",
+        ) &&
+        error.message.includes(
+          "site 'S': permission references unknown user 'nobody@e.org'",
+        ) &&
+        !error.message.includes("'set'") &&
+        !error.message.includes("boss@e.org"),
+    );
+  });
+
+  it("are only warnings for the earlier Playground format", async (t) => {
+    const warn = t.mock.method(console, "warn", () => {});
+    const result = await load({
+      items: [{ title: "I", itemSets: ["Missing"] }],
+    });
+    assert.equal(result.items[0].itemSets[0], "Missing");
+    assert.match(warn.mock.calls[0].arguments[0], /unknown item set/u);
+  });
+
+  it("accept the theme of a site when themes declares it", () => {
+    assert.deepEqual(
+      schema.validateBlueprintReferences({
+        themes: ["Freedom"],
+        sites: [
+          { title: "S", theme: "freedom" },
+          { title: "D", theme: "default" },
+        ],
+      }),
+      [],
+    );
   });
 });

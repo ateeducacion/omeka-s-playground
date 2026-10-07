@@ -46,20 +46,25 @@ export function initBlueprintEditor(elements, options = {}) {
     ) {
       throw new Error("Blueprint must be a JSON object.");
     }
-    // The shell checks the schema and resolves $import entries again when the
-    // blueprint runs; here they are only checked, not fetched.
+    // The shell resolves $import entries and validates the result when the
+    // blueprint runs; here the references are only checked, not fetched, so
+    // cross-references are checked only when there is nothing to import.
+    const local = withoutImportReferences(parsedJson, {
+      strict: declaresSharedSchema(parsedJson),
+    });
     if (schema && declaresSharedSchema(parsedJson)) {
-      const errors = schema.validateBlueprintSchema(parsedJson);
+      const complete = JSON.stringify(local) === JSON.stringify(parsedJson);
+      const errors = [
+        ...schema.validateBlueprintSchema(local),
+        ...(complete ? schema.validateBlueprintReferences(local) : []),
+      ];
       if (errors.length) {
         throw new Error(
-          `it does not match the shared schema: ${errors.join("; ")}`,
+          `it is not valid against the shared format: ${errors.join("; ")}`,
         );
       }
     }
-    return normalizeBlueprint(
-      withoutImportReferences(parsedJson),
-      getConfig() || {},
-    );
+    return normalizeBlueprint(local, getConfig() || {});
   }
 
   let schema = null;
