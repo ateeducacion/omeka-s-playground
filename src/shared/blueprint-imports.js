@@ -141,11 +141,24 @@ export function resolveReference(reference, baseUrl) {
   return url.toString();
 }
 
+// The shared schema's reference is { "$import": "<non-empty string>" } and
+// nothing else; the resolved blueprint cannot show a violation any more.
+function assertReferenceShape(entry, key, where = "") {
+  const extra = Object.keys(entry).filter((name) => name !== "$import");
+  if (extra.length > 0 || typeof entry.$import !== "string") {
+    throw new BlueprintSchemaError(
+      `Blueprint ${key} $import${where} does not match the shared blueprint schema: a reference holds only a "$import" string${extra.length ? ` (unexpected: ${extra.join(", ")})` : ""}.`,
+    );
+  }
+}
+
 /**
  * A copy of the document without its `$import` entries, for the synchronous
- * checks of the editor. Throws if a reference could never be resolved.
+ * checks of the editor and of uploads. Throws if a reference could never be
+ * resolved, or, with `strict` (the shared $schema), if it is not exactly
+ * { "$import": "<string>" }, as loading the blueprint would.
  */
-export function withoutImportReferences(document) {
+export function withoutImportReferences(document, { strict = false } = {}) {
   if (!isPlainObject(document)) {
     return document;
   }
@@ -154,6 +167,9 @@ export function withoutImportReferences(document) {
     if (Array.isArray(copy[key])) {
       copy[key] = copy[key].filter((entry) => {
         if (isReference(entry)) {
+          if (strict) {
+            assertReferenceShape(entry, key);
+          }
           resolveReference(entry.$import, null);
           return false;
         }
@@ -219,16 +235,8 @@ async function resolveSettingsList(list, documentUrl, context) {
 
 async function importDocument(entry, key, documentUrl, context) {
   const where = documentUrl ? ` in ${documentUrl}` : "";
-  // The shared schema's reference is { "$import": "<non-empty string>" } and
-  // nothing else; the resolved blueprint cannot show a violation any more.
-  const extra = Object.keys(entry).filter((name) => name !== "$import");
-  if (
-    context.strictReferences &&
-    (extra.length > 0 || typeof entry.$import !== "string")
-  ) {
-    throw new BlueprintSchemaError(
-      `Blueprint ${key} $import${where} does not match the shared blueprint schema: a reference holds only a "$import" string${extra.length ? ` (unexpected: ${extra.join(", ")})` : ""}.`,
-    );
+  if (context.strictReferences) {
+    assertReferenceShape(entry, key, where);
   }
   let url;
   try {

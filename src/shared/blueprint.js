@@ -1221,6 +1221,11 @@ export function parseImportedBlueprintPayload(rawPayload, config) {
 
   // Checked here, but the raw document is what runs: the shell resolves its
   // absolute $import entries when it loads it.
-  normalizeBlueprint(withoutImportReferences(rawPayload), config);
+  normalizeBlueprint(
+    withoutImportReferences(rawPayload, {
+      strict: declaresSharedSchema(rawPayload),
+    }),
+    config,
+  );
   return { type: "blueprint", blueprint: rawPayload };
 }

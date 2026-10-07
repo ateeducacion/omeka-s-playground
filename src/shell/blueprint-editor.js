@@ -49,7 +49,9 @@ export function initBlueprintEditor(elements, options = {}) {
     // The shell resolves $import entries and validates the result when the
     // blueprint runs; here the references are only checked, not fetched, so
     // cross-references are checked only when there is nothing to import.
-    const local = withoutImportReferences(parsedJson);
+    const local = withoutImportReferences(parsedJson, {
+      strict: declaresSharedSchema(parsedJson),
+    });
     if (schema && declaresSharedSchema(parsedJson)) {
       const complete = JSON.stringify(local) === JSON.stringify(parsedJson);
       const errors = [

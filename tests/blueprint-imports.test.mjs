@@ -577,6 +577,25 @@ describe("editor and uploaded blueprints", () => {
     assert.deepEqual(parsed.blueprint, document);
   });
 
+  it("rejects a reference with other properties as loading would, with the shared schema", () => {
+    const document = shared({
+      modules: [{ $import: "https://e.org/m.json", unexpected: true }],
+    });
+    assert.throws(
+      () => withoutImportReferences(document, { strict: true }),
+      (error) =>
+        error instanceof BlueprintSchemaError &&
+        /unexpected: unexpected/u.test(error.message),
+    );
+    assert.throws(
+      () => parseImportedBlueprintPayload(document, config),
+      BlueprintSchemaError,
+    );
+    // the earlier Playground format is not held to the shared schema
+    const legacy = { modules: [{ $import: "https://e.org/m.json", x: 1 }] };
+    assert.deepEqual(withoutImportReferences(legacy).modules, []);
+  });
+
   it("rejects relative imports that could never be resolved", () => {
     assert.throws(
       () => withoutImportReferences({ items: [{ $import: "./i.json" }] }),
