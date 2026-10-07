@@ -289,3 +289,36 @@ test("follows Omeka-S-Cli 0.18: local module ZIP, merged duplicates, imported si
     1,
   );
 });
+
+test("installs and signs in as a global_admin declared after another user", async ({
+  page,
+}) => {
+  const blueprint = {
+    $schema:
+      "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json",
+    users: [
+      { email: "editor@example.com", username: "Editor", role: "editor" },
+      {
+        email: "admin2@example.com",
+        username: "Second Admin",
+        password: "secret",
+        role: "global_admin",
+      },
+    ],
+    "x-playground": { landingPage: "/admin/user" },
+  };
+  const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");
+  await page.goto(`/?blueprint=${payload}`);
+  await waitForRuntimeReady(page);
+
+  const remote = remoteFrame(page);
+  // signed in as the declared administrator, who can list users
+  await expect(remote.locator("body")).toContainText("Second Admin");
+  await expect(
+    remote.locator("tr", { hasText: "editor@example.com" }),
+  ).toContainText("Editor");
+  await expect(
+    remote.locator("tr", { hasText: "admin2@example.com" }),
+  ).toContainText("Global Administrator");
+  await expect(page.locator("#log-panel")).not.toContainText("change-role");
+});

@@ -312,6 +312,39 @@ describe("$import", () => {
     );
   });
 
+  it("rejects a reference with other properties when the blueprint declares the shared schema", async () => {
+    const documents = { "https://example.org/repo/m.json": ["A"] };
+    for (const entry of [
+      { $import: "m.json", unexpected: true },
+      { $import: 42 },
+    ]) {
+      await assert.rejects(
+        load(shared({ modules: [entry] }), documents),
+        (error) =>
+          error instanceof BlueprintSchemaError &&
+          /a reference holds only a "\$import" string/u.test(error.message),
+        JSON.stringify(entry),
+      );
+    }
+    // in settings too
+    await assert.rejects(
+      load(shared({ settings: [{ $import: "t.json", x: 1 }] }), {
+        "https://example.org/repo/t.json": { a: 1 },
+      }),
+      /unexpected: x/u,
+    );
+    // in an imported document, its own schema check names that file
+    await assert.rejects(
+      load(shared({ settings: [{ $import: "s.json" }] }), {
+        "https://example.org/repo/s.json": [{ $import: "t.json", x: 1 }],
+        "https://example.org/repo/t.json": { a: 1 },
+      }),
+      (error) =>
+        error instanceof BlueprintSchemaError &&
+        error.message.includes("https://example.org/repo/s.json"),
+    );
+  });
+
   it("merges imported settings in order, nested ones included", async () => {
     const result = await load(
       {

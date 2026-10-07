@@ -166,17 +166,26 @@ describe("install and x-playground", () => {
     );
   });
 
-  it("keeps an explicit global_admin anywhere in the list as the declared admin", () => {
-    const result = normalize({
+  it("moves the first declared global_admin to the front: it installs and signs in", () => {
+    const blueprint = {
       users: [
         { email: "editor@example.com", role: "editor" },
-        { email: "boss@example.com", role: "global_admin" },
+        { email: "admin2@example.com", role: "global_admin" },
+        { email: "author@example.com", role: "author" },
       ],
-    });
+    };
+    const result = normalize(blueprint);
     assert.deepEqual(
-      result.users.map((user) => user.role),
-      ["editor", "global_admin"],
+      result.users.map((user) => [user.email, user.role]),
+      [
+        ["admin2@example.com", "global_admin"],
+        ["editor@example.com", "editor"],
+        ["author@example.com", "author"],
+      ],
     );
+    assert.equal(result.login.email, "admin2@example.com");
+    const effective = buildEffectivePlaygroundConfig(baseConfig, blueprint);
+    assert.equal(effective.admin.email, "admin2@example.com");
   });
 
   it("merges install.admin with a user that has the same email", () => {

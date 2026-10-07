@@ -75,12 +75,18 @@ export async function resolveBlueprintImports(document, options = {}) {
     baseUrl = null,
     fetchJson = fetchJsonDocument,
     validateImported = null,
+    strictReferences = false,
   } = options;
   if (!isPlainObject(document)) {
     throw new BlueprintImportError("Blueprint must be a JSON object.");
   }
   const root = baseUrl ? stripHash(baseUrl) : null;
-  const context = { fetchJson, validateImported, chain: root ? [root] : [] };
+  const context = {
+    fetchJson,
+    validateImported,
+    strictReferences,
+    chain: root ? [root] : [],
+  };
   const blueprint = { ...document };
 
   for (const key of LIST_KEYS) {
@@ -213,6 +219,17 @@ async function resolveSettingsList(list, documentUrl, context) {
 
 async function importDocument(entry, key, documentUrl, context) {
   const where = documentUrl ? ` in ${documentUrl}` : "";
+  // The shared schema's reference is { "$import": "<non-empty string>" } and
+  // nothing else; the resolved blueprint cannot show a violation any more.
+  const extra = Object.keys(entry).filter((name) => name !== "$import");
+  if (
+    context.strictReferences &&
+    (extra.length > 0 || typeof entry.$import !== "string")
+  ) {
+    throw new BlueprintSchemaError(
+      `Blueprint ${key} $import${where} does not match the shared blueprint schema: a reference holds only a "$import" string${extra.length ? ` (unexpected: ${extra.join(", ")})` : ""}.`,
+    );
+  }
   let url;
   try {
     url = resolveReference(entry.$import, documentUrl);

@@ -738,6 +738,22 @@ function withInstallAdmin(users, admin) {
   return [first, ...users.filter((user) => user?.email !== email)];
 }
 
+// The first declared administrator first, as the installer creates the first
+// user as a global admin and the Playground signs in as it; the others keep
+// their order.
+function adminFirst(users) {
+  const index = users.findIndex(
+    (user, position) =>
+      normalizeRole(
+        user?.role,
+        position === 0 && !user?.email ? "global_admin" : "",
+      ) === "global_admin",
+  );
+  return index > 0
+    ? [users[index], ...users.filter((_, position) => position !== index)]
+    : users;
+}
+
 // The configured administrator first, merged with a blueprint user that has
 // its email (whose own fields win, but not its role).
 function withConfiguredAdmin(users, admin) {
@@ -794,7 +810,7 @@ export function normalizeBlueprint(input, config) {
     blueprintUsers.length === 0
       ? fallback.users
       : declaresAdmin
-        ? blueprintUsers
+        ? adminFirst(blueprintUsers)
         : withConfiguredAdmin(blueprintUsers, fallback.users[0]);
 
   const normalizedUsers = users.map((user, index) => {
@@ -1101,6 +1117,8 @@ export async function loadBlueprintDocument(document, config, options = {}) {
     baseUrl,
     fetchJson,
     validateImported: strict ? schema.validateImportedDocument : null,
+    // the resolved blueprint no longer shows the references themselves
+    strictReferences: strict,
   });
   // As Omeka-S-Cli, the import-resolved blueprint is validated, schema and
   // cross-references together; each imported file was checked on its own above.
