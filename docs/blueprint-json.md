@@ -45,7 +45,7 @@ The most important top-level properties are:
 | `preferredVersions` | Informational runtime targets | Useful for intent, not a strict installer lockfile |
 | `install` | Install values | `title`, `locale`, `timezone`, and the first administrator in `admin` (`name`, `email`, `password`) |
 | `settings` | Global Omeka settings | Setting id → value, or a list of such maps merged in order; see [Global settings](#global-settings) |
-| `users` | Omeka users to create | Each may carry `settings`; `install.admin` goes first; a user without `password` gets the configured admin password |
+| `users` | Omeka users to create | Each may carry `settings`; `install.admin` goes first; a user without `role` is an `author` and one without `password` gets the configured admin password; when no `install.admin` or `global_admin` user is declared, the configured administrator goes first |
 | `themes` | Themes to install | See [Add-on sources](#add-on-sources) |
 | `modules` | Modules to download, install, or activate | See [Add-on sources](#add-on-sources); a repeated name overrides the earlier entry |
 | `files` | Files placed in the Omeka S installation | See [Files](#files) |

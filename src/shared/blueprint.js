@@ -738,6 +738,16 @@ function withInstallAdmin(users, admin) {
   return [first, ...users.filter((user) => user?.email !== email)];
 }
 
+// The configured administrator first, merged with a blueprint user that has
+// its email (whose own fields win, but not its role).
+function withConfiguredAdmin(users, admin) {
+  const same = users.find((user) => user?.email === admin.email);
+  return [
+    { ...admin, ...same, role: "global_admin" },
+    ...users.filter((user) => user !== same),
+  ];
+}
+
 export function normalizeBlueprint(input, config) {
   const blueprint =
     input && typeof input === "object" && !Array.isArray(input)
@@ -768,20 +778,24 @@ export function normalizeBlueprint(input, config) {
     install.admin,
   );
   // The first user is the administrator the Playground installs and signs in
-  // as. When the blueprint declares none (no install.admin, and only users of
-  // other roles), the configured administrator goes first, as Omeka-S-Cli takes
-  // it from its own input.
-  const declaresAdmin = blueprintUsers.some(
-    (user, index) =>
-      normalizeRole(user?.role, index === 0 ? "global_admin" : "author") ===
-      "global_admin",
-  );
+  // as. A user is an administrator only when its role says so (install.admin
+  // gets global_admin above); a user without role is an author, as in
+  // Omeka-S-Cli. When the blueprint declares no administrator, the configured
+  // one goes first, as Omeka-S-Cli takes it from its own input (merged with a
+  // user that has its email). An earlier-format first user without email still
+  // becomes the configured administrator below.
+  const declaresAdmin =
+    blueprintUsers.length > 0 &&
+    (!blueprintUsers[0]?.email ||
+      blueprintUsers.some(
+        (user) => normalizeRole(user?.role, "") === "global_admin",
+      ));
   const users =
     blueprintUsers.length === 0
       ? fallback.users
       : declaresAdmin
         ? blueprintUsers
-        : [fallback.users[0], ...blueprintUsers];
+        : withConfiguredAdmin(blueprintUsers, fallback.users[0]);
 
   const normalizedUsers = users.map((user, index) => {
     const fallbackUser = index === 0 ? fallback.users[0] : {};
@@ -806,9 +820,12 @@ export function normalizeBlueprint(input, config) {
       username,
       email,
       password,
-      // The role defaults to author, as in Omeka-S-Cli; the first user is the
-      // global administrator the Playground signs in as.
-      role: normalizeRole(user?.role, index === 0 ? "global_admin" : "author"),
+      // The role defaults to author, as in Omeka-S-Cli. Only an earlier-format
+      // first user without email, filled from the configuration, is the admin.
+      role: normalizeRole(
+        user?.role,
+        index === 0 && !user?.email ? "global_admin" : "author",
+      ),
       isActive: user?.isActive !== false,
       settings: normalizeUserSettings(user?.settings),
     };

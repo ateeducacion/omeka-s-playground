@@ -441,8 +441,11 @@ describe("normalizeBlueprint", () => {
       },
       baseConfig,
     );
-    assert.equal(result.users[0].settings.limit_to_granted_sites, true);
-    assert.equal(result.users[0].settings.junk, "");
+    // a user without role is an author; the configured admin goes first
+    const user = result.users.find((entry) => entry.email === "a@b.com");
+    assert.equal(user.role, "author");
+    assert.equal(user.settings.limit_to_granted_sites, true);
+    assert.equal(user.settings.junk, "");
   });
 
   it("defaults user settings to an empty object", () => {

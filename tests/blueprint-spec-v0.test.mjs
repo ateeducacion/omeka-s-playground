@@ -133,6 +133,52 @@ describe("install and x-playground", () => {
     assert.equal(result.login.email, "test@example.com");
   });
 
+  it("makes a first user that only declares its email an author, as Omeka-S-Cli does", () => {
+    const result = normalize({ users: [{ email: "only@example.com" }] });
+    assert.deepEqual(
+      result.users.map((user) => [user.email, user.role]),
+      [
+        ["test@example.com", "global_admin"],
+        ["only@example.com", "author"],
+      ],
+    );
+    assert.equal(result.login.email, "test@example.com");
+  });
+
+  it("merges the configured administrator with a role-less user of the same email", () => {
+    const result = normalize({
+      users: [
+        { email: "test@example.com", username: "Boss", password: "own" },
+        { email: "editor@example.com", role: "editor" },
+      ],
+    });
+    assert.deepEqual(
+      result.users.map((user) => [
+        user.email,
+        user.username,
+        user.role,
+        user.password,
+      ]),
+      [
+        ["test@example.com", "Boss", "global_admin", "own"],
+        ["editor@example.com", "editor@example.com", "editor", "admin"],
+      ],
+    );
+  });
+
+  it("keeps an explicit global_admin anywhere in the list as the declared admin", () => {
+    const result = normalize({
+      users: [
+        { email: "editor@example.com", role: "editor" },
+        { email: "boss@example.com", role: "global_admin" },
+      ],
+    });
+    assert.deepEqual(
+      result.users.map((user) => user.role),
+      ["editor", "global_admin"],
+    );
+  });
+
   it("merges install.admin with a user that has the same email", () => {
     const result = normalize({
       install: { admin: { email: "boss@example.com" } },
