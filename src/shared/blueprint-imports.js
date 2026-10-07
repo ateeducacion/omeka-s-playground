@@ -347,7 +347,11 @@ export async function fetchJsonDocument(url) {
 export function parseJsonc(text) {
   const source = String(text);
   let output = "";
+  // A comma that may be trailing, and the last significant character before
+  // it: a comma right after "{", "[" or another comma follows no value, so it
+  // is kept for JSON.parse() to reject ("{,}" is not JSONC either).
   let pendingComma = -1;
+  let last = "";
   for (let index = 0; index < source.length; index += 1) {
     const char = source[index];
     if (char === '"') {
@@ -363,6 +367,7 @@ export function parseJsonc(text) {
       }
       output += source.slice(start, index + 1);
       pendingComma = -1;
+      last = '"';
     } else if (char === "/" && source[index + 1] === "/") {
       while (index < source.length && source[index] !== "\n") {
         index += 1;
@@ -376,14 +381,17 @@ export function parseJsonc(text) {
       index = end + 1;
       output += " ";
     } else if (char === ",") {
-      pendingComma = output.length;
+      pendingComma = ["{", "[", ","].includes(last) ? -1 : output.length;
       output += char;
+      last = char;
     } else if ((char === "}" || char === "]") && pendingComma !== -1) {
       output = `${output.slice(0, pendingComma)} ${output.slice(pendingComma + 1)}${char}`;
       pendingComma = -1;
+      last = char;
     } else {
       if (!/\s/u.test(char)) {
         pendingComma = -1;
+        last = char;
       }
       output += char;
     }

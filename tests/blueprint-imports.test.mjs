@@ -568,7 +568,18 @@ describe("JSONC", () => {
   });
 
   it("still rejects what is not JSON", () => {
-    for (const text of ["{ a: 1 }", "[1,,2]", "/* open", "[1] x"]) {
+    for (const text of [
+      "{ a: 1 }",
+      "[1,,2]",
+      "/* open",
+      "[1] x",
+      // a trailing comma needs a value before it
+      "{,}",
+      "[,]",
+      "[ /* c */ , ]",
+      "[1,,]",
+      '{"a": {,}}',
+    ]) {
       assert.throws(() => parseJsonc(text), SyntaxError, text);
     }
   });
