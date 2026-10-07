@@ -192,6 +192,33 @@ describe("$import", () => {
     }
   });
 
+  it("rejects absolute paths and file: URLs in sources of a blueprint without URL too", async () => {
+    for (const blueprint of [
+      { files: [{ source: "/etc/passwd", destination: "x" }] },
+      { files: [{ source: "file:///etc/passwd", destination: "x" }] },
+      { vocabularies: [vocabulary({ source: "C:\\rdf\\v.ttl" })] },
+      { resourceTemplates: [{ source: "/templates/t.json" }] },
+      { modules: [{ name: "M", source: "/tmp/M.zip" }] },
+    ]) {
+      await assert.rejects(
+        loadBlueprintDocument(blueprint, config, {
+          fetchJson: fakeFetch({}).fetchJson,
+        }),
+        (error) =>
+          error instanceof BlueprintImportError &&
+          /is an absolute path or a file: URL/u.test(error.message),
+        JSON.stringify(blueprint),
+      );
+    }
+    // relative sources without a base URL keep resolving against the page
+    const result = await loadBlueprintDocument(
+      { files: [{ source: "./a.php", destination: "a.php" }] },
+      config,
+      { fetchJson: fakeFetch({}).fetchJson },
+    );
+    assert.equal(result.files[0].source, "./a.php");
+  });
+
   it("resolves a local ZIP of a module or theme against its file, not URLs or gh:", async () => {
     const result = await load(
       {
@@ -581,6 +608,30 @@ describe("sites (Omeka-S-Cli 0.18)", () => {
         ["main", "Main (renamed)", false],
         ["", "Other", true],
       ],
+    );
+  });
+
+  it("resolves a nested $import inside an imported sites document", async () => {
+    const result = await load(shared({ sites: [{ $import: "sites.json" }] }), {
+      "https://example.org/repo/sites.json": [
+        { $import: "more/sites.json" },
+        { title: "A", slug: "a" },
+      ],
+      "https://example.org/repo/more/sites.json": { title: "B", slug: "b" },
+    });
+    assert.deepEqual(
+      result.sites.map((site) => site.slug),
+      ["b", "a"],
+    );
+  });
+
+  it("still rejects an invalid site inside a nested sites document", async () => {
+    await assert.rejects(
+      load(shared({ sites: [{ $import: "sites.json" }] }), {
+        "https://example.org/repo/sites.json": [{ $import: "more.json" }],
+        "https://example.org/repo/more.json": [{ slug: "no-title" }],
+      }),
+      /Imported sites document https:\/\/example\.org\/repo\/more\.json does not match/u,
     );
   });
 

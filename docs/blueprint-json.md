@@ -317,7 +317,7 @@ Any entry of `modules`, `themes`, `files`, `vocabularies`, `resourceTemplates`, 
   (`Circular $import: a.json -> b.json -> a.json`); importing the same file twice from different places is fine. Nesting is limited to 16 levels.
 - The reference is an `http(s)` URL, a path relative to the file that contains it, or a GitHub/GitLab file reference as Omeka-S-Cli accepts them:
   `gh:owner/repo[@ref]:path`, `gl:group/repo[@ref]:path`, or a `github.com/…/blob/…` or `…/-/blob/…` page URL (turned into the raw file URL).
-- Absolute paths (`/…`, `\\…`, `C:\…`) and `file:` URLs are rejected, as in Omeka-S-Cli, and so are other schemes (`data:`, …).
+- Absolute paths (`/…`, `\\…`, `C:\…`) and `file:` URLs are rejected, as in Omeka-S-Cli, in `$import` and in the `source` of `files`, `vocabularies`, `resourceTemplates` and add-on entries, whether or not the blueprint has a URL. Other schemes (`data:`, …) are rejected too.
 - Imported files are fetched by the browser, like `?blueprint-url=` itself, so their host must allow CORS (GitHub raw files do).
 - A failed download, a file that is not JSON, or a file that is not a list or an object stops the boot with the file's URL. When the blueprint declares the shared `$schema`, every imported file is also validated against the schema of its list.
 - `sites` takes `$import` as in Omeka-S-Cli 0.18, although the shared `v0` schema does not list it yet: imported sites are checked against the schema's site definition. An `$import` anywhere else (such as a settings map) is rejected instead of being ignored.

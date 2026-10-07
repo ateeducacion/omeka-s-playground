@@ -59,9 +59,10 @@ export function validateImportedDocument(key, document) {
     const validate = ajv.getSchema(
       `${SHARED_BLUEPRINT_SCHEMA_ID}#/$defs/${entryDef}`,
     );
+    // A nested `$import` is checked when its own document is imported.
     return (Array.isArray(document) ? document : [document]).flatMap(
       (entry, index) =>
-        validate(entry)
+        isReference(entry) || validate(entry)
           ? []
           : formatErrors(validate).map((error) => `/${index}${error}`),
     );
@@ -73,6 +74,14 @@ export function validateImportedDocument(key, document) {
   const validate = ajv.getSchema(`${SHARED_BLUEPRINT_SCHEMA_ID}#/$defs/${def}`);
   return validate(document) ? [] : formatErrors(validate);
 }
+
+const isReference = (entry) =>
+  Boolean(entry) &&
+  typeof entry === "object" &&
+  !Array.isArray(entry) &&
+  Object.keys(entry).length === 1 &&
+  typeof entry.$import === "string" &&
+  entry.$import.length > 0;
 
 const lower = (value) => String(value ?? "").toLowerCase();
 

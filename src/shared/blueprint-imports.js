@@ -260,10 +260,19 @@ async function importDocument(entry, key, documentUrl, context) {
 function resolveAssetField(entry, key, documentUrl) {
   const field = ASSET_FIELDS[key];
   const value = isPlainObject(entry) ? entry[field] : undefined;
-  if (!field || !documentUrl || typeof value !== "string" || !value.trim()) {
+  if (!field || typeof value !== "string" || !value.trim()) {
     return entry;
   }
   if (ADDON_KEYS.includes(key) && !isAddonPath(value)) {
+    return entry;
+  }
+  // Rejected with or without a base URL, as Omeka-S-Cli does.
+  if (ABSOLUTE_PATH.test(value.trim())) {
+    throw new BlueprintImportError(
+      `Blueprint ${key} ${field}${documentUrl ? ` in ${documentUrl}` : ""}: "${value.trim()}" is an absolute path or a file: URL; use a path relative to the blueprint or a URL.`,
+    );
+  }
+  if (!documentUrl) {
     return entry;
   }
   try {
