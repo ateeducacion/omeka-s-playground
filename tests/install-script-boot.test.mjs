@@ -52,19 +52,21 @@ describe("playground-install.php boot preamble", () => {
 });
 
 describe("playground-install.php blueprint settings", () => {
-  it("applies global settings after modules are installed, before users", () => {
+  it("applies global settings last, after modules, users and sites (as Omeka-S-Cli)", () => {
     const moduleContinue = bootstrapSrc.indexOf(
       'echo "omeka-playground-bootstrap-continue',
     );
     const settingsLoop = bootstrapSrc.indexOf("$blueprint['settings']");
     const usersLoop = bootstrapSrc.indexOf("$upsertUser($userSpec)");
+    const sitesLoop = bootstrapSrc.indexOf("foreach ($siteSpecs as $siteSpec)");
     assert.ok(
       settingsLoop !== -1,
       "install stub must apply blueprint settings",
     );
+    assert.ok(moduleContinue < usersLoop && usersLoop < sitesLoop);
     assert.ok(
-      moduleContinue < settingsLoop && settingsLoop < usersLoop,
-      "settings must be applied after module installs so they override module defaults",
+      sitesLoop < settingsLoop,
+      "settings come after sites, so default_site and module defaults cannot override them",
     );
   });
 });
@@ -80,6 +82,20 @@ describe("playground-install.php vocabularies and resource templates", () => {
     assert.ok(vocabularies !== -1 && templates !== -1);
     assert.ok(moduleContinue < vocabularies);
     assert.ok(vocabularies < templates && templates < settings);
+  });
+
+  it("leaves an existing site as it is and only adds missing permissions", () => {
+    assert.ok(
+      bootstrapSrc.includes(
+        "$siteRepo->findOneBy($slug !== '' ? ['slug' => $slug] : ['title' => $title])",
+      ),
+    );
+    assert.ok(
+      !bootstrapSrc.includes(
+        "$apiManager->update('sites', $site->getId(), $payload",
+      ),
+    );
+    assert.ok(bootstrapSrc.includes("'o:assign_new_items' => true"));
   });
 
   it("finds existing ones by namespace URI and label, not by id", () => {

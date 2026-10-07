@@ -74,6 +74,7 @@ Other consumers of the format ignore this block.
 `modules[].source` and `themes[].source` are a single string:
 
 - a ZIP URL, used as is (it already pins a release, so it wins over `version`);
+- a local ZIP release: a path relative to the file that declares the entry (see [Relative paths](#relative-paths)), as in Omeka-S-Cli;
 - a GitHub repository, as `gh:owner/repo` or `https://github.com/owner/repo(.git)`: the archive of the `#ref` in the source, else of `version` (a tag or branch), else of the default branch;
 - nothing: the add-on shipped with the core is used (e.g. the `default` theme); otherwise the name is looked up in the omeka.org catalog (`s_module.json` / `s_theme.json`), at `version` or the latest release.
 
@@ -208,14 +209,23 @@ items to individual sites.
 
 - `sites[]` accepts `title`, `slug`, `summary`, `theme`, `isPublic`,
   `setAsDefault` and `permissions`.
-- `sites[].permissions[]` grants an existing blueprint **user** (by email) a
-  site role of `viewer`, `editor`, or `admin`.
+- `slug` may only contain letters, digits, `_` and `-`, and is kept as written.
+  Without one, Omeka S derives it from the title, and the title identifies the
+  site on later boots.
+- A site that already exists (same slug, else same title) is left as it is, so
+  changes made in the admin survive a reload. New sites add newly created items
+  automatically, as in the Omeka admin, and the administrator who creates them
+  is their owner and a site admin.
+- `sites[].permissions[]` grants a blueprint **user** (by email) a site role of
+  `viewer` (the default), `editor`, or `admin`. A missing permission is added on
+  every boot; a user who already has another role keeps it (with a warning); no
+  permission is removed.
 - Exactly one site is the default. If no entry sets `setAsDefault: true`, the
-  first one is used.
+  first one is used. The `default_site` setting is written when the site is created.
 - `users[].settings` is an object written verbatim to each user's settings
   (`user_setting`), e.g. `limit_to_granted_sites`.
-- `items[].sites` lists the site slugs (titles are also accepted and slugified)
-  an item is assigned to. Without it, items go to the default site.
+- `items[].sites` lists the slugs or titles (case-insensitive) of the sites an
+  item is assigned to. Without it, items go to the default site.
 
 ```json
 {
@@ -293,7 +303,7 @@ Blueprints and imported files may contain comments (`//` and `/* */`) and traili
 ## Imports (`$import`)
 
 Any entry of `modules`, `themes`, `files`, `vocabularies`, `resourceTemplates`, `users`,
-`itemSets`, `items` and the list form of `settings` can be a reference to another JSON file:
+`sites`, `itemSets`, `items` and the list form of `settings` can be a reference to another JSON file:
 
 ```json
 {
@@ -306,10 +316,11 @@ Any entry of `modules`, `themes`, `files`, `vocabularies`, `resourceTemplates`, 
 - An imported file can import further files. A cycle stops the boot with the chain of files
   (`Circular $import: a.json -> b.json -> a.json`); importing the same file twice from different places is fine. Nesting is limited to 16 levels.
 - The reference is an `http(s)` URL, a path relative to the file that contains it, or a GitHub/GitLab file reference as Omeka-S-Cli accepts them:
-  `gh:owner/repo[@ref]:path`, `gl:group/repo[@ref]:path`, or a `github.com/…/blob/…` or `…/-/blob/…` page URL (turned into the raw file URL). Other schemes (`file:`, `data:`, …) are rejected.
+  `gh:owner/repo[@ref]:path`, `gl:group/repo[@ref]:path`, or a `github.com/…/blob/…` or `…/-/blob/…` page URL (turned into the raw file URL).
+- Absolute paths (`/…`, `\\…`, `C:\…`) and `file:` URLs are rejected, as in Omeka-S-Cli, and so are other schemes (`data:`, …).
 - Imported files are fetched by the browser, like `?blueprint-url=` itself, so their host must allow CORS (GitHub raw files do).
 - A failed download, a file that is not JSON, or a file that is not a list or an object stops the boot with the file's URL. When the blueprint declares the shared `$schema`, every imported file is also validated against the schema of its list.
-- `sites` does not take `$import` in the shared schema; such an entry is rejected instead of being ignored.
+- `sites` takes `$import` as in Omeka-S-Cli 0.18, although the shared `v0` schema does not list it yet: imported sites are checked against the schema's site definition. An `$import` anywhere else (such as a settings map) is rejected instead of being ignored.
 
 ### Relative paths
 
@@ -320,6 +331,7 @@ Relative paths resolve against the file that contains them (RFC 3986), not again
 | `$import` in the blueprint | the blueprint URL |
 | `$import` in an imported file | that imported file |
 | `files[].source`, `vocabularies[].source`, `resourceTemplates[].source` | the file that declares the entry |
+| `modules[].source`, `themes[].source` given as a path (a local ZIP) | the file that declares the entry |
 
 How the blueprint arrives decides whether it has a URL:
 
@@ -394,39 +406,45 @@ On every boot, after Omeka S is installed:
 1. Modules and themes are downloaded; modules are installed and activated (with a fresh PHP boot after each module, as module activation requires).
 2. `files` are placed.
 3. `vocabularies`, then `resourceTemplates`, once every module is active (so their data types are registered) and before anything that could use their properties.
-4. `settings`, `users` and their settings, `sites` and permissions.
-5. `itemSets` and `items`, only on the first boot of a scope.
+4. `users` and their settings, then `sites` and their permissions.
+5. `settings`, last, so neither a module nor the sites (`default_site`) override them. This is Omeka-S-Cli's order.
+6. `itemSets` and `items`, only on the first boot of a scope.
 
-Steps 1 to 4 run on every boot and find what already exists, so a reload neither duplicates nor resets it. Content (step 5) is seeded once per scope, so deleted or edited demo items stay as the user left them. Reset Playground, `?clean=1` or another blueprint starts again from a clean installation.
+Steps 1 to 5 run on every boot and find what already exists, so a reload neither duplicates nor resets it. Content (step 6) is seeded once per scope, so deleted or edited demo items stay as the user left them. Reset Playground, `?clean=1` or another blueprint starts again from a clean installation.
 
-## Entry identity (last one wins)
+## Entry identity (duplicates)
 
-When a list (after imports) holds two entries for the same thing, the later one replaces the earlier one entirely (no field merge) and takes the later position, and a warning is logged when they differ. The identity of an entry, compared without case:
+When a list (after imports) holds two entries for the same thing, they collapse into the **first** one: the later entry is **shallow-merged** into it (each field it gives replaces the earlier value as a whole, the others are kept), and the entry keeps its first position, so module install order does not change. A warning is logged when the later entry changes something. The identity of an entry, as written and compared without case:
 
 | List | Identity |
 | --- | --- |
-| `modules`, `themes` | `name` |
+| `modules`, `themes` | `name` (or the name string) |
 | `files` | `destination` |
 | `vocabularies` | `namespaceUri` |
 | `resourceTemplates` | `label`, or `source` without a label |
 | `users` | `email` |
-| `sites` | `slug` (from the title when there is none) |
+| `sites` | `slug`, or `title` without a slug |
 | `itemSets`, `items` | `title` |
 
-The shared specification has not settled these rules yet
-([omeka-s-contrib/omeka-s-blueprints#10](https://github.com/omeka-s-contrib/omeka-s-blueprints/issues/10)):
-which field identifies an entry, whether an override keeps the earlier position, and whether it merges fields.
-The Playground follows Omeka-S-Cli, except for vocabularies, which Omeka-S-Cli identifies by `prefix`; the Playground uses the
-namespace URI, the identity Omeka S enforces and the one both consumers use to find an existing vocabulary.
-The table lives in `ENTRY_IDENTITY` (`src/shared/blueprint.js`) so it can follow the specification.
+```json
+"modules": [
+  { "$import": "./modules.base.json" },
+  { "name": "Common", "version": "3.4.72" }
+]
+```
+
+Here `Common` keeps the place and the `state` the imported file gave it, and only its version changes.
+
+These rules are what Omeka-S-Cli 0.18 implements and what [omeka-s-contrib/omeka-s-blueprints#10](https://github.com/omeka-s-contrib/omeka-s-blueprints/issues/10) proposes. The published `v0` specification only says that the later entry applies, so they may still change; the table lives in `ENTRY_IDENTITY` (`src/shared/blueprint.js`).
 
 ## Schema validation
 
 The shell validates a blueprint against a local copy of the shared `v0` schema before booting it, so no schema is fetched at boot:
 
-- A blueprint whose `$schema` is the shared `v0` schema (or a `v0.x.y` release) must match it: any error stops the boot as a `BlueprintSchemaError` listing the failing paths, and every `$import`ed file is checked against the schema of its list.
+- As in Omeka-S-Cli, the blueprint is validated once its imports are resolved, together with the cross-references a schema cannot express: an item set named by an item must be declared, a site slug may only contain letters, digits, `_` and `-`, a site theme must be declared in `themes` (`default` always is), and a site permission must name a user of `users` or `install.admin`.
+- A blueprint whose `$schema` is the shared `v0` schema (or a `v0.x.y` release) must pass: any error stops the boot as a `BlueprintSchemaError` listing them, and every `$import`ed file is also checked on its own against the schema of its list, with its URL in the message.
 - Other blueprints (the [legacy format](#legacy-format), or no `$schema`) only get a console warning, so the legacy keys keep working.
-- The editor shows the same schema errors while you type.
+- The editor shows the same errors while you type (the cross-references only when the blueprint has no `$import` to fetch).
 - Errors that the schema cannot see (a download that fails, a cycle, a relative import without a base URL) are reported as `BlueprintImportError`; errors while provisioning Omeka S (an RDF file that does not parse, a template that needs a missing vocabulary) are reported by the runtime with the blueprint entry. Each is reported once, separately.
 
 `npm run build-worker` bundles the validator (Ajv) into `dist/blueprint-schema.bundle.js`. To refresh the local copy after a new `v0.x.y` release, download the published `schema/v0/blueprint-schema.json` over `assets/blueprints/shared/v0/blueprint-schema.json`.
@@ -439,27 +457,27 @@ What the Playground does with each top-level key of the shared format (`v0`):
 | --- | --- | --- |
 | `$schema` | Supported | Selects strict validation for the shared schema |
 | `meta`, `preferredVersions` | Supported | `preferredVersions` picks the runtime when the URL does not |
-| `install` | Supported | `install.admin` is the first user and the autologin account |
-| `modules`, `themes` | Supported | ZIP, GitHub and omeka.org catalog sources; other git hosts and schemes are rejected |
+| `install` | Supported | `install.admin` is the first user and the autologin account; without one, the configured administrator is |
+| `modules`, `themes` | Supported | ZIP URL, local ZIP, GitHub and omeka.org catalog sources; other git hosts and schemes are rejected |
 | `files` | Supported | |
 | `vocabularies` | Supported | All fields; see [Vocabularies](#vocabularies) |
 | `resourceTemplates` | Supported | All fields; see [Resource templates](#resource-templates) |
 | `settings` | Supported | Map or list, with imports |
-| `users` | Supported | A user without `password` gets the configured password |
-| `sites` | Supported | No `$import`, as in the shared schema |
+| `users` | Supported | Role `author` and display name = email by default, as in Omeka-S-Cli; a user without `password` gets the configured password |
+| `sites` | Supported | With `$import`, as Omeka-S-Cli does |
 | `itemSets`, `items` | Supported | Seeded once per scope; media of type `url` |
-| `$import` | Supported | Every list the schema allows; see [Imports](#imports-import) |
+| `$import` | Supported | Every list the schema allows, and `sites`; see [Imports](#imports-import) |
 | `x-playground` | Supported | Playground settings |
 | Other `x-*` keys | Ignored | As the specification requires |
-| Schema validation | Supported | Strict when `$schema` is the shared schema |
+| Schema validation | Supported | Schema and cross-references, strict when `$schema` is the shared schema |
 
-Differences from Omeka-S-Cli worth knowing when one blueprint serves both:
+Since Omeka-S-Cli 0.18 the two read a blueprint the same way: JSONC, `$import` (in `sites` too), relative references and the rejection of absolute paths, duplicates merged into the first entry, vocabularies identified by namespace URI, local ZIP add-ons, and validation with cross-references. Differences that remain when one blueprint serves both:
 
-- Omeka-S-Cli accepts local filesystem paths; the Playground only URLs and paths relative to a blueprint URL.
-- Omeka-S-Cli does not create `itemSets` or `items`, and creates `sites` only after release 0.17.1. The Docker image runs it with `--skip core`, so `install` comes from its environment variables there.
-- Omeka-S-Cli applies `settings` last (after users and sites); the Playground applies them before users. Both apply them after every module.
-- Omeka-S-Cli identifies vocabularies by `prefix`, the Playground by `namespaceUri` (see above).
-- Omeka-S-Cli matches `customvocab:` data types of a template by the custom vocabulary label; the Playground needs the same data type name to be registered (or `ignoreDeps`).
+- Omeka-S-Cli reads local files and keeps relative paths inside the blueprint's directory (`--root`); the Playground only reads URLs, so a relative path can go anywhere on the same host.
+- Omeka-S-Cli does not create `itemSets` or `items`. The Docker image runs it with `--skip core`, so `install` comes from its environment variables there.
+- Existing users: Omeka-S-Cli leaves them as they are; the Playground updates them on every boot (role, name, password), so autologin keeps working with the blueprint's credentials.
+- Without `setAsDefault`, the Playground makes the first site the default; Omeka-S-Cli sets no default site.
+- Omeka-S-Cli changes existing vocabularies, templates and sites, and site roles, with `--update`; the Playground never does.
 - Omeka-S-Cli requires the Common module for resource templates; the Playground uses the core import code.
 
 ## Project-specific rules and conventions
@@ -472,11 +490,12 @@ These conventions come from the current implementation, not generic JSON style a
 - Remote addon URLs are absolutized against the current page URL.
 - `modules[].state` supports `download` (place files only), `install`, and `activate` (default).
 - `modules[].version` and `themes[].version` select the omeka.org release, or the tag/branch of a GitHub source.
-- Repeated entries follow [Entry identity](#entry-identity-last-one-wins): the last occurrence wins and takes its position in the list.
+- Repeated entries follow [Entry identity](#entry-identity-duplicates): they are merged into the first occurrence, which keeps its position.
 - `items[].media[].type` currently supports `url`.
 - Exactly one site is forced to be the default (the first one if none is flagged).
 - `sites[].permissions[].role` is clamped to one of `viewer`, `editor`, `admin` (defaults to `viewer`); a permission whose `user` email matches no created user is skipped with a warning.
-- `items[].sites` entries are slugified to match site slugs; items with no match fall back to the default site.
+- A site slug that Omeka S would not accept is turned into a valid one for blueprints in the earlier format; the shared format reports it as an error.
+- `items[].sites` entries match a site slug or title, without case; items with no match fall back to the default site.
 - `users[].settings` keys are written verbatim to `user_setting`; values are stored as-is.
 
 If you change the semantics of any of those rules, update both the schema and the documentation together.

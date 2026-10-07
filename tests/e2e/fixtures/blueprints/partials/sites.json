@@ -1,0 +1,8 @@
+[
+  {
+    "title": "Draft parity site",
+    "slug": "parity",
+    "setAsDefault": true,
+    "permissions": [{ "user": "editor@example.com", "role": "editor" }]
+  }
+]

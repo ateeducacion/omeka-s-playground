@@ -245,3 +245,47 @@ test("reads JSONC blueprints and lets a repeated site slug win", async ({
     remote.locator('input[name$="pagination_per_page"]'),
   ).toHaveValue("23");
 });
+
+test("follows Omeka-S-Cli 0.18: local module ZIP, merged duplicates, imported sites", async ({
+  page,
+}) => {
+  await page.goto(`/?blueprint-url=${FIXTURES}/cli-parity.blueprint.json`);
+  await waitForRuntimeReady(page);
+  const remote = remoteFrame(page);
+
+  // the local ZIP, resolved against the blueprint; the later entry's state wins
+  await expect(remote.locator("body")).toContainText("Insert Ignore Probe");
+  // (the only module, so its Deactivate button means it is active)
+  await expect(remote.locator("body")).toContainText("Deactivate");
+
+  // the imported site, merged with the later entry of the same slug
+  await open(page, "/admin/site");
+  await expect(remote.getByRole("link", { name: "Parity site" })).toHaveCount(
+    1,
+  );
+  await expect(
+    remote.getByRole("link", { name: "Draft parity site" }),
+  ).toHaveCount(0);
+
+  // the creating administrator stays site admin; the editor is added
+  await open(page, "/admin/site/s/parity/users");
+  await expect(remote.locator("body")).toContainText("admin@example.com");
+  await expect(remote.locator("body")).toContainText("Editor");
+
+  // settings are applied last
+  await open(page, "/admin/setting");
+  await expect(
+    remote.locator('input[name$="pagination_per_page"]'),
+  ).toHaveValue("31");
+
+  await page.waitForTimeout(2500);
+  await page.reload({ waitUntil: "commit" });
+  await waitForRuntimeReady(page);
+  await expect(page.locator("#log-panel")).toContainText(
+    'Blueprint site "Parity site" already exists.',
+  );
+  await open(page, "/admin/site");
+  await expect(remote.getByRole("link", { name: "Parity site" })).toHaveCount(
+    1,
+  );
+});

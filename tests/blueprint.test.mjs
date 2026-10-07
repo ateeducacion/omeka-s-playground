@@ -169,7 +169,7 @@ describe("normalizeBlueprint", () => {
     assert.equal(result.modules[0].assets[0].destination, "dist/static");
   });
 
-  it("keeps the last occurrence of a duplicate module, in its position", (t) => {
+  it("merges a duplicate module into the first occurrence, in its position", (t) => {
     const warn = t.mock.method(console, "warn", () => {});
     const result = normalizeBlueprint(
       {
@@ -181,17 +181,18 @@ describe("normalizeBlueprint", () => {
       },
       baseConfig,
     );
+    // shallow merge: the later fields win, the first position is kept
     assert.deepEqual(
       result.modules.map((module) => [module.name, module.state]),
       [
-        ["Bar", "activate"],
         ["foo", "activate"],
+        ["Bar", "activate"],
       ],
     );
     assert.equal(warn.mock.callCount(), 1);
     assert.match(
       warn.mock.calls[0].arguments[0],
-      /"foo" is declared more than once/u,
+      /"foo" is declared more than once; the later definition updates the earlier one/u,
     );
   });
 
@@ -322,7 +323,8 @@ describe("normalizeBlueprint", () => {
       baseConfig,
     );
     assert.equal(result.site.title, "My Site");
-    assert.equal(result.site.slug, "my-site");
+    // without a slug, Omeka S derives it from the title
+    assert.equal(result.site.slug, "");
     assert.equal(result.site.theme, "classic");
     assert.equal(result.site.isPublic, true);
   });
@@ -339,10 +341,10 @@ describe("normalizeBlueprint", () => {
       baseConfig,
     );
     assert.equal(result.sites.length, 1);
-    assert.equal(result.sites[0].slug, "my-site");
+    assert.equal(result.sites[0].title, "My Site");
     // Single-site mode keeps the historical setAsDefault default of true.
     assert.equal(result.sites[0].setAsDefault, true);
-    assert.equal(result.site.slug, "my-site");
+    assert.equal(result.site.title, "My Site");
   });
 
   it("normalizes a sites array and picks the default", () => {
@@ -369,7 +371,7 @@ describe("normalizeBlueprint", () => {
     );
     assert.equal(result.sites[0].setAsDefault, true);
     assert.equal(result.sites[1].setAsDefault, false);
-    assert.equal(result.site.slug, "site-a");
+    assert.equal(result.site.title, "Site A");
   });
 
   it("prefers the sites array over the singular site", () => {
@@ -384,7 +386,7 @@ describe("normalizeBlueprint", () => {
     assert.equal(result.site.slug, "new-site");
   });
 
-  it("lets a repeated site slug replace the earlier site (last one wins)", () => {
+  it("merges a repeated site slug into the first site", () => {
     const result = normalizeBlueprint(
       {
         sites: [
@@ -398,8 +400,8 @@ describe("normalizeBlueprint", () => {
     assert.deepEqual(
       result.sites.map((site) => [site.slug, site.title]),
       [
-        ["other", "C"],
         ["dup", "B"],
+        ["other", "C"],
       ],
     );
   });
@@ -451,14 +453,30 @@ describe("normalizeBlueprint", () => {
     assert.deepEqual(result.users[0].settings, {});
   });
 
-  it("normalizes item site assignments to slugs", () => {
+  it("keeps item site assignments (slugs or titles) as written", () => {
     const result = normalizeBlueprint(
       {
-        items: [{ title: "Item 1", sites: ["Site A", "site-b", ""] }],
+        items: [{ title: "Item 1", sites: ["Site A", " site-b ", ""] }],
       },
       baseConfig,
     );
-    assert.deepEqual(result.items[0].sites, ["site-a", "site-b"]);
+    assert.deepEqual(result.items[0].sites, ["Site A", "site-b"]);
+  });
+
+  it("keeps a valid site slug as written and fixes a legacy invalid one", () => {
+    const result = normalizeBlueprint(
+      {
+        sites: [
+          { title: "A", slug: "My_Site" },
+          { title: "B", slug: "my site!" },
+        ],
+      },
+      baseConfig,
+    );
+    assert.deepEqual(
+      result.sites.map((site) => site.slug),
+      ["My_Site", "my-site"],
+    );
   });
 });
 

@@ -214,6 +214,15 @@ function normalizeSitePermissions(input) {
     .filter(Boolean);
 }
 
+// A slug is kept as written when Omeka S accepts it (letters, digits, _ and
+// -). Without one, Omeka S derives it from the title, which then identifies
+// the site. An invalid slug of the earlier Playground format is still turned
+// into a valid one; the shared format reports it as an error instead.
+function normalizeSiteSlug(slug) {
+  const text = String(slug ?? "").trim();
+  return /^[A-Za-z0-9_-]+$/u.test(text) ? text : slugify(text, "");
+}
+
 function normalizeSiteSpec(site, fallbackTitle) {
   if (!site || typeof site !== "object" || Array.isArray(site)) {
     return null;
@@ -226,7 +235,7 @@ function normalizeSiteSpec(site, fallbackTitle) {
 
   return {
     title,
-    slug: slugify(site.slug || site.title || fallbackTitle),
+    slug: normalizeSiteSlug(site.slug),
     summary: typeof site.summary === "string" ? site.summary : "",
     theme: String(site.theme || "default").trim(),
     isPublic: site.isPublic !== false,
@@ -297,9 +306,6 @@ function normalizeSites(blueprint, fallbackTitle) {
       sites = [single];
     }
   }
-
-  // A repeated slug follows "last one wins", as the other lists do.
-  sites = dedupeLastWins(sites, "sites");
 
   // Guarantee exactly one default site so items without an explicit site land
   // somewhere predictable.
@@ -416,56 +422,68 @@ function normalizeAddonAssets(input) {
     .filter(Boolean);
 }
 
-// What identifies an entry of each list for "last one wins" (shared spec): a
-// later entry with the same identity (case-insensitive) replaces the earlier
-// one and takes its position at the end, as in Omeka-S-Cli. Which field is the
-// identity, and replace vs. merge, are still open in the shared spec
-// (omeka-s-contrib/omeka-s-blueprints#10); vocabularies use namespaceUri, the
-// identity Omeka S itself enforces, where Omeka-S-Cli currently uses prefix.
+// What identifies an entry of each list, read on the entry as written. Two
+// entries with the same identity (case-insensitive) collapse into the first
+// one: the later entry is shallow-merged into it (its fields replace the
+// earlier ones) and the entry keeps its first position, so module order is
+// stable. This is what Omeka-S-Cli 0.18 does and what
+// omeka-s-contrib/omeka-s-blueprints#10 proposes; the shared spec itself only
+// says "the later one applies" so far.
 export const ENTRY_IDENTITY = {
-  modules: (entry) => entry.name,
-  themes: (entry) => entry.name,
-  files: (entry) => entry.destination,
-  vocabularies: (entry) => entry.namespaceUri,
-  resourceTemplates: (entry) => entry.label || entry.source,
+  modules: (entry) => (typeof entry === "string" ? entry : entry?.name),
+  themes: (entry) => (typeof entry === "string" ? entry : entry?.name),
+  files: (entry) => entry?.destination,
+  vocabularies: (entry) => entry?.namespaceUri,
+  resourceTemplates: (entry) => entry?.label || entry?.source,
   users: (entry) => entry?.email,
-  sites: (entry) => entry.slug,
-  itemSets: (entry) => entry.title,
-  items: (entry) => entry.title,
+  sites: (entry) => entry?.slug || entry?.title,
+  itemSets: (entry) => entry?.title,
+  items: (entry) => entry?.title,
 };
 
-// A warning is logged only when the override changes the entry.
-function dedupeLastWins(entries, key) {
-  const byId = new Map();
-  const loose = [];
+// A warning is logged only when the later entry changes the earlier one.
+function mergeDuplicates(entries, key) {
+  const result = [];
+  const positions = new Map();
   for (const entry of entries) {
-    const id = String(ENTRY_IDENTITY[key](entry) ?? "")
-      .trim()
-      .toLowerCase();
+    const identity = ENTRY_IDENTITY[key](entry);
+    const id =
+      typeof identity === "string" ? identity.trim().toLowerCase() : "";
     if (!id) {
-      loose.push(entry);
+      result.push(entry);
       continue;
     }
-    const previous = byId.get(id);
-    if (previous && JSON.stringify(previous) !== JSON.stringify(entry)) {
+    if (!positions.has(id)) {
+      positions.set(id, result.length);
+      result.push(entry);
+      continue;
+    }
+    const position = positions.get(id);
+    const [earlier, merged] = shallowMerge(result[position], entry);
+    if (JSON.stringify(earlier) !== JSON.stringify(merged)) {
       console.warn(
-        `[blueprint] ${key} "${id}" is declared more than once; the later definition overrides the earlier one.`,
+        `[blueprint] ${key} "${identity.trim()}" is declared more than once; the later definition updates the earlier one.`,
       );
     }
-    byId.delete(id);
-    byId.set(id, entry);
+    result[position] = merged;
   }
-  return [...byId.values(), ...loose];
+  return result;
+}
+
+// A bare add-on name becomes { name } when the other entry is an object.
+function shallowMerge(earlier, later) {
+  if (!isPlainObject(earlier) && !isPlainObject(later)) {
+    return [earlier, later];
+  }
+  const asObject = (entry) => (isPlainObject(entry) ? entry : { name: entry });
+  return [asObject(earlier), { ...asObject(earlier), ...asObject(later) }];
 }
 
 function normalizeAddonCollection(input, kind) {
   if (!Array.isArray(input)) {
     return [];
   }
-  return dedupeLastWins(
-    input.map((entry) => normalizeAddonEntry(entry, kind)).filter(Boolean),
-    `${kind}s`,
-  );
+  return input.map((entry) => normalizeAddonEntry(entry, kind)).filter(Boolean);
 }
 
 function normalizeAddonEntry(entry, kind) {
@@ -726,6 +744,11 @@ export function normalizeBlueprint(input, config) {
       ? structuredClone(input)
       : {};
   rejectUnresolvedImports(blueprint);
+  for (const key of Object.keys(ENTRY_IDENTITY)) {
+    if (Array.isArray(blueprint[key])) {
+      blueprint[key] = mergeDuplicates(blueprint[key], key);
+    }
+  }
   const fallback = buildDefaultBlueprint(config);
   // Shared format first, then the legacy Playground keys.
   const install = isPlainObject(blueprint.install) ? blueprint.install : {};
@@ -741,22 +764,31 @@ export function normalizeBlueprint(input, config) {
       ? blueprint.login
       : install.admin || {};
   const blueprintUsers = withInstallAdmin(
-    Array.isArray(blueprint.users)
-      ? dedupeLastWins(blueprint.users, "users")
-      : [],
+    Array.isArray(blueprint.users) ? blueprint.users : [],
     install.admin,
   );
-  const users = blueprintUsers.length > 0 ? blueprintUsers : fallback.users;
+  // The first user is the administrator the Playground installs and signs in
+  // as. When the blueprint declares none (no install.admin, and only users of
+  // other roles), the configured administrator goes first, as Omeka-S-Cli takes
+  // it from its own input.
+  const declaresAdmin = blueprintUsers.some(
+    (user, index) =>
+      normalizeRole(user?.role, index === 0 ? "global_admin" : "author") ===
+      "global_admin",
+  );
+  const users =
+    blueprintUsers.length === 0
+      ? fallback.users
+      : declaresAdmin
+        ? blueprintUsers
+        : [fallback.users[0], ...blueprintUsers];
 
   const normalizedUsers = users.map((user, index) => {
     const fallbackUser = index === 0 ? fallback.users[0] : {};
     const email = String(user?.email || fallbackUser.email || "").trim();
+    // As Omeka-S-Cli: the display name defaults to the email.
     const username = String(
-      user?.username ||
-        user?.name ||
-        fallbackUser.username ||
-        email.split("@")[0] ||
-        `user-${index + 1}`,
+      user?.username || user?.name || fallbackUser.username || email,
     ).trim();
     // The password is optional in the shared format: any user without one
     // gets the configured admin password, as install.admin does.
@@ -774,10 +806,9 @@ export function normalizeBlueprint(input, config) {
       username,
       email,
       password,
-      role: normalizeRole(
-        user?.role,
-        index === 0 ? "global_admin" : "researcher",
-      ),
+      // The role defaults to author, as in Omeka-S-Cli; the first user is the
+      // global administrator the Playground signs in as.
+      role: normalizeRole(user?.role, index === 0 ? "global_admin" : "author"),
       isActive: user?.isActive !== false,
       settings: normalizeUserSettings(user?.settings),
     };
@@ -833,18 +864,12 @@ export function normalizeBlueprint(input, config) {
     sites,
     themes: normalizeAddonCollection(blueprint.themes, "theme"),
     modules: normalizeAddonCollection(blueprint.modules, "module"),
-    files: dedupeLastWins(normalizeFiles(blueprint.files), "files"),
-    vocabularies: dedupeLastWins(
-      normalizeVocabularies(blueprint.vocabularies),
-      "vocabularies",
-    ),
-    resourceTemplates: dedupeLastWins(
-      normalizeResourceTemplates(blueprint.resourceTemplates),
-      "resourceTemplates",
-    ),
+    files: normalizeFiles(blueprint.files),
+    vocabularies: normalizeVocabularies(blueprint.vocabularies),
+    resourceTemplates: normalizeResourceTemplates(blueprint.resourceTemplates),
     settings: normalizeSettings(blueprint.settings),
     itemSets: Array.isArray(blueprint.itemSets)
-      ? dedupeLastWins(blueprint.itemSets.filter(isPlainObject), "itemSets")
+      ? blueprint.itemSets
           .map((itemSet) => ({
             title: String(itemSet?.title || "").trim(),
             description:
@@ -855,7 +880,7 @@ export function normalizeBlueprint(input, config) {
           .filter((itemSet) => itemSet.title)
       : [],
     items: Array.isArray(blueprint.items)
-      ? dedupeLastWins(blueprint.items.filter(isPlainObject), "items")
+      ? blueprint.items
           .map((item) => ({
             title: String(item?.title || "").trim(),
             description:
@@ -868,7 +893,8 @@ export function normalizeBlueprint(input, config) {
               : [],
             sites: Array.isArray(item?.sites)
               ? item.sites
-                  .map((entry) => slugify(String(entry || ""), ""))
+                  // slugs or titles, matched when the item is created
+                  .map((entry) => String(entry || "").trim())
                   .filter(Boolean)
               : [],
             media: Array.isArray(item?.media)
@@ -1054,24 +1080,29 @@ export async function loadBlueprintDocument(document, config, options = {}) {
     throw new BlueprintImportError("Blueprint must be a JSON object.");
   }
   const strict = Boolean(schema) && declaresSharedSchema(document);
-  if (schema) {
-    const errors = schema.validateBlueprintSchema(document);
-    if (errors.length && strict) {
-      throw new BlueprintSchemaError(
-        `Blueprint${baseUrl ? ` ${baseUrl}` : ""} does not match the shared blueprint schema: ${errors.join("; ")}`,
-      );
-    }
-    if (errors.length) {
-      console.warn(
-        `[blueprint] Not valid against the shared schema (accepted as the earlier Playground format): ${errors.join("; ")}`,
-      );
-    }
-  }
   const resolved = await resolveBlueprintImports(document, {
     baseUrl,
     fetchJson,
     validateImported: strict ? schema.validateImportedDocument : null,
   });
+  // As Omeka-S-Cli, the import-resolved blueprint is validated, schema and
+  // cross-references together; each imported file was checked on its own above.
+  if (schema) {
+    const errors = [
+      ...schema.validateBlueprintSchema(resolved),
+      ...schema.validateBlueprintReferences(resolved),
+    ];
+    if (errors.length && strict) {
+      throw new BlueprintSchemaError(
+        `Blueprint${baseUrl ? ` ${baseUrl}` : ""} is not valid against the shared blueprint format: ${errors.join("; ")}`,
+      );
+    }
+    if (errors.length) {
+      console.warn(
+        `[blueprint] Not valid against the shared format (accepted as the earlier Playground format): ${errors.join("; ")}`,
+      );
+    }
+  }
   return normalizeBlueprint(resolved, config);
 }
 

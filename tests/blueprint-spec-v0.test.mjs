@@ -95,7 +95,8 @@ describe("install and x-playground", () => {
       result.users.map((user) => [user.email, user.username, user.role]),
       [
         ["boss@example.com", "Boss", "global_admin"],
-        ["editor@example.com", "editor", "editor"],
+        // the display name defaults to the email, as in Omeka-S-Cli
+        ["editor@example.com", "editor@example.com", "editor"],
       ],
     );
     assert.deepEqual(result.login, {
@@ -116,6 +117,20 @@ describe("install and x-playground", () => {
     });
     assert.equal(result.users[1].email, "editor@example.com");
     assert.equal(result.users[1].password, "admin");
+  });
+
+  it("puts the configured administrator first when the blueprint declares none", () => {
+    const result = normalize({
+      users: [{ email: "editor@example.com", role: "editor" }],
+    });
+    assert.deepEqual(
+      result.users.map((user) => [user.email, user.role]),
+      [
+        ["test@example.com", "global_admin"],
+        ["editor@example.com", "editor"],
+      ],
+    );
+    assert.equal(result.login.email, "test@example.com");
   });
 
   it("merges install.admin with a user that has the same email", () => {
