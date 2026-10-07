@@ -48,7 +48,7 @@ Prefer `ApiManager` for resources. Use Doctrine repositories for existence check
 
 - Omeka resource payloads use API terms such as `o:title`, `o:slug`, `o:theme`, and `o:is_public`.
 - Metadata values require a property ID and value shape such as `['property_id' => $id, 'type' => 'literal', '@value' => $value]`. Resolve properties by term (for example `dcterms:title`) instead of hardcoding database IDs.
-- Provision in dependency order: install -> modules/themes -> users -> sites/permissions -> vocabularies/properties -> item sets -> items -> media.
+- Provision in dependency order: install -> modules/themes -> files -> vocabularies -> resource templates -> settings -> users -> sites/permissions -> item sets -> items -> media. Match vocabularies by namespace URI and templates by label, never by database id.
 - Upsert users by email and sites by slug. Use partial API updates when preserving unspecified fields matters.
 - Site permissions reference real user IDs and accepted site roles. Unknown users should produce a warning, not a broken relation.
 - The first blueprint user (`install.admin` when set) is the effective admin identity. Keep a `global_admin` authenticated while provisioning protected resources.

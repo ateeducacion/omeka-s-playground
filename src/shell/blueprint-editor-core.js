@@ -118,7 +118,7 @@ export function getInitialBlueprintCode(sourceText) {
  * @param {{normalizeBlueprint: Function}} deps `normalizeBlueprint(parsedJson)`
  *   returns a normalized blueprint object, or throws if the input can't be
  *   normalized.
- * @returns {{valid: boolean, stage: "json"|"schema"|"valid", message: string, blueprint: object|null}}
+ * @returns {{valid: boolean, stage: "json"|"schema"|"valid", message: string, blueprint: object|null, document?: object}}
  */
 export function createBlueprintValidationResult(rawText, deps) {
   const { normalizeBlueprint } = deps;
@@ -164,6 +164,7 @@ export function createBlueprintValidationResult(rawText, deps) {
     // sections, not an ordered step list.
     message: "✓ Valid blueprint",
     blueprint,
+    document: parsedJson,
   };
 }
 

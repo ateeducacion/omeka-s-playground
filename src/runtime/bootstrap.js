@@ -6,6 +6,7 @@ import {
 import {
   materializeBlueprintAddons,
   materializeBlueprintFiles,
+  materializeBlueprintSources,
   mountPersistedAddons,
 } from "./addons.js";
 import { buildManifestState, fetchManifest } from "./manifest.js";
@@ -114,6 +115,8 @@ return [
             Omeka\\Installation\\Task\\ClearCacheTask::class,
             Omeka\\Installation\\Task\\InstallSchemaTask::class,
             Omeka\\Installation\\Task\\RecordMigrationsTask::class,
+            Omeka\\Installation\\Task\\InstallDefaultVocabulariesTask::class,
+            Omeka\\Installation\\Task\\InstallDefaultTemplatesTask::class,
             Omeka\\Installation\\Task\\CreateFirstUserTask::class,
             Omeka\\Installation\\Task\\AddDefaultSettingsTask::class,
         ],
@@ -447,6 +450,8 @@ $installer->registerTask(Omeka\\Installation\\Task\\DestroySessionTask::class);
 $installer->registerTask(Omeka\\Installation\\Task\\ClearCacheTask::class);
 $installer->registerTask(Omeka\\Installation\\Task\\InstallSchemaTask::class);
 $installer->registerTask(Omeka\\Installation\\Task\\RecordMigrationsTask::class);
+$installer->registerTask(Omeka\\Installation\\Task\\InstallDefaultVocabulariesTask::class);
+$installer->registerTask(Omeka\\Installation\\Task\\InstallDefaultTemplatesTask::class);
 $installer->registerTask(Omeka\\Installation\\Task\\CreateFirstUserTask::class);
 $installer->registerTask(Omeka\\Installation\\Task\\AddDefaultSettingsTask::class);
 $status = $serviceManager->get('Omeka\\\\Status');
@@ -737,6 +742,105 @@ if ($shouldRerunBootstrap) {
     echo "[warning] " . $warning . "\\n";
   }
   exit(0);
+}
+
+// Vocabularies, then resource templates (which may use their properties), once
+// every module is active and before settings, users and content. Each source
+// was downloaded by the worker (cachedPath). They are found by what identifies
+// them in Omeka S, a vocabulary by its namespace URI and a template by its
+// label, so later boots leave existing ones (and edits to them) untouched.
+$rdfImporter = $serviceManager->get('Omeka\\\\RdfImporter');
+foreach (($blueprint['vocabularies'] ?? []) as $vocabularySpec) {
+  $namespaceUri = (string) $vocabularySpec['namespaceUri'];
+  $vocabularyName = sprintf('vocabulary "%s" (%s)', $vocabularySpec['prefix'], $namespaceUri);
+  if ($searchOne('vocabularies', ['namespace_uri' => $namespaceUri])) {
+    $debug(sprintf('Blueprint %s already exists.', $vocabularyName));
+    continue;
+  }
+  $format = strtolower(trim((string) ($vocabularySpec['format'] ?? '')));
+  $importOptions = array_filter([
+    'file' => $vocabularySpec['cachedPath'] ?? null,
+    'format' => in_array($format, ['', 'auto'], true) ? 'guess' : $format,
+    'lang' => $vocabularySpec['lang'] ?? null,
+    'label_property' => $vocabularySpec['labelProperty'] ?? null,
+    'comment_property' => $vocabularySpec['commentProperty'] ?? null,
+  ], fn ($value) => $value !== null);
+  try {
+    $vocabulary = $rdfImporter->import('file', array_filter([
+      'o:namespace_uri' => $namespaceUri,
+      'o:prefix' => $vocabularySpec['prefix'],
+      'o:label' => $vocabularySpec['label'],
+      'o:comment' => $vocabularySpec['comment'] ?? null,
+    ], fn ($value) => $value !== null), $importOptions)->getContent();
+  } catch (Throwable $e) {
+    throw new RuntimeException(sprintf('Unable to import blueprint %s from %s: %s', $vocabularyName, $vocabularySpec['source'], $describeThrowable($e)));
+  }
+  $debug(sprintf('Imported blueprint %s: %d classes, %d properties.', $vocabularyName, $vocabulary->resourceClassCount(), $vocabulary->propertyCount()));
+}
+
+if ($blueprint['resourceTemplates'] ?? []) {
+  // Omeka's own import checks (the admin "Import" form): format validation,
+  // and flagging the vocabulary members that exist in this installation.
+  $dataTypeManager = $serviceManager->get('Omeka\\\\DataTypeManager');
+  $templateImporter = new class($dataTypeManager) extends Omeka\\Controller\\Admin\\ResourceTemplateController {
+    public function prepare($import)
+    {
+      return $this->importIsValid($import) ? $this->flagValid($import) : null;
+    }
+  };
+  $templateImporter->setPluginManager($serviceManager->get('ControllerPluginManager'));
+  $registeredDataTypes = $dataTypeManager->getRegisteredNames();
+  foreach ($blueprint['resourceTemplates'] as $templateSpec) {
+    $import = $templateImporter->prepare(json_decode((string) @file_get_contents($templateSpec['cachedPath'] ?? ''), true));
+    if (!$import) {
+      throw new RuntimeException(sprintf('Blueprint resource template %s is not a valid resource template export.', $templateSpec['source']));
+    }
+    $label = trim((string) ($templateSpec['label'] ?? '')) ?: $import['o:label'];
+    $import['o:label'] = $label;
+    if ($searchOne('resource_templates', ['label' => $label])) {
+      $debug(sprintf('Blueprint resource template "%s" already exists.', $label));
+      continue;
+    }
+
+    // What this installation lacks: flagValid() leaves those members without
+    // an id. Data types registered by modules are kept too, not only the core ones.
+    $term = fn (array $member) => $member['vocabulary_namespace_uri'] . $member['local_name'];
+    $missing = [];
+    if (isset($import['o:resource_class']) && empty($import['o:resource_class']['o:id'])) {
+      $missing[] = 'class ' . $term($import['o:resource_class']);
+    }
+    foreach (['o:title_property', 'o:description_property'] as $key) {
+      if (isset($import[$key]) && empty($import[$key]['o:id'])) {
+        $missing[] = 'property ' . $term($import[$key]);
+      }
+    }
+    foreach ($import['o:resource_template_property'] as $index => $templateProperty) {
+      if (empty($templateProperty['o:property'])) {
+        $missing[] = 'property ' . $term($templateProperty);
+        continue;
+      }
+      $dataTypeNames = array_keys($templateProperty['data_types'] ?? []);
+      foreach (array_diff($dataTypeNames, $registeredDataTypes) as $dataTypeName) {
+        $missing[] = 'data type ' . $dataTypeName;
+      }
+      $import['o:resource_template_property'][$index]['o:data_type'] = array_values(array_intersect($dataTypeNames, $registeredDataTypes));
+    }
+    $missing = array_unique($missing);
+    if ($missing && empty($templateSpec['ignoreDeps'])) {
+      throw new RuntimeException(sprintf('Blueprint resource template "%s" needs what this installation lacks (declare it, or set ignoreDeps to import without it): %s.', $label, implode(', ', $missing)));
+    }
+    if ($missing) {
+      $warnings[] = sprintf('Resource template "%s" imported without: %s.', $label, implode(', ', $missing));
+    }
+
+    try {
+      $apiManager->create('resource_templates', $import);
+    } catch (Throwable $e) {
+      throw new RuntimeException(sprintf('Unable to import blueprint resource template "%s": %s', $label, $describeThrowable($e)));
+    }
+    $debug(sprintf('Imported blueprint resource template "%s".', $label));
+  }
+  $serviceManager->get('ControllerPluginManager')->setController($playgroundController);
 }
 
 // Apply blueprint global settings after every module is installed, so they
@@ -1489,10 +1593,17 @@ export async function bootstrapOmeka({
     config: effectiveConfig,
   });
 
+  const sourcedBlueprint = await materializeBlueprintSources({
+    php,
+    blueprint: normalizedBlueprint,
+    publish,
+    config: effectiveConfig,
+  });
+
   publish("Prefetching blueprint media files.", 0.56);
   const runtimeBlueprint = await cacheBlueprintMediaFiles({
     php,
-    blueprint: normalizedBlueprint,
+    blueprint: sourcedBlueprint,
     publish,
   });
   await php.writeFile(

@@ -1,0 +1,14 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix pgtest: <https://example.org/omeka-s-playground/test#> .
+
+pgtest:Book a rdfs:Class ;
+  rdfs:label "Book" ;
+  rdfs:comment "A test class for blueprint vocabulary imports." .
+
+pgtest:isbn a rdf:Property ;
+  rdfs:label "ISBN" ;
+  rdfs:comment "A test property for blueprint vocabulary imports." .
+
+pgtest:shelf a rdf:Property ;
+  rdfs:label "Shelf" .

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json",
+  "meta": {
+    "title": "Imports, vocabularies and resource templates",
+    "description": "End-to-end fixture: $import partials, a vocabulary and resource templates resolved against the files that declare them."
+  },
+  "install": { "title": "Blueprint Imports Demo" },
+  "vocabularies": [{ "$import": "./partials/vocabularies.json" }],
+  "resourceTemplates": [
+    { "$import": "./partials/resource-templates.json" },
+    { "source": "./templates/book.json", "label": "Test Book (relabelled)" }
+  ],
+  "settings": [{ "$import": "./partials/settings.json" }],
+  "x-playground": { "landingPage": "/admin/vocabulary" }
+}

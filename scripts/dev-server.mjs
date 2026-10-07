@@ -229,6 +229,9 @@ async function requestPinnedAddressWithCurl(url, resolvedAddress) {
   const args = [
     "--silent",
     "--show-error",
+    // Some hosts (e.g. schema.org's CDN) send gzip even when it was not
+    // requested; let curl ask for it and decode it, so the body is the file.
+    "--compressed",
     "--max-time",
     "60",
     "--max-filesize",

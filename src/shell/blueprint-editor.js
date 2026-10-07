@@ -1,12 +1,15 @@
 import {
+  declaresSharedSchema,
   encodeBlueprintParam,
   normalizeBlueprint,
 } from "../shared/blueprint.js";
+import { withoutImportReferences } from "../shared/blueprint-imports.js";
 import {
   buildBlueprintRunUrl,
   createBlueprintValidationResult,
   highlightJson,
 } from "./blueprint-editor-core.js";
+import { loadBlueprintSchemaValidator } from "./blueprint-schema-loader.js";
 
 // Pinned version, loaded on demand so the static shell doesn't need a bundler
 // step for it. If the CDN is unreachable the panel falls back to a plain
@@ -43,8 +46,23 @@ export function initBlueprintEditor(elements, options = {}) {
     ) {
       throw new Error("Blueprint must be a JSON object.");
     }
-    return normalizeBlueprint(parsedJson, getConfig() || {});
+    // The shell checks the schema and resolves $import entries again when the
+    // blueprint runs; here they are only checked, not fetched.
+    if (schema && declaresSharedSchema(parsedJson)) {
+      const errors = schema.validateBlueprintSchema(parsedJson);
+      if (errors.length) {
+        throw new Error(
+          `it does not match the shared schema: ${errors.join("; ")}`,
+        );
+      }
+    }
+    return normalizeBlueprint(
+      withoutImportReferences(parsedJson),
+      getConfig() || {},
+    );
   }
+
+  let schema = null;
 
   let jar = null;
   let locked = false;
@@ -95,6 +113,14 @@ export function initBlueprintEditor(elements, options = {}) {
   }
 
   revalidate(currentText);
+  loadBlueprintSchemaValidator()
+    .then((validator) => {
+      schema = validator;
+      revalidate(getText());
+    })
+    .catch(() => {
+      // Without the bundle the editor still checks JSON and normalization.
+    });
 
   if (mount) {
     import(/* webpackIgnore: true */ CODEJAR_MODULE_URL)
@@ -139,7 +165,9 @@ export function initBlueprintEditor(elements, options = {}) {
         statusEl.textContent = "Encoding blueprint and restarting playground…";
       }
 
-      const encoded = await encodeBlueprintParam(result.blueprint);
+      // The document as written (not its normalized form), so its $import
+      // entries are resolved when the shell loads it.
+      const encoded = await encodeBlueprintParam(result.document);
       loc.href = buildBlueprintRunUrl(loc.href, encoded);
     });
   }

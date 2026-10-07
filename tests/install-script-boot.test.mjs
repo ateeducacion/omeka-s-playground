@@ -69,6 +69,47 @@ describe("playground-install.php blueprint settings", () => {
   });
 });
 
+describe("playground-install.php vocabularies and resource templates", () => {
+  it("imports vocabularies, then templates, after the modules and before settings", () => {
+    const moduleContinue = bootstrapSrc.indexOf(
+      'echo "omeka-playground-bootstrap-continue',
+    );
+    const vocabularies = bootstrapSrc.indexOf("$blueprint['vocabularies']");
+    const templates = bootstrapSrc.indexOf("$blueprint['resourceTemplates']");
+    const settings = bootstrapSrc.indexOf("$blueprint['settings']");
+    assert.ok(vocabularies !== -1 && templates !== -1);
+    assert.ok(moduleContinue < vocabularies);
+    assert.ok(vocabularies < templates && templates < settings);
+  });
+
+  it("finds existing ones by namespace URI and label, not by id", () => {
+    assert.ok(
+      bootstrapSrc.includes(
+        "$searchOne('vocabularies', ['namespace_uri' => $namespaceUri])",
+      ),
+    );
+    assert.ok(
+      bootstrapSrc.includes(
+        "$searchOne('resource_templates', ['label' => $label])",
+      ),
+    );
+  });
+
+  it("installs Omeka's default vocabularies and template, as the core installer does", () => {
+    for (const task of [
+      "InstallDefaultVocabulariesTask",
+      "InstallDefaultTemplatesTask",
+    ]) {
+      assert.ok(
+        bootstrapSrc.includes(
+          `registerTask(Omeka\\\\Installation\\\\Task\\\\${task}`,
+        ),
+        task,
+      );
+    }
+  });
+});
+
 describe("playground-install.php install state", () => {
   it("does not overwrite the persisted $state while looping over modules", () => {
     // $state is written to the install state file (manifest, blueprint, addons)

@@ -1,4 +1,11 @@
 import {
+  BlueprintImportError,
+  BlueprintSchemaError,
+  fetchJsonDocument,
+  resolveBlueprintImports,
+  withoutImportReferences,
+} from "./blueprint-imports.js";
+import {
   DEFAULT_OMEKA_VERSION,
   DEFAULT_PHP_VERSION,
   resolveOmekaVersion,
@@ -143,10 +150,6 @@ export async function decodeBlueprintParam(value) {
   } catch {
     throw new Error("Blueprint data payload is not valid JSON.");
   }
-}
-
-async function parseBlueprintDataParam(value, config) {
-  return normalizeBlueprint(await decodeBlueprintParam(value), config);
 }
 
 function normalizePath(path, fallback = "/") {
@@ -420,32 +423,55 @@ function normalizeAddonAssets(input) {
     .filter(Boolean);
 }
 
-// Duplicate names (case-insensitive) follow the shared blueprint spec: the last
-// occurrence wins and takes the last position, so a later entry can override an
-// earlier one. A warning is logged only when the override changes the entry.
+// What identifies an entry of each list for "last one wins" (shared spec): a
+// later entry with the same identity (case-insensitive) replaces the earlier
+// one and takes its position at the end, as in Omeka-S-Cli. Which field is the
+// identity, and replace vs. merge, are still open in the shared spec
+// (omeka-s-contrib/omeka-s-blueprints#10); vocabularies use namespaceUri, the
+// identity Omeka S itself enforces, where Omeka-S-Cli currently uses prefix.
+export const ENTRY_IDENTITY = {
+  modules: (entry) => entry.name,
+  themes: (entry) => entry.name,
+  files: (entry) => entry.destination,
+  vocabularies: (entry) => entry.namespaceUri,
+  resourceTemplates: (entry) => entry.label || entry.source,
+  users: (entry) => entry?.email,
+  itemSets: (entry) => entry.title,
+  items: (entry) => entry.title,
+};
+
+// A warning is logged only when the override changes the entry.
+function dedupeLastWins(entries, key) {
+  const byId = new Map();
+  const loose = [];
+  for (const entry of entries) {
+    const id = String(ENTRY_IDENTITY[key](entry) ?? "")
+      .trim()
+      .toLowerCase();
+    if (!id) {
+      loose.push(entry);
+      continue;
+    }
+    const previous = byId.get(id);
+    if (previous && JSON.stringify(previous) !== JSON.stringify(entry)) {
+      console.warn(
+        `[blueprint] ${key} "${id}" is declared more than once; the later definition overrides the earlier one.`,
+      );
+    }
+    byId.delete(id);
+    byId.set(id, entry);
+  }
+  return [...byId.values(), ...loose];
+}
+
 function normalizeAddonCollection(input, kind) {
   if (!Array.isArray(input)) {
     return [];
   }
-
-  const byName = new Map();
-  for (const normalized of input.map((entry) =>
-    normalizeAddonEntry(entry, kind),
-  )) {
-    if (!normalized) {
-      continue;
-    }
-    const key = normalized.name.toLowerCase();
-    const previous = byName.get(key);
-    if (previous && JSON.stringify(previous) !== JSON.stringify(normalized)) {
-      console.warn(
-        `[blueprint] ${kind} "${normalized.name}" is declared more than once; the later definition overrides the earlier one.`,
-      );
-    }
-    byName.delete(key);
-    byName.set(key, normalized);
-  }
-  return [...byName.values()];
+  return dedupeLastWins(
+    input.map((entry) => normalizeAddonEntry(entry, kind)).filter(Boolean),
+    `${kind}s`,
+  );
 }
 
 function normalizeAddonEntry(entry, kind) {
@@ -520,20 +546,91 @@ function normalizeFiles(input) {
   });
 }
 
+function requiredString(entry, field, what) {
+  const value = String(entry[field] ?? "").trim();
+  if (!value) {
+    throw new Error(`Blueprint ${what} requires "${field}".`);
+  }
+  return value;
+}
+
+const VOCABULARY_OPTIONAL_FIELDS = [
+  "comment",
+  "format",
+  "lang",
+  "labelProperty",
+  "commentProperty",
+];
+
+// RDF vocabularies, imported with Omeka's RdfImporter after the modules.
+function normalizeVocabularies(input) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return input.filter(isPlainObject).map((entry) => {
+    const what = `vocabulary "${entry.prefix || entry.namespaceUri || ""}"`;
+    const vocabulary = {
+      source: absolutizeUrl(requiredString(entry, "source", what)),
+      namespaceUri: requiredString(entry, "namespaceUri", what),
+      prefix: requiredString(entry, "prefix", what),
+      label: requiredString(entry, "label", what),
+    };
+    for (const field of VOCABULARY_OPTIONAL_FIELDS) {
+      if (typeof entry[field] === "string" && entry[field].trim()) {
+        vocabulary[field] = entry[field].trim();
+      }
+    }
+    return vocabulary;
+  });
+}
+
+// Resource-template JSON exports, imported after the vocabularies.
+function normalizeResourceTemplates(input) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return input.filter(isPlainObject).map((entry) => {
+    const template = {
+      source: absolutizeUrl(
+        requiredString(entry, "source", "resource template"),
+      ),
+    };
+    if (typeof entry.label === "string" && entry.label.trim()) {
+      template.label = entry.label.trim();
+    }
+    template.ignoreDeps = entry.ignoreDeps === true;
+    return template;
+  });
+}
+
+// `$import` entries are resolved when the blueprint is loaded
+// (blueprint-imports.js); one that reaches the normalizer was never resolved,
+// for example in a key that does not accept imports.
+function rejectUnresolvedImports(blueprint) {
+  for (const [key, value] of Object.entries(blueprint)) {
+    if (key.startsWith("x-") || !value || typeof value !== "object") {
+      continue;
+    }
+    const entries = Array.isArray(value) ? value : [value];
+    const index = entries.findIndex(
+      (entry) => isPlainObject(entry) && "$import" in entry,
+    );
+    if (index !== -1) {
+      throw new Error(
+        `Blueprint ${key} has an unresolved $import "${entries[index].$import}": imports are only resolved in lists that accept them, when the blueprint is loaded.`,
+      );
+    }
+  }
+}
+
 // Global settings: a map of setting id => value, or a list of maps merged in
-// order (later maps win). `$import` references are part of the shared spec but
-// not supported here yet, so they are rejected instead of silently dropped.
+// order (later maps win), once their `$import` entries are resolved.
 function normalizeSettings(input) {
   const maps = Array.isArray(input) ? input : [input];
   const settings = {};
   for (const map of maps) {
     if (!isPlainObject(map)) {
       continue;
-    }
-    if ("$import" in map) {
-      throw new Error(
-        "Blueprint settings $import references are not supported yet.",
-      );
     }
     for (const [key, value] of Object.entries(map)) {
       const settingKey = String(key).trim();
@@ -634,6 +731,7 @@ export function normalizeBlueprint(input, config) {
     input && typeof input === "object" && !Array.isArray(input)
       ? structuredClone(input)
       : {};
+  rejectUnresolvedImports(blueprint);
   const fallback = buildDefaultBlueprint(config);
   // Shared format first, then the legacy Playground keys.
   const install = isPlainObject(blueprint.install) ? blueprint.install : {};
@@ -649,7 +747,9 @@ export function normalizeBlueprint(input, config) {
       ? blueprint.login
       : install.admin || {};
   const blueprintUsers = withInstallAdmin(
-    Array.isArray(blueprint.users) ? blueprint.users : [],
+    Array.isArray(blueprint.users)
+      ? dedupeLastWins(blueprint.users, "users")
+      : [],
     install.admin,
   );
   const users = blueprintUsers.length > 0 ? blueprintUsers : fallback.users;
@@ -739,10 +839,18 @@ export function normalizeBlueprint(input, config) {
     sites,
     themes: normalizeAddonCollection(blueprint.themes, "theme"),
     modules: normalizeAddonCollection(blueprint.modules, "module"),
-    files: normalizeFiles(blueprint.files),
+    files: dedupeLastWins(normalizeFiles(blueprint.files), "files"),
+    vocabularies: dedupeLastWins(
+      normalizeVocabularies(blueprint.vocabularies),
+      "vocabularies",
+    ),
+    resourceTemplates: dedupeLastWins(
+      normalizeResourceTemplates(blueprint.resourceTemplates),
+      "resourceTemplates",
+    ),
     settings: normalizeSettings(blueprint.settings),
     itemSets: Array.isArray(blueprint.itemSets)
-      ? blueprint.itemSets
+      ? dedupeLastWins(blueprint.itemSets.filter(isPlainObject), "itemSets")
           .map((itemSet) => ({
             title: String(itemSet?.title || "").trim(),
             description:
@@ -753,7 +861,7 @@ export function normalizeBlueprint(input, config) {
           .filter((itemSet) => itemSet.title)
       : [],
     items: Array.isArray(blueprint.items)
-      ? blueprint.items
+      ? dedupeLastWins(blueprint.items.filter(isPlainObject), "items")
           .map((item) => ({
             title: String(item?.title || "").trim(),
             description:
@@ -871,6 +979,12 @@ export function exportBlueprintPayload(config, blueprint) {
     modules: normalized.modules.map(exportAddon),
     themes: normalized.themes.map(exportAddon),
     ...(files.length ? { files } : {}),
+    ...(normalized.vocabularies.length
+      ? { vocabularies: normalized.vocabularies }
+      : {}),
+    ...(normalized.resourceTemplates.length
+      ? { resourceTemplates: normalized.resourceTemplates }
+      : {}),
     settings: normalized.settings,
     users: normalized.users,
     itemSets: normalized.itemSets,
@@ -920,12 +1034,81 @@ export function clearActiveBlueprint(scopeId) {
   window.sessionStorage.removeItem(getBlueprintStorageKey(scopeId));
 }
 
-export async function resolveBlueprintForShell(scopeId, config) {
+// Blueprints that declare the shared schema ($schema of the v0 family) must
+// match it; others (the earlier Playground format, or no $schema) only get
+// warnings, so the legacy aliases keep working.
+const SHARED_SCHEMA_URL_PATTERN =
+  /^https:\/\/omeka-s-contrib\.github\.io\/omeka-s-blueprints\/schema\/v0(?:\.\d+\.\d+)?\/blueprint-schema\.json$/u;
+
+export function declaresSharedSchema(document) {
+  return SHARED_SCHEMA_URL_PATTERN.test(String(document?.$schema || ""));
+}
+
+/**
+ * Load a raw blueprint document: check it against the shared schema, resolve
+ * its `$import` entries (against `baseUrl`, the URL it was loaded from, when
+ * there is one) and normalize it. Schema errors are BlueprintSchemaError;
+ * import errors (download, cycle, invalid content) are BlueprintImportError.
+ *
+ * @param {object} document
+ * @param {object} config
+ * @param {{baseUrl?: string|null, fetchJson?: Function, schema?: {validateBlueprintSchema: Function, validateImportedDocument: Function}|null}} [options]
+ */
+export async function loadBlueprintDocument(document, config, options = {}) {
+  const { baseUrl = null, fetchJson, schema = null } = options;
+  if (!isPlainObject(document)) {
+    throw new BlueprintImportError("Blueprint must be a JSON object.");
+  }
+  const strict = Boolean(schema) && declaresSharedSchema(document);
+  if (schema) {
+    const errors = schema.validateBlueprintSchema(document);
+    if (errors.length && strict) {
+      throw new BlueprintSchemaError(
+        `Blueprint${baseUrl ? ` ${baseUrl}` : ""} does not match the shared blueprint schema: ${errors.join("; ")}`,
+      );
+    }
+    if (errors.length) {
+      console.warn(
+        `[blueprint] Not valid against the shared schema (accepted as the earlier Playground format): ${errors.join("; ")}`,
+      );
+    }
+  }
+  const resolved = await resolveBlueprintImports(document, {
+    baseUrl,
+    fetchJson,
+    validateImported: strict ? schema.validateImportedDocument : null,
+  });
+  return normalizeBlueprint(resolved, config);
+}
+
+async function fetchBlueprintFromUrl(href, fetchJson = fetchJsonDocument) {
+  const url = new URL(href, window.location.href).toString();
+  try {
+    return { document: await fetchJson(url), baseUrl: url };
+  } catch (error) {
+    throw new Error(`Unable to load blueprint from ${href}: ${error.message}`);
+  }
+}
+
+/**
+ * @param {string} scopeId
+ * @param {object} config
+ * @param {{schema?: object|null}} [options] the shared-schema validator
+ */
+export async function resolveBlueprintForShell(scopeId, config, options = {}) {
   if (!hasWindow()) {
     return buildDefaultBlueprint(config);
   }
 
   const url = new URL(window.location.href);
+  const load = async ({ document, baseUrl = null }) => {
+    const payload = await loadBlueprintDocument(document, config, {
+      baseUrl,
+      schema: options.schema || null,
+    });
+    saveActiveBlueprint(scopeId, payload);
+    return payload;
+  };
 
   // 1. ?blueprint= (inline base64/JSON, or remote URL for backward compat)
   const blueprintParam = url.searchParams.get("blueprint");
@@ -933,40 +1116,17 @@ export async function resolveBlueprintForShell(scopeId, config) {
     const looksLikeUrl =
       blueprintParam.startsWith("http://") ||
       blueprintParam.startsWith("https://");
-    if (looksLikeUrl) {
-      const response = await fetch(
-        new URL(blueprintParam, window.location.href),
-        { cache: "no-store" },
-      );
-      if (!response.ok) {
-        throw new Error(
-          `Unable to load blueprint from ${blueprintParam}: ${response.status}`,
-        );
-      }
-      const payload = normalizeBlueprint(await response.json(), config);
-      saveActiveBlueprint(scopeId, payload);
-      return payload;
-    }
-    const payload = await parseBlueprintDataParam(blueprintParam, config);
-    saveActiveBlueprint(scopeId, payload);
-    return payload;
+    return load(
+      looksLikeUrl
+        ? await fetchBlueprintFromUrl(blueprintParam)
+        : { document: await decodeBlueprintParam(blueprintParam) },
+    );
   }
 
   // 2. ?blueprint-url= (remote URL — primary, matches moodle-playground)
   const blueprintUrlParam = url.searchParams.get("blueprint-url");
   if (blueprintUrlParam) {
-    const response = await fetch(
-      new URL(blueprintUrlParam, window.location.href),
-      { cache: "no-store" },
-    );
-    if (!response.ok) {
-      throw new Error(
-        `Unable to load blueprint from ${blueprintUrlParam}: ${response.status}`,
-      );
-    }
-    const payload = normalizeBlueprint(await response.json(), config);
-    saveActiveBlueprint(scopeId, payload);
-    return payload;
+    return load(await fetchBlueprintFromUrl(blueprintUrlParam));
   }
 
   // 3. ?blueprint-data= (legacy alias for ?blueprint=, kept for backward compat)
@@ -975,25 +1135,14 @@ export async function resolveBlueprintForShell(scopeId, config) {
     console.warn(
       "[blueprint] ?blueprint-data= is deprecated, use ?blueprint= instead.",
     );
-    const payload = await parseBlueprintDataParam(blueprintDataParam, config);
-    saveActiveBlueprint(scopeId, payload);
-    return payload;
+    return load({ document: await decodeBlueprintParam(blueprintDataParam) });
   }
 
   // sessionStorage blueprints are not reloaded on bare URL navigations —
   // the ephemeral runtime should boot clean.
 
   if (config.defaultBlueprintUrl) {
-    const response = await fetch(
-      new URL(config.defaultBlueprintUrl, window.location.href),
-      { cache: "no-store" },
-    );
-    if (!response.ok) {
-      throw new Error(`Unable to load default blueprint: ${response.status}`);
-    }
-    const payload = normalizeBlueprint(await response.json(), config);
-    saveActiveBlueprint(scopeId, payload);
-    return payload;
+    return load(await fetchBlueprintFromUrl(config.defaultBlueprintUrl));
   }
 
   const payload = buildDefaultBlueprint(config);
@@ -1010,8 +1159,8 @@ export function parseImportedBlueprintPayload(rawPayload, config) {
     };
   }
 
-  return {
-    type: "blueprint",
-    blueprint: normalizeBlueprint(rawPayload, config),
-  };
+  // Checked here, but the raw document is what runs: the shell resolves its
+  // absolute $import entries when it loads it.
+  normalizeBlueprint(withoutImportReferences(rawPayload), config);
+  return { type: "blueprint", blueprint: rawPayload };
 }

@@ -1,0 +1,4 @@
+[
+  { "source": "../templates/book.json" },
+  { "source": "../templates/needs-missing.json", "ignoreDeps": true }
+]
