@@ -42,6 +42,30 @@ export function isSafeToReplay(serializedRequest) {
 }
 
 /**
+ * After a crash answered with 503 because the request could not be replayed,
+ * boot the replacement runtime now. Its "ready" unlocks the shell toolbar that
+ * the "Runtime rotation" progress locked; an AJAX POST never reloads the frame,
+ * so nothing else would. The crashed request itself is never sent again.
+ *
+ * @returns {Promise<boolean>} whether a boot was attempted.
+ */
+export async function bootAfterUnreplayedCrash({
+  didReset,
+  isRetry,
+  canReplay,
+  boot,
+  onError,
+}) {
+  if (!didReset || isRetry || canReplay) return false;
+  try {
+    await boot();
+  } catch (error) {
+    onError(error);
+  }
+  return true;
+}
+
+/**
  * Format an error into a human-readable string for display/logging.
  */
 export function formatErrorDetail(error) {
