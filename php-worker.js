@@ -17,6 +17,7 @@ import {
 import { executeCliCommandInRuntime } from "./src/runtime/cli-runtime.js";
 import { createPhpRuntime } from "./src/runtime/php-loader.js";
 import {
+  bootAfterUnreplayedCrash,
   isFatalWasmError,
   isSafeToReplay,
   formatErrorDetail,
@@ -395,6 +396,17 @@ function installBridgeListener() {
               ? `Runtime restarting after crash. Non-idempotent request was not retried.\n\n${detail}`
               : `Runtime restart limit reached.\n\n${detail}`;
           await respondError(data.id, message, status);
+          await bootAfterUnreplayedCrash({
+            didReset,
+            isRetry,
+            canReplay,
+            boot: getRuntimeState,
+            onError: (recoveryError) =>
+              postShell({
+                kind: "error",
+                detail: `Runtime recovery failed: ${formatErrorDetail(recoveryError)}`,
+              }),
+          });
           return;
         }
 
