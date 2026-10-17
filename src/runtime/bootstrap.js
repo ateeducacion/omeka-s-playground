@@ -432,6 +432,12 @@ function buildInstallScript(config, manifestState, blueprint, addonsState) {
   // do the same or the unpatched vendor ProxyFactory loads and boot dies with
   // "Invalid auto generate mode -1".
   return `<?php
+// Same error policy as Omeka's index.php. With the loader's display_errors=On
+// and output_buffering=0, a displayed E_DEPRECATED (PHP 8.5 deprecates
+// PDO::sqliteCreateFunction(), called by Doctrine DBAL 2 on connect) counts as
+// sent output, after which ini_set('session.name') in MvcListeners is rejected
+// and laminas-session throws on every run against an installed database.
+error_reporting(E_ALL & ~E_DEPRECATED);
 require '${OMEKA_ROOT}/bootstrap.php';
 date_default_timezone_set('${config.timezone}');
 $application = Omeka\\Mvc\\Application::init(require OMEKA_PATH . '/application/config/application.config.php');
