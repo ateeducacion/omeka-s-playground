@@ -66,6 +66,18 @@ export async function bootAfterUnreplayedCrash({
 }
 
 /**
+ * Path of a worker request, without query string or fragment (they can carry
+ * session tokens). Used to tell the shell which page failed.
+ */
+export function requestPathname(request) {
+  try {
+    return new URL(request?.url || "", "http://localhost").pathname || "/";
+  } catch {
+    return "/";
+  }
+}
+
+/**
  * Format an error into a human-readable string for display/logging.
  */
 export function formatErrorDetail(error) {

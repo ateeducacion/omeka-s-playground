@@ -23,6 +23,7 @@ import {
   isSafeToReplay,
   formatErrorDetail,
   createSnapshotManager,
+  requestPathname,
 } from "./src/runtime/crash-recovery.js";
 
 const workerUrl = new URL(self.location.href);
@@ -362,7 +363,11 @@ function installBridgeListener() {
         if (!isFatalWasmError(error)) {
           const detail = formatErrorDetail(error);
           await respondError(data.id, detail, 500);
-          postShell({ kind: "error", detail });
+          postShell({
+            kind: "error",
+            detail,
+            path: requestPathname(data.request),
+          });
           return;
         }
 
