@@ -30,10 +30,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Bundling resolves every import reachable from the PHP worker, which
-      # unit tests (importing sources directly) cannot.
-      - name: Build worker bundle
-        run: npm run build-worker
+      # Bundling resolves every import reachable from the PHP worker and sw.js
+      # (built into the classic sw.bundle.js), which unit tests (importing
+      # sources directly) cannot. sw.js inlines the generated Build ID, so it is
+      # written first.
+      - name: Build worker bundles
+        run: |
+          npm run build:version
+          npm run build-worker
 
       - name: Run tests
         run: make test
