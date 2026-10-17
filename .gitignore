@@ -14,3 +14,7 @@ assets/manifests/*
 # Generated build metadata (the deployment Build ID) — never committed.
 src/generated/
 assets/build-version.json
+
+# Playwright output
+test-results/
+playwright-report/
