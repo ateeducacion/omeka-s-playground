@@ -46,7 +46,9 @@ Generated output lives in `assets/omeka/`, `assets/manifests/`, and `dist/`.
   use but intentionally not journaled. See `src/runtime/fs-persistence.js`.
   The experimental `?opcache=1` flag (ADR-0031) is also reachable from the info
   panel checkbox, which reloads only the runtime iframe and must never trigger
-  a clean boot (ADR-0032).
+  a clean boot (ADR-0032). It flushes the journal first (`flush-persistence` →
+  `persistence-flushed`); `flushNow()` must await an in-flight debounced flush,
+  or a worker teardown aborts its IndexedDB transaction.
 - Install and content seeding are idempotent. Ordinary reload must not recreate
   edited/deleted demo content; preserve `/persist/runtime/content-seeded.json`.
   Reset clears that marker along with the mutable journal so content can reseed.

@@ -125,6 +125,7 @@ let remoteFrameBooted = false;
 let uiLocked = true;
 const remoteReloadToken = 0;
 let pendingCleanBoot = false;
+let pendingPersistenceFlush = null;
 let latestPhpInfoHtml = "";
 const CONTROL_RELOAD_KEY = `omeka-playground:${scopeId}:sw-controlled`;
 
@@ -551,6 +552,11 @@ function bindShellChannel() {
         setPhpInfoContent(message.html || "");
         appendLog(message.detail || "Captured PHP runtime diagnostics.");
         break;
+      case "persistence-flushed":
+        appendLog(message.detail || "Persistence journal flushed.");
+        pendingPersistenceFlush?.();
+        pendingPersistenceFlush = null;
+        break;
       case "trace":
         appendLog(message.detail || "[trace]");
         break;
@@ -669,7 +675,7 @@ function updateConfigState() {
   refreshDirtyState();
 }
 
-function applyConfigAndReset() {
+async function applyConfigAndReset() {
   const newOmeka = els.infoOmekaVersion?.value;
   const newPhp = els.infoPhpVersion?.value;
   const newOpcache = els.infoOpcache
@@ -702,6 +708,8 @@ function applyConfigAndReset() {
     // boot, so /persist and the session survive; a new worker picks up the
     // SAPI name from the forwarded parameter.
     window.history.replaceState(window.history.state, "", url);
+    // Data survives this restart, so the debounced journal must land first.
+    await flushRemotePersistence();
     updateConfigState();
     remoteFrameBooted = false;
     serviceWorkerReady = null;
@@ -724,6 +732,36 @@ function applyConfigAndReset() {
   // Clear any saved session state so the new version boots fresh.
   clearScopeSession(scopeId);
   window.location.href = url.toString();
+}
+
+// Ask the worker (via the runtime host) to flush the /persist journal and wait
+// for its "persistence-flushed" reply. The flush rewrites the journal store
+// (SQLite DB included), which takes seconds on slow machines; the cap only
+// keeps a wedged runtime from blocking the panel forever.
+function flushRemotePersistence(timeoutMs = 60_000) {
+  if (!remoteFrameBooted) {
+    return Promise.resolve();
+  }
+  appendLog("Flushing the persistence journal before restarting PHP.");
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingPersistenceFlush = null;
+      appendLog(
+        "Persistence flush did not finish in time; restarting anyway.",
+        true,
+      );
+      resolve();
+    }, timeoutMs);
+    pendingPersistenceFlush = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    if (!postToRemote({ kind: "flush-persistence" })) {
+      clearTimeout(timer);
+      pendingPersistenceFlush = null;
+      resolve();
+    }
+  });
 }
 
 async function main() {

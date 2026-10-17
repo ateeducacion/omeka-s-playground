@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { collapseAndHydrate } from "../src/runtime/fs-persistence.js";
+import {
+  collapseAndHydrate,
+  createJournalFlusher,
+} from "../src/runtime/fs-persistence.js";
 
 // Regression guard for the journal-flush OOM: a heavy install rewrites the same
 // (multi-MB) SQLite DB hundreds of times within one debounce window. Hydrating
@@ -33,4 +36,80 @@ test("collapseAndHydrate reads each changed file once, not once per write", asyn
   assert.equal(writes.length, 1);
   // ...and the file is read exactly once (the OOM guard), not 500 times.
   assert.equal(reads.get(path), 1);
+});
+
+// Fake IndexedDB handle: getAll() answers on the next microtask, and a
+// readwrite transaction only commits (and fires oncomplete) once release() runs,
+// standing in for a slow journal rewrite that is still in flight.
+function slowPersistDb() {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const committed = [];
+  const db = {
+    transaction(_storeName, mode) {
+      let staged = [];
+      const tx = {
+        objectStore: () => ({
+          getAll() {
+            const req = {};
+            queueMicrotask(() => {
+              req.result = [...committed];
+              req.onsuccess?.();
+            });
+            return req;
+          },
+          clear() {
+            staged = [];
+          },
+          add(op) {
+            staged.push(op);
+          },
+        }),
+      };
+      if (mode === "readwrite") {
+        gate.then(() => {
+          committed.splice(0, committed.length, ...staged);
+          tx.oncomplete?.();
+        });
+      }
+      return tx;
+    },
+  };
+  return { db, committed, release };
+}
+
+test("flushNow waits for a debounced flush that is already mid-transaction", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const path = "/persist/install.marker";
+  const rawPhp = { readFileAsBuffer: () => new Uint8Array([1]) };
+  const { db, committed, release } = slowPersistDb();
+  const pendingOps = [{ operation: "WRITE", path, nodeType: "file" }];
+  const flusher = createJournalFlusher(rawPhp, db, pendingOps);
+
+  // The debounce fires: the flush drains pendingOps and blocks in the
+  // IndexedDB transaction.
+  flusher.scheduleFlush();
+  t.mock.timers.tick(1500);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(pendingOps.length, 0, "the debounced flush drained the ops");
+
+  let settled = false;
+  const flushed = flusher.flushNow().then(() => {
+    settled = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    settled,
+    false,
+    "flushNow resolved while the drained ops were still uncommitted",
+  );
+
+  release();
+  await flushed;
+  assert.deepEqual(
+    committed.map((op) => op.path),
+    [path],
+  );
 });

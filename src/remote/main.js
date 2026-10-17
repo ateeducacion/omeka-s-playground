@@ -220,6 +220,11 @@ function bindShellCommands(scopeId, runtimeId) {
 
     if (message?.kind === "capture-phpinfo" && phpWorker) {
       phpWorker.postMessage({ kind: "capture-phpinfo" });
+      return;
+    }
+
+    if (message?.kind === "flush-persistence" && phpWorker) {
+      phpWorker.postMessage({ kind: "flush-persistence" });
     }
   });
 }
