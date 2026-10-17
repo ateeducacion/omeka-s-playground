@@ -6,13 +6,12 @@ import { expect, test } from "@playwright/test";
 // path to return "v2" and includes it again. A live file cache that does not
 // validate timestamps keeps answering "v1". Rows are `<php>[:opcache]`; PHP 8.5
 // runs the cache regardless of the flag, PHP <= 8.4 only with `?opcache=1`.
-// The `8.5` row is opt-in (OPCACHE_CANARY_MATRIX=8.5): Omeka S 4.2.1 + PHP 8.5
-// currently fails to boot a blueprint with modules (laminas-session throws
-// "'session.name' is not a valid sessions-related ini setting" from
-// playground-install.php), independently of OPcache.
+// The `8.5` row proves the timestamp validation on the version where the cache
+// is live by default; it needs playground-install.php to run with Omeka's
+// error_reporting policy (see tests/e2e/php85-install-script.spec.mjs).
 test.describe.configure({ timeout: 300_000 });
 
-const ROWS = (process.env.OPCACHE_CANARY_MATRIX || "8.3,8.3:opcache")
+const ROWS = (process.env.OPCACHE_CANARY_MATRIX || "8.3,8.3:opcache,8.5")
   .split(",")
   .map((row) => row.trim())
   .filter(Boolean);
