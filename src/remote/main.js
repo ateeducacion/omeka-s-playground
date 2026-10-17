@@ -7,6 +7,8 @@ import { createShellChannel } from "../shared/protocol.js";
 import {
   createServiceWorkerUnsupportedError,
   isServiceWorkerSupported,
+  registerClassicServiceWorker,
+  SERVICE_WORKER_SCRIPT,
 } from "../shared/service-worker-support.js";
 import { saveSessionState } from "../shared/storage.js";
 
@@ -63,16 +65,12 @@ async function registerRuntimeServiceWorker(scopeId, runtimeId) {
     return navigator.serviceWorker.ready;
   }
 
-  const swUrl = new URL("../../sw.js", import.meta.url);
+  const swUrl = new URL(`../../${SERVICE_WORKER_SCRIPT}`, import.meta.url);
   swUrl.searchParams.set("v", BUILD_VERSION);
   swUrl.searchParams.set("scope", scopeId);
   swUrl.searchParams.set("runtime", runtimeId);
 
-  const registration = await navigator.serviceWorker.register(swUrl, {
-    scope: "./",
-    type: "module",
-    updateViaCache: "none",
-  });
+  const registration = await registerClassicServiceWorker(swUrl);
 
   await navigator.serviceWorker?.ready;
   return registration;

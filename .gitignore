@@ -18,3 +18,7 @@ assets/build-version.json
 # Playwright output
 test-results/
 playwright-report/
+
+# Classic Service Worker bundle built from sw.js (scripts/esbuild.worker.mjs).
+sw.bundle.js
+sw.bundle.js.map

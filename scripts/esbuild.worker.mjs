@@ -157,6 +157,19 @@ await build({
   minify: true,
 });
 
+// Bundle the Service Worker as a classic (IIFE) script: Firefox < 147 cannot
+// run module Service Workers. It must stay at the site root, because a Service
+// Worker's maximum scope is its own directory and it controls "./".
+await build({
+  entryPoints: ["sw.js"],
+  bundle: true,
+  outfile: "sw.bundle.js",
+  format: "iife",
+  platform: "browser",
+  target: "es2022",
+  sourcemap: true,
+});
+
 // Fail the build instead of shipping a worker that 404s on its PHP binary
 // (e.g. if a php-wasm update changes how the loaders reference the .wasm and
 // phpWasmUrlToImport stops matching).
