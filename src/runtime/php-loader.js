@@ -9,6 +9,7 @@ import {
   loadWebRuntime,
 } from "@php-wasm/web";
 import { OMEKA_ROOT } from "./bootstrap.js";
+import { OPCACHE_INI_ENTRIES, writeOpcacheBlacklist } from "./opcache.js";
 import { wrapPhpInstance } from "./php-compat.js";
 import { registerSpawnHandler } from "./spawn-handler.js";
 
@@ -115,6 +116,10 @@ export function createPhpRuntime(
         `${certificateToPEM(tcpOverFetch.CAroot.certificate)}\n`,
       );
 
+      // PHP reads opcache.blacklist_filename at startup: the file must exist
+      // before the first request. See ADR-0030.
+      writeOpcacheBlacklist(php, FS);
+
       // Apply php.ini settings
       await setPhpIniEntries(php, {
         memory_limit: "256M",
@@ -126,18 +131,9 @@ export function createPhpRuntime(
         "date.timezone": "UTC",
         "openssl.cafile": TCP_OVER_FETCH_CA_PATH,
         "curl.cainfo": TCP_OVER_FETCH_CA_PATH,
-        // OPcache tuning — use in-memory file cache with a high file limit
-        // and no timestamp checks (the readonly bundle never changes within
-        // a session), so PHP avoids recompiling on every request.
-        "opcache.enable": "1",
-        "opcache.file_cache": "/internal/shared/opcache",
-        "opcache.file_cache_only": "1",
-        "opcache.max_accelerated_files": "10000",
-        "opcache.memory_consumption": "96",
-        "opcache.interned_strings_buffer": "16",
-        "opcache.jit": "0",
-        "opcache.validate_timestamps": "0",
-        "opcache.file_cache_consistency_checks": "0",
+        // OPcache file cache with timestamp validation; see src/runtime/opcache.js
+        // and docs/architecture/adr/ADR-0030-opcache-file-cache-timestamp-validation.md.
+        ...OPCACHE_INI_ENTRIES,
       });
 
       // Write preload dir for WP Playground's internal preload mechanism
