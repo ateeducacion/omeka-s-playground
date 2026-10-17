@@ -7,6 +7,7 @@ import {
   OPCACHE_BLACKLIST_PATH,
   OPCACHE_INI_ENTRIES,
   OPCACHE_SAPI_NAME,
+  opcacheUrlParam,
   writeOpcacheBlacklist,
 } from "../src/runtime/opcache.js";
 
@@ -60,6 +61,18 @@ describe("writeOpcacheBlacklist", () => {
       },
     );
     assert.equal(files.size, 1);
+  });
+});
+
+describe("opcacheUrlParam (ADR-0032)", () => {
+  it("round-trips through isOpcacheEnabled and omits the parameter at the config default", () => {
+    for (const config of [{}, { opcache: false }, { opcache: true }]) {
+      for (const enabled of [true, false]) {
+        const param = opcacheUrlParam(enabled, config);
+        assert.equal(isOpcacheEnabled(param, config), enabled);
+        assert.equal(param === null, enabled === (config.opcache === true));
+      }
+    }
   });
 });
 

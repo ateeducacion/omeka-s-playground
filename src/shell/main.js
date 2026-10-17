@@ -1,4 +1,5 @@
 import { BUILD_VERSION } from "../generated/build-version.js";
+import { isOpcacheEnabled, opcacheUrlParam } from "../runtime/opcache.js";
 import {
   buildDefaultBlueprint,
   clearActiveBlueprint,
@@ -75,8 +76,10 @@ const els = {
   reset: document.querySelector("#reset-button"),
   infoOmekaVersion: document.querySelector("#info-omeka-version"),
   infoPhpVersion: document.querySelector("#info-php-version"),
+  infoOpcache: document.querySelector("#info-opcache"),
   configStatus: document.querySelector("#config-status"),
   configWarning: document.querySelector("#config-warning"),
+  configReloadNote: document.querySelector("#config-reload-note"),
   configApply: document.querySelector("#config-apply"),
   runtimeIdChip: document.querySelector("#runtime-id-chip"),
   runtimeIdValue: document.querySelector("#runtime-id-value"),
@@ -584,6 +587,13 @@ function populateConfigSelects() {
   // Populate PHP version dropdown based on selected Omeka version
   updatePhpVersionDropdown(currentOmekaVersion);
   els.infoPhpVersion.value = currentPhpVersion;
+  if (els.infoOpcache) {
+    els.infoOpcache.checked = currentOpcacheEnabled();
+  }
+}
+
+function currentOpcacheEnabled() {
+  return isOpcacheEnabled(currentOpcacheParam, config);
 }
 
 function updatePhpVersionDropdown(omekaVersion) {
@@ -616,14 +626,21 @@ function updatePhpVersionDropdown(omekaVersion) {
 // Reflect the applied runtime in the Info panel: when the selected versions
 // differ from what is actually running the config is "dirty". Changing a version
 // is destructive (it resets the site), so the Apply button stays hidden and the
-// warning stays hidden until the selection actually differs.
+// warning stays hidden until the selection actually differs. The OPcache toggle
+// alone only restarts PHP and keeps the data (ADR-0032), so it shows the reload
+// note instead of the warning.
 function refreshDirtyState() {
   if (!els.infoOmekaVersion || !els.infoPhpVersion) {
     return;
   }
-  const dirty =
+  const versionDirty =
     els.infoOmekaVersion.value !== currentOmekaVersion ||
     els.infoPhpVersion.value !== currentPhpVersion;
+  const opcacheDirty =
+    Boolean(els.infoOpcache) &&
+    els.infoOpcache.checked !== currentOpcacheEnabled();
+  const dirty = versionDirty || opcacheDirty;
+  const reloadOnly = opcacheDirty && !versionDirty;
 
   if (els.configStatus) {
     els.configStatus.className = dirty ? "dirty-note" : "status-pill";
@@ -634,8 +651,15 @@ function refreshDirtyState() {
   // Changing a version is destructive; the Apply button and warning only appear
   // once the selection differs from what is running. To revert, reselect the
   // original version — the dirty state clears itself.
-  els.configWarning?.classList.toggle("is-hidden", !dirty);
-  els.configApply?.classList.toggle("is-hidden", !dirty);
+  els.configWarning?.classList.toggle("is-hidden", !versionDirty);
+  els.configReloadNote?.classList.toggle("is-hidden", !reloadOnly);
+  if (els.configApply) {
+    els.configApply.classList.toggle("is-hidden", !dirty);
+    els.configApply.classList.toggle("danger", !reloadOnly);
+    els.configApply.textContent = reloadOnly
+      ? "Apply & Reload"
+      : "Apply & Reset";
+  }
 }
 
 function updateConfigState() {
@@ -648,15 +672,47 @@ function updateConfigState() {
 function applyConfigAndReset() {
   const newOmeka = els.infoOmekaVersion?.value;
   const newPhp = els.infoPhpVersion?.value;
+  const newOpcache = els.infoOpcache
+    ? els.infoOpcache.checked
+    : currentOpcacheEnabled();
+  const versionChanged =
+    newOmeka !== currentOmekaVersion || newPhp !== currentPhpVersion;
+  const opcacheChanged = newOpcache !== currentOpcacheEnabled();
 
-  if (newOmeka === currentOmekaVersion && newPhp === currentPhpVersion) {
+  if (!versionChanged && !opcacheChanged) {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  if (opcacheChanged) {
+    // The worker reads ?opcache= once at startup (ADR-0031); keep the shell
+    // URL in sync so a manual reload preserves the choice. See ADR-0032.
+    currentOpcacheParam = opcacheUrlParam(newOpcache, config);
+    if (currentOpcacheParam) {
+      url.searchParams.set("opcache", currentOpcacheParam);
+    } else {
+      url.searchParams.delete("opcache");
+    }
+    appendLog(
+      `Experimental OPcache ${newOpcache ? "enabled" : "disabled"}; restarting PHP`,
+    );
+  }
+  if (!versionChanged) {
+    // OPcache alone: reload only the runtime iframe. Same scope, no clean
+    // boot, so /persist and the session survive; a new worker picks up the
+    // SAPI name from the forwarded parameter.
+    window.history.replaceState(window.history.state, "", url);
+    updateConfigState();
+    remoteFrameBooted = false;
+    serviceWorkerReady = null;
+    setPhpInfoContent("");
+    void updateFrame();
     return;
   }
 
   // Persist the choice via URL params and reload. Reloading gives us a
   // fresh WASM runtime, a fresh service worker registration, and rebuilds
   // the scope so stale per-version state can't leak across version swaps.
-  const url = new URL(window.location.href);
   if (newPhp) {
     url.searchParams.set("php", newPhp);
   }
@@ -762,6 +818,9 @@ async function main() {
   }
   if (els.infoPhpVersion) {
     els.infoPhpVersion.addEventListener("change", refreshDirtyState);
+  }
+  if (els.infoOpcache) {
+    els.infoOpcache.addEventListener("change", refreshDirtyState);
   }
   if (els.configApply) {
     els.configApply.addEventListener("click", applyConfigAndReset);

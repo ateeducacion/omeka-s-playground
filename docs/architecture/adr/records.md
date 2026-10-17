@@ -7,3 +7,4 @@
 | [ADR-0029](ADR-0029-build-identification-and-cache-versioning.md) | Timestamped Build IDs for deployment identification and cache versioning | Proposed | 2026-08-16 |
 | [ADR-0030](ADR-0030-opcache-file-cache-timestamp-validation.md) | Validate OPcache file-cache timestamps and blacklist the eval script path | Proposed | 2026-10-17 |
 | [ADR-0031](ADR-0031-experimental-opcache-via-sapi-name.md) | Experimental OPcache activation by reporting a whitelisted SAPI name | Proposed | 2026-10-17 |
+| [ADR-0032](ADR-0032-opcache-panel-toggle.md) | Expose the experimental OPcache flag as an info panel toggle that restarts PHP without a reset | Proposed | 2026-10-17 |
