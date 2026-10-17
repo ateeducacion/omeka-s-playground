@@ -14,6 +14,7 @@ import {
   captureException,
   captureMessage,
   initMonitoring,
+  runtimeErrorExtra,
 } from "../shared/monitoring.js";
 import {
   DEFAULT_OMEKA_VERSION,
@@ -539,7 +540,7 @@ function bindShellChannel() {
             source: "service-worker-unsupported",
           });
         } else {
-          captureMessage(message.detail, "error", { source: "runtime" });
+          captureMessage(message.detail, "error", runtimeErrorExtra(message));
         }
         if (!latestPhpInfoHtml) {
           capturePhpInfoViaWorker("bootstrap-error");
