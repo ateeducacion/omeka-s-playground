@@ -15,6 +15,7 @@ import {
   startCoreArchivePrefetch,
 } from "./src/runtime/bootstrap.js";
 import { executeCliCommandInRuntime } from "./src/runtime/cli-runtime.js";
+import { isOpcacheEnabled } from "./src/runtime/opcache.js";
 import { createPhpRuntime } from "./src/runtime/php-loader.js";
 import {
   bootAfterUnreplayedCrash,
@@ -27,6 +28,8 @@ import {
 const workerUrl = new URL(self.location.href);
 const scopeId = workerUrl.searchParams.get("scope");
 const runtimeId = workerUrl.searchParams.get("runtime");
+// Experimental OPcache flag, forwarded by remote.html (ADR-0031).
+const opcacheParam = workerUrl.searchParams.get("opcache") || null;
 
 let bridgeChannel = null;
 let runtimeStatePromise = null;
@@ -184,6 +187,7 @@ async function getRuntimeState() {
       cliExecutor,
       scopeId,
       forceCleanBoot,
+      opcache: isOpcacheEnabled(opcacheParam, config),
     });
 
     // Monotonic progress: the parallel core download and the bootstrap steps

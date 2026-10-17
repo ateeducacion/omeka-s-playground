@@ -1,5 +1,6 @@
 // OPcache configuration shared by the request and CLI runtimes.
-// See docs/architecture/adr/ADR-0030-opcache-file-cache-timestamp-validation.md.
+// See docs/architecture/adr/ADR-0030-opcache-file-cache-timestamp-validation.md
+// and docs/architecture/adr/ADR-0031-experimental-opcache-via-sapi-name.md.
 
 // Scripts OPcache must never cache. php.run({ code }) writes every snippet to
 // the same /internal/eval.php, so a stored .bin would be served for a later,
@@ -41,4 +42,23 @@ export function writeOpcacheBlacklist(php, FS) {
     /* exists */
   }
   php.writeFile(OPCACHE_BLACKLIST_PATH, OPCACHE_BLACKLIST);
+}
+
+// Experimental OPcache activation (ADR-0031). php-src <= 8.4 only starts
+// OPcache for whitelisted SAPI names; `uwsgi` is on that list and nothing in
+// Omeka S 4.2.1 or its vendor tree branches on it (the only SAPI checks are
+// `PHP_SAPI === 'cli'`, which `uwsgi` fails exactly like `wasm` does).
+// Reported to PHP as php_sapi_name(); php-wasm itself ignores the value.
+export const OPCACHE_SAPI_NAME = "uwsgi";
+
+/**
+ * Decide whether to switch the SAPI name so OPcache's file cache starts.
+ * `?opcache=1|0` overrides `playground.config.json`'s `opcache` key (default
+ * off). PHP 8.5 runs the cache regardless; the flag only matters for <= 8.4.
+ */
+export function isOpcacheEnabled(param, config = {}) {
+  if (param !== null && param !== undefined && param !== "") {
+    return !["0", "false", "off", "no"].includes(String(param).toLowerCase());
+  }
+  return config.opcache === true;
 }

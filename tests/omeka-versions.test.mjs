@@ -247,6 +247,14 @@ describe("parseQueryParams", () => {
     const parsed = parseQueryParams(url);
     assert.equal(parsed.omekaVersion, "4.3.0-alpha");
   });
+
+  it("reads the experimental opcache flag (ADR-0031)", () => {
+    assert.equal(
+      parseQueryParams("https://example.com/?opcache=1").opcache,
+      "1",
+    );
+    assert.equal(parseQueryParams("https://example.com/").opcache, null);
+  });
 });
 
 describe("buildManifestFilename", () => {

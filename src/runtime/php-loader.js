@@ -9,7 +9,11 @@ import {
   loadWebRuntime,
 } from "@php-wasm/web";
 import { OMEKA_ROOT } from "./bootstrap.js";
-import { OPCACHE_INI_ENTRIES, writeOpcacheBlacklist } from "./opcache.js";
+import {
+  OPCACHE_INI_ENTRIES,
+  OPCACHE_SAPI_NAME,
+  writeOpcacheBlacklist,
+} from "./opcache.js";
 import { wrapPhpInstance } from "./php-compat.js";
 import { registerSpawnHandler } from "./spawn-handler.js";
 
@@ -55,6 +59,7 @@ export function createPhpRuntime(
     cliExecutor,
     scopeId,
     forceCleanBoot,
+    opcache = false,
   } = {},
 ) {
   const resolvedPhpVersion = phpVersion || DEFAULT_PHP_VERSION;
@@ -74,6 +79,11 @@ export function createPhpRuntime(
         },
       });
       const php = new PHP(runtimeId);
+      if (opcache) {
+        // Must precede the first request: PHP reads the SAPI name once at
+        // startup. See docs/architecture/adr/ADR-0031-experimental-opcache-via-sapi-name.md.
+        await php.setSapiName(OPCACHE_SAPI_NAME);
+      }
       const FS = php[__private__dont__use].FS;
       persistenceController = null;
 

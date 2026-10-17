@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  isOpcacheEnabled,
   OPCACHE_BLACKLIST,
   OPCACHE_BLACKLIST_PATH,
   OPCACHE_INI_ENTRIES,
+  OPCACHE_SAPI_NAME,
   writeOpcacheBlacklist,
 } from "../src/runtime/opcache.js";
 
@@ -58,5 +60,30 @@ describe("writeOpcacheBlacklist", () => {
       },
     );
     assert.equal(files.size, 1);
+  });
+});
+
+describe("isOpcacheEnabled (ADR-0031)", () => {
+  it("is off by default", () => {
+    assert.equal(isOpcacheEnabled(null, {}), false);
+    assert.equal(isOpcacheEnabled(undefined, { opcache: false }), false);
+    assert.equal(isOpcacheEnabled("", { opcache: false }), false);
+  });
+
+  it("follows the config when the URL has no opinion", () => {
+    assert.equal(isOpcacheEnabled(null, { opcache: true }), true);
+    assert.equal(isOpcacheEnabled(null, { opcache: "true" }), false);
+  });
+
+  it("lets the URL parameter override the config either way", () => {
+    assert.equal(isOpcacheEnabled("1", { opcache: false }), true);
+    assert.equal(isOpcacheEnabled("yes", {}), true);
+    for (const off of ["0", "false", "off", "no", "OFF"]) {
+      assert.equal(isOpcacheEnabled(off, { opcache: true }), false, off);
+    }
+  });
+
+  it("uses a whitelisted SAPI name that is neither cgi nor cli", () => {
+    assert.equal(OPCACHE_SAPI_NAME, "uwsgi");
   });
 });

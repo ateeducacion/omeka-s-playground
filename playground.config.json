@@ -13,6 +13,7 @@
   "timezone": "UTC",
   "autologin": true,
   "resetOnVersionMismatch": true,
+  "opcache": false,
   "admin": {
     "username": "admin",
     "password": "password",

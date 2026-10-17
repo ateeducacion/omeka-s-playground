@@ -230,6 +230,7 @@ async function bootstrapRemote() {
   const requestedRuntimeId = url.searchParams.get("runtime");
   const requestedPath = url.searchParams.get("path") || "/";
   forceCleanBoot = url.searchParams.get("clean") === "1";
+  const opcache = url.searchParams.get("opcache") || null;
   activePath = requestedPath;
   const config = await loadPlaygroundConfig();
   const blueprint = loadActiveBlueprint(scopeId);
@@ -268,6 +269,9 @@ async function bootstrapRemote() {
     workerUrl.searchParams.set("v", BUILD_VERSION);
     workerUrl.searchParams.set("scope", scopeId);
     workerUrl.searchParams.set("runtime", runtime.id);
+    if (opcache) {
+      workerUrl.searchParams.set("opcache", opcache);
+    }
     phpWorker = new Worker(workerUrl, { type: "module" });
     phpWorker.addEventListener("error", (event) => {
       const parts = [

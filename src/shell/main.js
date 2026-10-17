@@ -107,6 +107,8 @@ const blueprintEditor = initBlueprintEditor(
 let currentRuntimeId;
 let currentPhpVersion = DEFAULT_PHP_VERSION;
 let currentOmekaVersion = DEFAULT_OMEKA_VERSION;
+// Experimental OPcache flag from ?opcache= (ADR-0031), forwarded to the worker.
+let currentOpcacheParam = null;
 let currentPath = "/";
 // In-shell navigation history for the toolbar Back button. The iframe's own
 // session history is not usable here (navigations happen across nested frames
@@ -219,7 +221,9 @@ async function updateFrame() {
     return;
   }
 
-  const url = resolveRemoteUrl(scopeId, currentRuntimeId, currentPath);
+  const url = resolveRemoteUrl(scopeId, currentRuntimeId, currentPath, {
+    opcache: currentOpcacheParam,
+  });
   if (pendingCleanBoot) {
     url.searchParams.set("clean", "1");
   }
@@ -710,6 +714,7 @@ async function main() {
   currentPhpVersion = selection.phpVersion;
   currentOmekaVersion = selection.omekaVersion;
   currentRuntimeId = selection.runtimeId;
+  currentOpcacheParam = urlParams.opcache;
   appendLog(
     `Runtime selection: php=${currentPhpVersion}, omeka=${currentOmekaVersion}, runtime=${currentRuntimeId}`,
   );

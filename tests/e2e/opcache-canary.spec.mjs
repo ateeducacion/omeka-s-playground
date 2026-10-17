@@ -12,7 +12,7 @@ import { expect, test } from "@playwright/test";
 // playground-install.php), independently of OPcache.
 test.describe.configure({ timeout: 300_000 });
 
-const ROWS = (process.env.OPCACHE_CANARY_MATRIX || "8.3")
+const ROWS = (process.env.OPCACHE_CANARY_MATRIX || "8.3,8.3:opcache")
   .split(",")
   .map((row) => row.trim())
   .filter(Boolean);
