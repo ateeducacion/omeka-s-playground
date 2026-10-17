@@ -33,11 +33,20 @@ export function joinBasePath(basePath, path) {
   return `${cleanBase}/${cleanPath}`.replace(/\/{2,}/gu, "/");
 }
 
-export function resolveRemoteUrl(scopeId, runtimeId, path = "/") {
+export function resolveRemoteUrl(
+  scopeId,
+  runtimeId,
+  path = "/",
+  { opcache } = {},
+) {
   const url = new URL("./remote.html", window.location.href);
   url.searchParams.set("scope", scopeId);
   url.searchParams.set("runtime", runtimeId);
   url.searchParams.set("path", path);
+  if (opcache) {
+    // Experimental OPcache flag (ADR-0031), consumed by the PHP worker.
+    url.searchParams.set("opcache", opcache);
+  }
   return url;
 }
 

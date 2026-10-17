@@ -67,6 +67,10 @@ All state lives in memory (Emscripten MEMFS). Closing the tab destroys everythin
 
 The settings panel (⚙️ icon) lets you switch between PHP 8.1, 8.2, 8.3 (default), 8.4, and 8.5. Changing PHP version resets the playground to a clean install.
 
+#### Experimental: OPcache
+
+OPcache's file cache is configured but inert on PHP 8.1–8.4 (php-src only starts it for whitelisted SAPI names; php-wasm reports `wasm`). Add `?opcache=1` to the playground URL, or set `"opcache": true` in `playground.config.json`, to report a whitelisted name (`uwsgi`) so the cache starts; `?opcache=0` turns it off again. Default off, nothing is persisted. PHP 8.5 runs the cache regardless; rewritten PHP files are revalidated by mtime on every version. See [ADR-0030](docs/architecture/adr/ADR-0030-opcache-file-cache-timestamp-validation.md) and [ADR-0031](docs/architecture/adr/ADR-0031-experimental-opcache-via-sapi-name.md).
+
 ### Make targets
 
 | Command | Description |

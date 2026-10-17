@@ -331,6 +331,8 @@ export function parseQueryParams(urlOrSearchParams) {
     phpVersion: params.get("phpVersion") || null,
     omeka: params.get("omeka") || null,
     omekaVersion: params.get("omekaVersion") || null,
+    // Experimental OPcache flag (ADR-0031); "1"/"0", forwarded to the worker.
+    opcache: params.get("opcache") || null,
   };
 }
 
