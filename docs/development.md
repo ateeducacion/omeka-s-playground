@@ -184,3 +184,20 @@ checked first, before the command reaches `exec()`.
 - `src/runtime/php-loader.js` — calls `registerSpawnHandler()` after PHP init
 - `src/runtime/bootstrap.js` — `Omeka\Cli` override delegates PHP commands to `exec()`
 - `tests/spawn-handler.test.mjs` — unit tests for allowlist and spawn logic
+
+## Exclusive scope ownership
+
+Each scope has one active remote host, enforced by a native Web Lock before any
+worker starts or persisted state is cleared. A duplicated tab or explicit
+`?scope=` opened twice reports an ownership conflict; close the original owner
+and explicitly reload the other tab, or use a fresh scope. Different scopes
+remain independent. Web Locks are required; a missing or denied API fails closed.
+
+`pagehide` terminates PHP before releasing ownership; BFCache restores reload the
+remote host. Shell notifications are isolated by iframe generation, and HTTP
+listening starts only after worker configuration. The Service Worker, response
+UUIDs, persistence namespaces and safe crash-replay rules are unchanged. No POST
+is queued or replayed on handover. Deployments must close old tabs and refresh
+stale Service Worker caches because older code does not acquire the lock.
+
+See [ADR-0033](architecture/adr/ADR-0033-exclusive-scope-ownership.md).

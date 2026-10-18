@@ -4,6 +4,7 @@ import { loadPlaygroundConfig } from "../shared/config.js";
 import { resolveRuntimeConfig } from "../shared/omeka-versions.js";
 import { buildScopedSitePath } from "../shared/paths.js";
 import { createShellChannel } from "../shared/protocol.js";
+import { acquireScopeOwnership } from "../shared/scope-ownership.js";
 import {
   createServiceWorkerUnsupportedError,
   isServiceWorkerSupported,
@@ -19,6 +20,23 @@ const frameEl = document.querySelector("#remote-frame");
 const progressFillEl = document.querySelector("#progress-fill");
 const progressPercentEl = document.querySelector("#progress-percent");
 let phpWorker;
+const instanceId =
+  new URL(window.location.href).searchParams.get("instance") ||
+  globalThis.crypto.randomUUID();
+let releaseScope;
+let disposed = false;
+let bootstrapTask;
+window.addEventListener("pagehide", () => {
+  disposed = true;
+  phpWorker?.terminate();
+  bootstrapTask.then(
+    () => releaseScope?.(),
+    () => releaseScope?.(),
+  );
+});
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) window.location.reload();
+});
 let activePath = "/";
 let forceCleanBoot = false;
 
@@ -49,7 +67,7 @@ function emit(scopeId, message) {
     setRemoteProgress(message.detail);
   }
 
-  const channel = new BroadcastChannel(createShellChannel(scopeId));
+  const channel = new BroadcastChannel(createShellChannel(scopeId, instanceId));
   channel.postMessage(message);
   channel.close();
 }
@@ -230,6 +248,11 @@ function bindShellCommands(scopeId, runtimeId) {
 async function bootstrapRemote() {
   const url = new URL(window.location.href);
   const scopeId = url.searchParams.get("scope");
+  releaseScope = await acquireScopeOwnership(scopeId);
+  if (disposed) {
+    releaseScope();
+    return;
+  }
   const requestedRuntimeId = url.searchParams.get("runtime");
   const requestedPath = url.searchParams.get("path") || "/";
   forceCleanBoot = url.searchParams.get("clean") === "1";
@@ -262,6 +285,7 @@ async function bootstrapRemote() {
     addonProxyUrl: config.addonProxyUrl || null,
   });
 
+  if (disposed) return;
   if (!phpWorker) {
     const workerUrl = new URL(
       "../../dist/php-worker.bundle.js",
@@ -271,6 +295,7 @@ async function bootstrapRemote() {
     // never serves a stale runtime from the browser HTTP cache.
     workerUrl.searchParams.set("v", BUILD_VERSION);
     workerUrl.searchParams.set("scope", scopeId);
+    workerUrl.searchParams.set("instance", instanceId);
     workerUrl.searchParams.set("runtime", runtime.id);
     if (opcache) {
       workerUrl.searchParams.set("opcache", opcache);
@@ -291,7 +316,9 @@ async function bootstrapRemote() {
   // Listen to bootstrap progress from the worker via the shell channel
   // so the loading overlay shows real-time status.
   let readyNavigated = false;
-  const shellChannel = new BroadcastChannel(createShellChannel(scopeId));
+  const shellChannel = new BroadcastChannel(
+    createShellChannel(scopeId, instanceId),
+  );
   shellChannel.addEventListener("message", (event) => {
     const msg = event.data;
     if (msg?.kind === "progress") {
@@ -317,6 +344,12 @@ async function bootstrapRemote() {
   );
   phpWorker.postMessage({
     kind: "configure-blueprint",
+    runtimeParams: {
+      scopeId,
+      runtimeId: runtime.id,
+      instanceId,
+      opcacheParam: opcache,
+    },
     blueprint,
     clean: forceCleanBoot,
   });
@@ -335,7 +368,8 @@ async function bootstrapRemote() {
   }
 }
 
-bootstrapRemote().catch((error) => {
+bootstrapTask = bootstrapRemote();
+bootstrapTask.catch((error) => {
   const url = new URL(window.location.href);
   const scopeId = url.searchParams.get("scope");
   setOverlayVisible(true);
@@ -350,6 +384,8 @@ bootstrapRemote().catch((error) => {
     // The shell owns the monitoring client; the error name lets it tell an
     // unsupported browser apart from a genuine runtime failure.
     errorName: error?.name || "Error",
-    detail: String(error?.stack || error?.message || error),
+    detail: [String(error?.message || error), error?.stack]
+      .filter(Boolean)
+      .join("\n"),
   });
 });
