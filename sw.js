@@ -5,7 +5,7 @@ import {
   rewriteHtmlDocument as rewriteHtmlDocumentPure,
   shouldInterceptRequest,
 } from "./src/shared/html-url-rewrite.js";
-import { createPhpBridgeChannel, createWorkerRequestId } from "./src/shared/protocol.js";
+import { createPhpBridgeChannel, createWorkerRequestId, formatErrorDetail } from "./src/shared/protocol.js";
 
 const INTERNAL_PROXY_PATH = "/__playground_proxy__";
 // Cache-first store for the immutable, hash-named runtime assets under /dist/
@@ -478,7 +478,7 @@ self.addEventListener("fetch", (event) => {
       serializedRequest: await buildForwardedRequest(event.request, forwardedUrl, bufferedBody),
       runtimeId,
       scopeId,
-    }).catch((error) => buildErrorResponse(String(error?.stack || error?.message || error)));
+    }).catch((error) => buildErrorResponse(formatErrorDetail(error)));
 
     const locationScopedResponse = rewriteScopedLocation(response, {
       origin: url.origin,

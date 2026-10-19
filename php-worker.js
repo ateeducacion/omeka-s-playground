@@ -8,6 +8,7 @@ import {
 import {
   createPhpBridgeChannel,
   createShellChannel,
+  formatErrorDetail,
 } from "./src/shared/protocol.js";
 import {
   bootstrapOmeka,
@@ -21,7 +22,6 @@ import {
   bootAfterUnreplayedCrash,
   isFatalWasmError,
   isSafeToReplay,
-  formatErrorDetail,
   createSnapshotManager,
   requestPathname,
 } from "./src/runtime/crash-recovery.js";
