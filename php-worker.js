@@ -8,6 +8,7 @@ import {
 import {
   createPhpBridgeChannel,
   createShellChannel,
+  escapeHtml,
   formatErrorDetail,
 } from "./src/shared/protocol.js";
 import {
@@ -82,15 +83,6 @@ function deserializeRequest(requestLike) {
   }
 
   return new Request(requestLike.url, init);
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function buildLoadingResponse(message, status = 503) {
