@@ -3,6 +3,7 @@ import {
   isHostStaticPath,
   rewriteHtmlAttributeUrl as rewriteHtmlAttributeUrlPure,
   rewriteHtmlDocument as rewriteHtmlDocumentPure,
+  shouldInterceptRequest,
 } from "./src/shared/html-url-rewrite.js";
 import { createPhpBridgeChannel, createWorkerRequestId } from "./src/shared/protocol.js";
 
@@ -404,16 +405,18 @@ self.addEventListener("fetch", (event) => {
   // TypeError: Failed to fetch and the FetchEvent dies. Always pass through
   // a clone taken before any await, and retry with a fresh URL fetch.
   const request = event.request;
+  const url = new URL(request.url);
+  // Cross-origin requests are left to the browser (no respondWith): Firefox
+  // hangs a pass-through whose response is a cross-origin redirect.
+  // See docs/architecture/adr/ADR-0034-sw-skip-cross-origin-requests.md
+  if (!shouldInterceptRequest(url, self.location.origin)) {
+    return;
+  }
   const passthroughRequest = request.clone();
   const bufferedBody = ["GET", "HEAD"].includes(request.method)
     ? null
     : request.clone().arrayBuffer().catch(() => null);
   event.respondWith((async () => {
-    const url = new URL(request.url);
-    if (url.origin !== self.location.origin) {
-      return fetchPassThrough(passthroughRequest, url, request);
-    }
-
     // Cache-first for the immutable runtime assets under /dist/ (WASM + intl .so),
     // so reloads (and offline) don't re-download tens of MB. Range requests are
     // passed through so a partial-content consumer still gets a 206.

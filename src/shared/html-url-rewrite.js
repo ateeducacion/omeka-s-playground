@@ -30,6 +30,13 @@ export function isHostStaticPath(pathname) {
   );
 }
 
+// Cross-origin requests go straight to the network: Firefox never settles a
+// respondWith(fetch(event.request)) pass-through whose response is a
+// cross-origin redirect. See docs/architecture/adr/ADR-0034-sw-skip-cross-origin-requests.md
+export function shouldInterceptRequest(url, swOrigin) {
+  return url.origin === swOrigin;
+}
+
 export function escapeHtml(str) {
   return String(str)
     .replaceAll("&", "&amp;")

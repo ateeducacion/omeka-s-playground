@@ -6,6 +6,7 @@ import {
   isHostStaticPath,
   rewriteHtmlAttributeUrl,
   rewriteHtmlDocument,
+  shouldInterceptRequest,
 } from "../src/shared/html-url-rewrite.js";
 
 const ORIGIN = "https://ateeducacion.github.io";
@@ -181,6 +182,37 @@ describe("rewriteHtmlDocument", () => {
           "\\/",
         ),
       ),
+    );
+  });
+});
+
+describe("shouldInterceptRequest", () => {
+  it("intercepts same-origin requests", () => {
+    assert.equal(
+      shouldInterceptRequest(new URL(`${ORIGIN}${SCOPED}/admin`), ORIGIN),
+      true,
+    );
+  });
+
+  // Firefox never settles a respondWith(fetch(event.request)) pass-through when
+  // the response is a cross-origin redirect (raw.githubusercontent.com answers
+  // `//owner/...` with a relative 307), which hung blueprint downloads.
+  it("leaves cross-origin requests to the browser", () => {
+    assert.equal(
+      shouldInterceptRequest(
+        new URL(
+          "https://raw.githubusercontent.com//HenarLG/Playground_pruebas/refs/heads/main/local_accessibility.zip",
+        ),
+        ORIGIN,
+      ),
+      false,
+    );
+    assert.equal(
+      shouldInterceptRequest(
+        new URL("https://github-proxy.exelearning.dev/?url=x"),
+        ORIGIN,
+      ),
+      false,
     );
   });
 });
