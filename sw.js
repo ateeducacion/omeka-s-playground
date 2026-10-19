@@ -5,7 +5,7 @@ import {
   rewriteHtmlDocument as rewriteHtmlDocumentPure,
   shouldInterceptRequest,
 } from "./src/shared/html-url-rewrite.js";
-import { createPhpBridgeChannel, createWorkerRequestId, formatErrorDetail } from "./src/shared/protocol.js";
+import { createPhpBridgeChannel, createWorkerRequestId, escapeHtml, formatErrorDetail } from "./src/shared/protocol.js";
 
 const INTERNAL_PROXY_PATH = "/__playground_proxy__";
 // Cache-first store for the immutable, hash-named runtime assets under /dist/
@@ -57,7 +57,7 @@ function withAppBasePath(pathname) {
 
 function buildErrorResponse(message, status = 500) {
   return new Response(
-    `<!doctype html><meta charset="utf-8"><title>Omeka Playground Error</title><body><pre>${message}</pre></body>`,
+    `<!doctype html><meta charset="utf-8"><title>Omeka Playground Error</title><body><pre>${escapeHtml(message)}</pre></body>`,
     {
       status,
       headers: {
