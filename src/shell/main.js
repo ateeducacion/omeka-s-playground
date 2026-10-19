@@ -113,7 +113,8 @@ const blueprintEditor = initBlueprintEditor(
 let currentRuntimeId;
 let currentPhpVersion = DEFAULT_PHP_VERSION;
 let currentOmekaVersion = DEFAULT_OMEKA_VERSION;
-// Experimental OPcache flag from ?opcache= (ADR-0031), forwarded to the worker.
+// OPcache flag from ?opcache= (ADR-0031, on by default since ADR-0035),
+// forwarded to the worker.
 let currentOpcacheParam = null;
 let currentPath = "/";
 // In-shell navigation history for the toolbar Back button. The iframe's own
@@ -702,9 +703,7 @@ async function applyConfigAndReset() {
     } else {
       url.searchParams.delete("opcache");
     }
-    appendLog(
-      `Experimental OPcache ${newOpcache ? "enabled" : "disabled"}; restarting PHP`,
-    );
+    appendLog(`OPcache ${newOpcache ? "enabled" : "disabled"}; restarting PHP`);
   }
   if (!versionChanged) {
     // OPcache alone: reload only the runtime iframe. Same scope, no clean

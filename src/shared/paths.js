@@ -44,7 +44,7 @@ export function resolveRemoteUrl(
   url.searchParams.set("runtime", runtimeId);
   url.searchParams.set("path", path);
   if (opcache) {
-    // Experimental OPcache flag (ADR-0031), consumed by the PHP worker.
+    // OPcache flag (ADR-0031, ADR-0035), consumed by the PHP worker.
     url.searchParams.set("opcache", opcache);
   }
   return url;

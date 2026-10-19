@@ -30,7 +30,7 @@ import {
 const workerUrl = new URL(self.location.href);
 let scopeId = workerUrl.searchParams.get("scope");
 let runtimeId = workerUrl.searchParams.get("runtime");
-// Experimental OPcache flag, forwarded by remote.html (ADR-0031).
+// OPcache flag (on by default, ADR-0035), forwarded by remote.html (ADR-0031).
 let opcacheParam = workerUrl.searchParams.get("opcache") || null;
 
 let instanceId = workerUrl.searchParams.get("instance");
