@@ -44,8 +44,8 @@ Generated output lives in `assets/omeka/`, `assets/manifests/`, and `dist/`.
   linked into core `modules/` or `themes/`. Preserve that split.
 - `omeka-fs-journal:<scope>` persists `/persist`. OPcache is enabled for runtime
   use but intentionally not journaled. See `src/runtime/fs-persistence.js`.
-  The experimental `?opcache=1` flag (ADR-0031) is also reachable from the info
-  panel checkbox, which reloads only the runtime iframe and must never trigger
+  The `?opcache=` flag (ADR-0031, on by default since ADR-0035; `?opcache=0`
+  turns it off) is also reachable from the info panel checkbox, which reloads only the runtime iframe and must never trigger
   a clean boot (ADR-0032). It flushes the journal first (`flush-persistence` →
   `persistence-flushed`); `flushNow()` must await an in-flight debounced flush,
   or a worker teardown aborts its IndexedDB transaction.

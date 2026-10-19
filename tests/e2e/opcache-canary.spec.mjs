@@ -6,6 +6,7 @@ import { expect, test } from "@playwright/test";
 // path to return "v2" and includes it again. A live file cache that does not
 // validate timestamps keeps answering "v1". Rows are `<php>[:opcache]`; PHP 8.5
 // runs the cache regardless of the flag, PHP <= 8.4 only with `?opcache=1`.
+// The other rows pass `?opcache=0` because OPcache is on by default (ADR-0035).
 // The `8.5` row proves the timestamp validation on the version where the cache
 // is live by default; it needs playground-install.php to run with Omeka's
 // error_reporting policy (see tests/e2e/php85-install-script.spec.mjs).
@@ -48,7 +49,7 @@ for (const row of ROWS) {
   const [phpVersion, flag] = row.split(":");
   const opcache = flag === "opcache";
 
-  test(`rewritten PHP files recompile on PHP ${phpVersion}${opcache ? " with ?opcache=1" : ""}`, async ({
+  test(`rewritten PHP files recompile on PHP ${phpVersion}${opcache ? " with ?opcache=1" : " with ?opcache=0"}`, async ({
     page,
     baseURL,
   }) => {
@@ -66,7 +67,7 @@ for (const row of ROWS) {
       "base64url",
     );
     await page.goto(
-      `/?php=${phpVersion}&blueprint=${payload}${opcache ? "&opcache=1" : ""}`,
+      `/?php=${phpVersion}&blueprint=${payload}&opcache=${opcache ? 1 : 0}`,
     );
     await waitForRuntimeReady(page);
     await expect(page.locator("#runtime-id-value")).toContainText(
