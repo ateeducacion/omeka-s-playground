@@ -456,7 +456,7 @@ What the Playground does with each top-level key of the shared format (`v0`):
 | Key | Support | Notes |
 | --- | --- | --- |
 | `$schema` | Supported | Selects strict validation for the shared schema |
-| `meta`, `preferredVersions` | Supported | `preferredVersions` picks the runtime when the URL does not |
+| `meta`, `preferredVersions` | Supported | `preferredVersions` picks the runtime when the URL does not; reloading the same blueprint keeps the tab's runtime, such as one restored by Import |
 | `install` | Supported | `install.admin` is the first user and the autologin account; without one, the configured administrator is |
 | `modules`, `themes` | Supported | ZIP URL, local ZIP, GitHub and omeka.org catalog sources; other git hosts and schemes are rejected |
 | `files` | Supported | |
