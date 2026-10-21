@@ -771,6 +771,93 @@ describe("cross-references (Omeka-S-Cli 0.18)", () => {
   });
 });
 
+describe("item content", () => {
+  it("resolves media URLs against the blueprint that declares them", async () => {
+    const result = await load(
+      shared({
+        items: [
+          {
+            title: "Inline",
+            media: [
+              { url: "./media/a.png" },
+              { url: "https://cdn.example.org/b.png" },
+            ],
+          },
+          { $import: "./content/items.json" },
+        ],
+      }),
+      {
+        "https://example.org/repo/content/items.json": [
+          { title: "Imported", media: [{ url: "../media/c.png" }] },
+        ],
+      },
+    );
+    assert.deepEqual(
+      result.items.map((item) => item.media.map((media) => media.url)),
+      [
+        [
+          "https://example.org/repo/media/a.png",
+          "https://cdn.example.org/b.png",
+        ],
+        ["https://example.org/repo/media/c.png"],
+      ],
+    );
+  });
+
+  it("reads portable JSON-LD sources from x-playground, after the shared entries", async () => {
+    const result = await load(
+      shared({
+        itemSets: [{ title: "Postcards" }],
+        items: [{ title: "Market square" }],
+        "x-playground": {
+          itemSets: [{ source: "./content/sets/photographs.jsonld" }],
+          items: [
+            {
+              source: "./content/items/harbour.jsonld",
+              sites: ["collections"],
+              media: [{ url: "./content/media/harbour.png" }],
+            },
+          ],
+        },
+      }),
+    );
+    assert.deepEqual(
+      result.itemSets.map((entry) => entry.title || entry.source),
+      ["Postcards", "https://example.org/repo/content/sets/photographs.jsonld"],
+    );
+    assert.deepEqual(result.items[1], {
+      source: "https://example.org/repo/content/items/harbour.jsonld",
+      title: "",
+      sites: ["collections"],
+      media: [
+        {
+          type: "url",
+          url: "https://example.org/repo/content/media/harbour.png",
+          title: "",
+          altText: "",
+        },
+      ],
+    });
+
+    // the normalized blueprint (handed to the worker) normalizes to itself
+    assert.deepEqual(normalizeBlueprint(result, config).items, result.items);
+    // and exports back to x-playground, outside the shared lists
+    const exported = exportBlueprintPayload(config, result);
+    assert.deepEqual(
+      exported.items.map((item) => item.title),
+      ["Market square"],
+    );
+    assert.deepEqual(exported["x-playground"].items, [
+      {
+        source: "https://example.org/repo/content/items/harbour.jsonld",
+        sites: ["collections"],
+        media: result.items[1].media,
+      },
+    ]);
+    assert.equal(schema.validateBlueprintSchema(exported).length, 0);
+  });
+});
+
 describe("import resolution limits and errors", () => {
   it("rejects a non-object document and empty references", async () => {
     await assert.rejects(

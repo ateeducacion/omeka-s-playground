@@ -1,0 +1,29 @@
+{
+  "$schema": "https://omeka-s-contrib.github.io/omeka-s-blueprints/schema/v0/blueprint-schema.json",
+  "meta": {
+    "title": "Portable JSON-LD content",
+    "description": "End-to-end fixture: Omeka-S-Cli's portable JSON-LD item sets and items, and media relative to the blueprint."
+  },
+  "install": { "title": "Portable Content Demo" },
+  "sites": [
+    { "title": "Collections", "slug": "collections", "setAsDefault": true }
+  ],
+  "items": [
+    {
+      "title": "Market square",
+      "media": [{ "url": "./content/media/pixel.png", "title": "Front" }]
+    }
+  ],
+  "x-playground": {
+    "landingPage": "/admin/item",
+    "itemSets": [{ "source": "./content/item-sets/photographs.jsonld" }],
+    "items": [
+      {
+        "source": "./content/items/harbour.jsonld",
+        "media": [{ "url": "./content/media/pixel.png", "title": "Photograph" }]
+      },
+      { "source": "./content/items/harbour-study.jsonld" },
+      { "source": "./content/items/missing-vocabulary.jsonld" }
+    ]
+  }
+}

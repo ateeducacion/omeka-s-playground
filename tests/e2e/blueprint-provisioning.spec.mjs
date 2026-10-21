@@ -322,3 +322,62 @@ test("installs and signs in as a global_admin declared after another user", asyn
   ).toContainText("Global Administrator");
   await expect(page.locator("#log-panel")).not.toContainText("change-role");
 });
+
+test("imports portable JSON-LD item sets and items (Omeka-S-Cli's format)", async ({
+  page,
+}) => {
+  await page.goto(`/?blueprint-url=${FIXTURES}/content.blueprint.json`);
+  await waitForRuntimeReady(page);
+  const remote = remoteFrame(page);
+  const log = page.locator("#log-panel");
+
+  // the shared item's media, relative to the blueprint, not to the page
+  await open(page, "/admin/item");
+  await remote
+    .getByRole("link", { name: "Market square", exact: true })
+    .click();
+  await expect(remote.locator("body")).toContainText("Front");
+
+  // properties under another prefix, the class, the item set and the site
+  await open(page, "/admin/item");
+  await remote
+    .getByRole("link", { name: "Harbour at dawn", exact: true })
+    .click();
+  const harbour = remote.locator("body");
+  await expect(harbour).toContainText("1912");
+  await expect(harbour).toContainText("Image");
+  await expect(harbour).toContainText("Photographs");
+  await expect(harbour).toContainText("Collections");
+  await expect(harbour).toContainText("Photograph");
+
+  // an o-ref:ref link to an earlier item; the unresolved one only warns
+  await open(page, "/admin/item");
+  await remote
+    .getByRole("link", { name: "Study for the harbour", exact: true })
+    .click();
+  await expect(
+    remote.getByRole("link", { name: "Harbour at dawn" }),
+  ).not.toHaveCount(0);
+  await expect(log).toContainText(
+    'link "dcterms:relation" to dcterms:identifier = "no-such-item" was not found',
+  );
+
+  // a resource with a problem is skipped, with the reason
+  await expect(log).toContainText(
+    'Skipped content item "Needs a missing vocabulary": "nope:thing": vocabulary https://example.org/not-installed# is not installed.',
+  );
+  await open(page, "/admin/item");
+  await expect(remote.locator("body")).not.toContainText(
+    "Needs a missing vocabulary",
+  );
+
+  // Reload: the content is not seeded again.
+  await page.waitForTimeout(2500);
+  await page.reload({ waitUntil: "commit" });
+  await waitForRuntimeReady(page);
+  await open(page, "/admin/item");
+  await expect(
+    remote.getByRole("link", { name: "Harbour at dawn", exact: true }),
+  ).toHaveCount(1);
+  await expect(page.locator("#log-panel")).not.toContainText("Created content");
+});

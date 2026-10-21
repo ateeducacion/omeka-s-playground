@@ -1024,9 +1024,314 @@ $debug(sprintf(
   json_encode($creatorPropertyId)
 ));
 
+// Portable JSON-LD (Omeka-S-Cli's format): Omeka's JSON-LD with an inline
+// @context, where o-ref:id names the record's identity and o-ref:ref a linked
+// record, both {"<term>": "<value>"}; classes by o:term, templates by o:label,
+// sites by o:slug. The same rules as Omeka-S-Cli's PayloadBuilder: properties
+// are matched by namespace, a resource with a problem is skipped, an
+// unresolved reference only warns, an existing record is left as it is.
+$oRefNamespace = 'https://omeka-s-contrib.github.io/omeka-s-ref/ns#';
+$dataTypeManager = $serviceManager->get('Omeka\\\\DataTypeManager');
+$vocabularyBy = function (string $field, string $value) use ($searchOne) {
+  static $cache = [];
+  $key = $field . '|' . $value;
+  if (!array_key_exists($key, $cache)) {
+    $cache[$key] = $searchOne('vocabularies', [$field => $value]);
+  }
+  return $cache[$key];
+};
+$hasProperty = function (string $term) use ($searchOne) {
+  static $cache = [];
+  return $cache[$term] ??= (bool) $searchOne('properties', ['term' => $term]);
+};
+// The ids of the records with a value; two at most, enough to see ambiguity.
+$findByValue = function (string $resource, string $term, string $value) use ($apiManager) {
+  return $apiManager->search($resource, [
+    'property' => [['property' => $term, 'type' => 'eq', 'text' => $value]],
+    'limit' => 2,
+  ], ['returnScalar' => 'id'])->getContent();
+};
+$importPortable = function (string $resource, array $spec) use (
+  $apiManager, $searchOne, $vocabularyBy, $hasProperty, $findByValue, $dataTypeManager,
+  $oRefNamespace, $siteRepo, &$siteIdsByRef, &$defaultSiteId, &$warnings, $debug, $describeThrowable
+) {
+  $source = (string) $spec['source'];
+  $document = is_readable($spec['cachedPath'] ?? '') ? json_decode((string) file_get_contents($spec['cachedPath']), true) : null;
+  if (!is_array($document)) {
+    $warnings[] = sprintf('Skipped content "%s": it is not a JSON-LD object.', $source);
+    return null;
+  }
+  $context = array_filter(is_array($document['@context'] ?? null) ? $document['@context'] : [], 'is_string');
+  $refPrefix = array_search($oRefNamespace, $context, true) ?: 'o-ref';
+  $refKey = $refPrefix . ':ref';
+  $problems = [];
+  $notes = [];
+
+  // A document term under the prefix this installation uses for its namespace.
+  $mapTerm = function (string $term) use ($context, $vocabularyBy, &$problems) {
+    [$prefix, $local] = array_pad(explode(':', $term, 2), 2, '');
+    $namespace = $context[$prefix] ?? $vocabularyBy('prefix', $prefix)?->namespaceUri();
+    if ($namespace === null) {
+      $problems[] = sprintf('"%s": unknown prefix "%s"', $term, $prefix);
+      return null;
+    }
+    $vocabulary = $vocabularyBy('namespace_uri', $namespace);
+    if (!$vocabulary) {
+      $problems[] = sprintf('"%s": vocabulary %s is not installed', $term, $namespace);
+      return null;
+    }
+    return $vocabulary->prefix() . ':' . $local;
+  };
+  $resolveRef = function ($ref, string $target, string $what) use ($mapTerm, $findByValue, &$notes) {
+    if (!is_array($ref) || count($ref) !== 1 || !is_string(array_key_first($ref)) || !is_scalar(reset($ref))) {
+      $notes[] = sprintf('%s has an invalid reference', $what);
+      return null;
+    }
+    $term = (string) array_key_first($ref);
+    $value = (string) reset($ref);
+    $mapped = $mapTerm($term);
+    $ids = $mapped ? $findByValue($target, $mapped, $value) : [];
+    if (count($ids) === 1) {
+      return (int) reset($ids);
+    }
+    $notes[] = sprintf('%s to %s = "%s" %s; the value is skipped', $what, $term, $value, $ids ? 'is ambiguous' : 'was not found');
+    return null;
+  };
+  $isValueList = function ($values) use ($refKey) {
+    if (!is_array($values) || !$values || !array_is_list($values)) {
+      return false;
+    }
+    foreach ($values as $value) {
+      if (!is_array($value) || !array_intersect(['type', '@value', '@id', 'value_resource_id', $refKey], array_keys($value))) {
+        return false;
+      }
+    }
+    return true;
+  };
+  $isPropertyKey = function ($key) {
+    return is_string($key) && preg_match('/^[^:@]+:[^:]+$/', $key) && !str_starts_with($key, 'o:');
+  };
+  $mapValues = function (string $key, array $values) use (&$mapValues, $mapTerm, $hasProperty, $resolveRef, $isValueList, $isPropertyKey, $dataTypeManager, $refKey, &$problems) {
+    $term = $mapTerm($key);
+    if ($term === null) {
+      return [null, []];
+    }
+    if (!$hasProperty($term)) {
+      $problems[] = sprintf('property "%s" does not exist', $key);
+      return [null, []];
+    }
+    $out = [];
+    foreach ($values as $value) {
+      $type = $value['type'] ?? null;
+      if (!is_string($type) || $type === '') {
+        $problems[] = sprintf('"%s": a value has no type', $key);
+        continue;
+      }
+      if (!$dataTypeManager->has($type)) {
+        $problems[] = sprintf('"%s": data type "%s" is not available', $key, $type);
+        continue;
+      }
+      if (isset($value[$refKey])) {
+        $target = ['resource:itemset' => 'item_sets', 'resource:media' => 'media'][$type] ?? 'items';
+        $id = $resolveRef($value[$refKey], $target, sprintf('link "%s"', $key));
+        if ($id === null) {
+          continue;
+        }
+        unset($value[$refKey], $value['@id']);
+        $value['value_resource_id'] = $id;
+      }
+      foreach (array_keys($value) as $valueKey) {
+        if (in_array($valueKey, ['property_id', 'property_label', 'value_resource_name', 'url', 'display_title'], true) || str_starts_with((string) $valueKey, 'thumbnail_')) {
+          unset($value[$valueKey]);
+        }
+      }
+      if (is_array($value['@annotation'] ?? null)) {
+        $annotation = [];
+        foreach ($value['@annotation'] as $annotationKey => $annotationValues) {
+          if ($isPropertyKey($annotationKey) && $isValueList($annotationValues)) {
+            [$annotationTerm, $annotationValues] = $mapValues($annotationKey, $annotationValues);
+            if ($annotationTerm !== null && $annotationValues) {
+              $annotation[$annotationTerm] = $annotationValues;
+            }
+          } else {
+            $annotation[$annotationKey] = $annotationValues;
+          }
+        }
+        $value['@annotation'] = $annotation;
+      }
+      $value['property_id'] = 'auto';
+      $out[] = $value;
+    }
+    return [$term, $out];
+  };
+
+  $payload = [];
+  $namedSites = 0;
+  foreach ($document as $key => $value) {
+    $prefix = is_string($key) ? explode(':', $key, 2)[0] : '';
+    if (!is_string($key) || ($context[$prefix] ?? ($prefix === 'o-ref' ? $oRefNamespace : null)) === $oRefNamespace
+      || in_array($key, ['@context', '@id', '@type', '@reverse', 'o:id', 'o:owner', 'o:created', 'o:modified', 'o:title', 'o:thumbnail', 'thumbnail_display_urls', 'o:primary_media', 'o:media'], true)) {
+      continue;
+    }
+    if ($key === 'o:resource_class') {
+      $term = is_string($value['o:term'] ?? null) ? $mapTerm($value['o:term']) : null;
+      $class = $term ? $searchOne('resource_classes', ['term' => $term]) : null;
+      if ($class) {
+        $payload[$key] = ['o:id' => $class->id()];
+      } elseif ($term) {
+        $problems[] = sprintf('resource class "%s" not found', $value['o:term']);
+      }
+    } elseif ($key === 'o:resource_template') {
+      $label = is_string($value['o:label'] ?? null) ? $value['o:label'] : null;
+      $template = $label ? $searchOne('resource_templates', ['label' => $label]) : null;
+      if ($template) {
+        $payload[$key] = ['o:id' => $template->id()];
+      } elseif ($label) {
+        $problems[] = sprintf('resource template "%s" not found', $label);
+      }
+    } elseif ($key === 'o:item_set' || $key === 'o:site') {
+      if ($resource !== 'items') {
+        continue;
+      }
+      $payload[$key] = [];
+      foreach (is_array($value) ? $value : [] as $entry) {
+        if ($key === 'o:item_set' && isset($entry[$refKey])) {
+          $id = $resolveRef($entry[$refKey], 'item_sets', 'link "o:item_set"');
+        } elseif ($key === 'o:site' && is_string($entry['o:slug'] ?? null)) {
+          $namedSites++;
+          $site = $siteRepo->findOneBy(['slug' => $entry['o:slug']]);
+          $id = $site?->getId();
+          if (!$site) {
+            $notes[] = sprintf('site "%s" not found', $entry['o:slug']);
+          }
+        } else {
+          $id = null;
+        }
+        if ($id !== null) {
+          $payload[$key][] = ['o:id' => $id];
+        }
+      }
+    } elseif ($isPropertyKey($key) && $isValueList($value)) {
+      [$term, $values] = $mapValues($key, $value);
+      if ($term !== null && $values) {
+        $payload[$term] = $values;
+      }
+    } else {
+      // o:is_public, o:is_open, ...
+      $payload[$key] = $value;
+    }
+  }
+
+  // The blueprint's sites replace the file's; no match, the default site.
+  if ($resource === 'items') {
+    if ($spec['sites'] ?? []) {
+      $payload['o:site'] = [];
+      foreach ($spec['sites'] as $siteRef) {
+        if (isset($siteIdsByRef[strtolower($siteRef)])) {
+          $payload['o:site'][] = ['o:id' => $siteIdsByRef[strtolower($siteRef)]];
+        }
+      }
+      $namedSites = count($spec['sites']);
+    }
+    // an explicit empty o:site keeps the item out of every site
+    if (empty($payload['o:site']) && ($namedSites || !isset($payload['o:site']))) {
+      unset($payload['o:site']);
+      if ($defaultSiteId) {
+        $payload['o:site'] = [['o:id' => $defaultSiteId]];
+      }
+    }
+  }
+
+  $title = $payload['dcterms:title'][0]['@value'] ?? (is_string($document['o:title'] ?? null) ? $document['o:title'] : null);
+  $label = sprintf('%s "%s"', $resource === 'items' ? 'item' : 'item set', $title ?? basename(parse_url($source, PHP_URL_PATH) ?: $source));
+  foreach ($notes as $note) {
+    $warnings[] = sprintf('Content %s: %s.', $label, $note);
+  }
+  if ($problems) {
+    $warnings[] = sprintf('Skipped content %s: %s.', $label, implode('; ', array_unique($problems)));
+    return null;
+  }
+
+  // Identity: o-ref:id, else the title.
+  $identity = $document[$refPrefix . ':id'] ?? null;
+  $existing = [];
+  if (is_array($identity) && count($identity) === 1 && is_string(array_key_first($identity)) && is_scalar(reset($identity))) {
+    $identityTerm = $mapTerm((string) array_key_first($identity));
+    $existing = $identityTerm ? $findByValue($resource, $identityTerm, (string) reset($identity)) : [];
+  } elseif ($title !== null) {
+    $existing = $findByValue($resource, 'dcterms:title', (string) $title);
+  }
+  if ($existing) {
+    $debug(sprintf('Content %s already exists (#%s).', $label, reset($existing)));
+    return ['id' => (int) reset($existing), 'title' => $title, 'label' => $label, 'created' => false];
+  }
+
+  try {
+    $id = $apiManager->create($resource, $payload)->getContent()->id();
+  } catch (Throwable $e) {
+    $warnings[] = sprintf('Unable to provision content %s: %s', $label, $describeThrowable($e));
+    return null;
+  }
+  $debug(sprintf('Created content %s (#%s) from "%s".', $label, $id, $source));
+  return ['id' => $id, 'title' => $title, 'label' => $label, 'created' => true];
+};
+
+$attachMedia = function (int $itemId, string $itemTitle, array $mediaSpecs) use ($apiManager, $findExistingMediaBySource, $literalValues, $titlePropertyId, &$warnings, $debug, $describeThrowable) {
+  foreach ($mediaSpecs as $mediaSpec) {
+    if (($mediaSpec['type'] ?? 'url') !== 'url' || empty($mediaSpec['url'])) {
+      continue;
+    }
+
+    $mediaSource = trim((string) $mediaSpec['url']);
+    if ($mediaSource === '') {
+      continue;
+    }
+
+    if ($findExistingMediaBySource($itemId, $mediaSource)) {
+      $debug(sprintf('Skipped media "%s" for item "%s" (#%s) because it already exists.', $mediaSource, $itemTitle, $itemId));
+      continue;
+    }
+
+    $cachedPath = isset($mediaSpec['cachedPath']) ? trim((string) $mediaSpec['cachedPath']) : '';
+    $mediaPayload = [
+      'o:item' => ['o:id' => $itemId],
+      'o:source' => $mediaSource,
+    ];
+    if (!empty($mediaSpec['title'])) {
+      $mediaPayload['dcterms:title'] = $literalValues($titlePropertyId, $mediaSpec['title']);
+    }
+    if (!empty($mediaSpec['altText'])) {
+      $mediaPayload['o:alt_text'] = $mediaSpec['altText'];
+    }
+
+    try {
+      if ($cachedPath !== '' && is_readable($cachedPath)) {
+        $mediaPayload['o:ingester'] = 'playground_cached_file';
+        $mediaPayload['playground_cached_path'] = $cachedPath;
+        $mediaPayload['playground_cached_name'] = !empty($mediaSpec['cachedName']) ? $mediaSpec['cachedName'] : basename($cachedPath);
+        $mediaResponse = $apiManager->create('media', $mediaPayload);
+      } else {
+        $mediaPayload['o:ingester'] = 'url';
+        $mediaPayload['ingest_url'] = $mediaSource;
+        $mediaResponse = $apiManager->create('media', $mediaPayload);
+      }
+      $debug(sprintf('Created media for item "%s" (#%s) from "%s" (#%s).', $itemTitle, $itemId, $mediaSource, $mediaResponse->getContent()->id()));
+    } catch (Throwable $e) {
+      $warnings[] = sprintf('Unable to attach media "%s" to item "%s": %s', $mediaSource, $itemTitle, $describeThrowable($e));
+    }
+  }
+};
+
 $itemSetIdsByTitle = [];
 if ($titlePropertyId && $shouldSeedContent) {
 foreach (($blueprint['itemSets'] ?? []) as $itemSetSpec) {
+  if (!empty($itemSetSpec['source'])) {
+    $imported = $importPortable('item_sets', $itemSetSpec);
+    if ($imported && $imported['title'] !== null) {
+      $itemSetIdsByTitle[$imported['title']] = $imported['id'];
+    }
+    continue;
+  }
   if (empty($itemSetSpec['title'])) {
     continue;
   }
@@ -1062,6 +1367,13 @@ foreach (($blueprint['itemSets'] ?? []) as $itemSetSpec) {
 }
 
 foreach (($blueprint['items'] ?? []) as $itemSpec) {
+  if (!empty($itemSpec['source'])) {
+    $imported = $importPortable('items', $itemSpec);
+    if ($imported && $imported['created']) {
+      $attachMedia($imported['id'], $imported['title'] ?? $itemSpec['source'], $itemSpec['media'] ?? []);
+    }
+    continue;
+  }
   if (empty($itemSpec['title'])) {
     continue;
   }
@@ -1126,49 +1438,7 @@ foreach (($blueprint['items'] ?? []) as $itemSpec) {
       continue;
     }
 
-    foreach (($itemSpec['media'] ?? []) as $mediaSpec) {
-      if (($mediaSpec['type'] ?? 'url') !== 'url' || empty($mediaSpec['url'])) {
-        continue;
-      }
-
-      $mediaSource = trim((string) $mediaSpec['url']);
-      if ($mediaSource === '') {
-        continue;
-      }
-
-      if ($findExistingMediaBySource($itemId, $mediaSource)) {
-        $debug(sprintf('Skipped media "%s" for item "%s" (#%s) because it already exists.', $mediaSource, $itemSpec['title'], $itemId));
-        continue;
-      }
-
-      $cachedPath = isset($mediaSpec['cachedPath']) ? trim((string) $mediaSpec['cachedPath']) : '';
-      $mediaPayload = [
-        'o:item' => ['o:id' => $itemId],
-        'o:source' => $mediaSource,
-      ];
-      if (!empty($mediaSpec['title'])) {
-        $mediaPayload['dcterms:title'] = $literalValues($titlePropertyId, $mediaSpec['title']);
-      }
-      if (!empty($mediaSpec['altText'])) {
-        $mediaPayload['o:alt_text'] = $mediaSpec['altText'];
-      }
-
-      try {
-        if ($cachedPath !== '' && is_readable($cachedPath)) {
-          $mediaPayload['o:ingester'] = 'playground_cached_file';
-          $mediaPayload['playground_cached_path'] = $cachedPath;
-          $mediaPayload['playground_cached_name'] = !empty($mediaSpec['cachedName']) ? $mediaSpec['cachedName'] : basename($cachedPath);
-          $mediaResponse = $apiManager->create('media', $mediaPayload);
-        } else {
-          $mediaPayload['o:ingester'] = 'url';
-          $mediaPayload['ingest_url'] = $mediaSource;
-          $mediaResponse = $apiManager->create('media', $mediaPayload);
-        }
-        $debug(sprintf('Created media for item "%s" (#%s) from "%s" (#%s).', $itemSpec['title'], $itemId, $mediaSource, $mediaResponse->getContent()->id()));
-      } catch (Throwable $e) {
-        $warnings[] = sprintf('Unable to attach media "%s" to item "%s": %s', $mediaSource, $itemSpec['title'], $describeThrowable($e));
-      }
-    }
+    $attachMedia($itemId, $itemSpec['title'], $itemSpec['media'] ?? []);
   } catch (Throwable $e) {
     $warnings[] = sprintf('Unable to provision item "%s": %s', $itemSpec['title'], $describeThrowable($e));
   }

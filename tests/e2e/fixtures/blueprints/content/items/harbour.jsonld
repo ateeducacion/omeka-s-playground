@@ -1,0 +1,16 @@
+{
+  "@context": {
+    "dc": "http://purl.org/dc/terms/",
+    "dctype": "http://purl.org/dc/dcmitype/",
+    "o": "http://omeka.org/s/vocabs/o#",
+    "ref": "https://omeka-s-contrib.github.io/omeka-s-ref/ns#"
+  },
+  "@type": "o:Item",
+  "ref:id": { "dc:identifier": "ph-1" },
+  "o:resource_class": { "o:term": "dctype:Image" },
+  "o:item_set": [{ "ref:ref": { "dc:identifier": "set-photographs" } }],
+  "o:site": [{ "o:slug": "collections" }],
+  "dc:title": [{ "type": "literal", "@value": "Harbour at dawn" }],
+  "dc:identifier": [{ "type": "literal", "@value": "ph-1" }],
+  "dc:date": [{ "type": "literal", "@value": "1912" }]
+}
