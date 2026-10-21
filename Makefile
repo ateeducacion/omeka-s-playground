@@ -93,10 +93,7 @@ test: build-version
 
 coverage: build-version
 	mkdir -p coverage
-	node --test --experimental-test-coverage \
-		--test-reporter=spec --test-reporter-destination=stdout \
-		--test-reporter=lcov --test-reporter-destination=coverage/lcov.info \
-		tests/*.test.mjs
+	npx c8 --all --src . --include='*.js' --include='src/**' --include='lib/**' --include='scripts/**' --exclude='src/generated/**' --exclude='**/*.config.*' --exclude='sw.bundle.js' --reporter=lcovonly --reporter=text-summary --report-dir=coverage node --test tests/*.test.mjs
 
 test-e2e:
 	npm run test:e2e
