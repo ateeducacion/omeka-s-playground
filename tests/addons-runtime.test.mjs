@@ -797,6 +797,20 @@ describe("materializeBlueprintSources", () => {
     assert.equal(calls.length, 2, "cached sources are reused");
   });
 
+  it("unlinks a stale source symlink without deleting its target", async () => {
+    const { FS, php } = fakePhp({ "/keep/data.txt": "keep" });
+    FS.mkdirTree("/persist/addons/sources");
+    FS.symlink("/keep", "/persist/addons/sources/stale");
+    await materializeBlueprintSources({
+      php,
+      blueprint: {},
+      publish: () => {},
+      config: {},
+    });
+    assert.equal(exists(FS, "/persist/addons/sources/stale"), false);
+    assert.equal(read(FS, "/keep/data.txt"), "keep");
+  });
+
   it("falls back to the proxy when the direct download fails", async (t) => {
     const calls = stubFetch(t, async (url) =>
       url.startsWith(PROXY)

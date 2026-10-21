@@ -58,7 +58,8 @@ function ensureDirSync(FS, path) {
 }
 
 function removeNodeIfPresent(FS, path) {
-  const about = FS.analyzePath(path);
+  // Never follow a final symlink: removing one must not delete its target.
+  const about = FS.analyzePath(path, true);
   if (!about.exists) {
     return;
   }

@@ -221,6 +221,38 @@ describe("prepareOmekaRuntimeFilesystem", () => {
     );
   });
 
+  it("keeps uploads when files/ already links to them", async () => {
+    const upload = `${OMEKA_FILES_PATH}/original/photo.jpg`;
+    const ctx = setup({ files: { [upload]: "JPG" } });
+    const prepare = () =>
+      prepareOmekaRuntimeFilesystem({
+        blueprint: {},
+        config,
+        corePrefetch: Promise.resolve(buildCore()),
+        php: ctx.php,
+        runtimeId: "rt",
+      });
+    await prepare();
+    await prepare();
+    assert.equal(readText(ctx.raw, upload), "JPG");
+    assert.equal(ctx.raw.FS.readlink(`${OMEKA_ROOT}/files`), OMEKA_FILES_PATH);
+  });
+
+  it("replaces a stale files/ link without touching its old target", async () => {
+    const ctx = setup({ files: { "/old/keep.txt": "keep" } });
+    ctx.raw.FS.mkdirTree(OMEKA_ROOT);
+    ctx.raw.FS.symlink("/old", `${OMEKA_ROOT}/files`);
+    await prepareOmekaRuntimeFilesystem({
+      blueprint: {},
+      config,
+      corePrefetch: Promise.resolve(buildCore()),
+      php: ctx.php,
+      runtimeId: "rt",
+    });
+    assert.equal(readText(ctx.raw, "/old/keep.txt"), "keep");
+    assert.equal(ctx.raw.FS.readlink(`${OMEKA_ROOT}/files`), OMEKA_FILES_PATH);
+  });
+
   it("fails loud when the core file count does not match the manifest", async () => {
     const ctx = setup();
     const core = buildCore();
