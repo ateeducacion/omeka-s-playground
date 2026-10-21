@@ -19,12 +19,9 @@ import {
   resolveBuildMetadata,
 } from "./lib/build-version.mjs";
 
-const scriptDir = dirname(fileURLToPath(import.meta.url));
-const repoDir = resolve(scriptDir, "..");
-const jsOutputPath = resolve(repoDir, "src/generated/build-version.js");
-const jsonOutputPath = resolve(repoDir, "assets/build-version.json");
+const defaultRepoDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-function tryGit(args) {
+function tryGit(repoDir, args) {
   try {
     return execFileSync("git", args, {
       cwd: repoDir,
@@ -36,16 +33,26 @@ function tryGit(args) {
   }
 }
 
-const git = {
-  sha: () => tryGit(["rev-parse", "HEAD"]),
-  dirty: () => Boolean(tryGit(["status", "--porcelain"])),
-};
+/** Resolve the build metadata and write it (or print the ID with --print-version). */
+export function writeBuildVersion({
+  argv = process.argv,
+  env = process.env,
+  repoDir = defaultRepoDir,
+  stdout = process.stdout,
+  log = console.log,
+} = {}) {
+  const git = {
+    sha: () => tryGit(repoDir, ["rev-parse", "HEAD"]),
+    dirty: () => Boolean(tryGit(repoDir, ["status", "--porcelain"])),
+  };
+  const metadata = resolveBuildMetadata({ env, git });
 
-const metadata = resolveBuildMetadata({ env: process.env, git });
-
-if (process.argv.includes("--print-version")) {
-  process.stdout.write(`${metadata.buildVersion}\n`);
-} else {
+  if (argv.includes("--print-version")) {
+    stdout.write(`${metadata.buildVersion}\n`);
+    return metadata;
+  }
+  const jsOutputPath = resolve(repoDir, "src/generated/build-version.js");
+  const jsonOutputPath = resolve(repoDir, "assets/build-version.json");
   mkdirSync(dirname(jsOutputPath), { recursive: true });
   mkdirSync(dirname(jsonOutputPath), { recursive: true });
   writeFileSync(jsOutputPath, renderBuildVersionModule(metadata), "utf8");
@@ -54,5 +61,13 @@ if (process.argv.includes("--print-version")) {
     `${JSON.stringify(metadata, null, 2)}\n`,
     "utf8",
   );
-  console.log(`Wrote build metadata ${metadata.buildVersion}`);
+  log(`Wrote build metadata ${metadata.buildVersion}`);
+  return metadata;
+}
+
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  writeBuildVersion();
 }
