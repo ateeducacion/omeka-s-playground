@@ -346,13 +346,7 @@ function resolveMediaUrls(entry, documentUrl) {
     if (!value || ABSOLUTE_PATH.test(value) || URI_SCHEME.test(value)) {
       return medium;
     }
-    try {
-      return { ...medium, [field]: resolveReference(value, documentUrl) };
-    } catch (error) {
-      throw new BlueprintImportError(
-        `Blueprint media url in ${documentUrl}: ${error.message}`,
-      );
-    }
+    return { ...medium, [field]: resolveReference(value, documentUrl) };
   });
   return { ...entry, media };
 }
