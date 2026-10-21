@@ -118,6 +118,8 @@ let currentOmekaVersion = DEFAULT_OMEKA_VERSION;
 // forwarded to the worker.
 let currentOpcacheParam = null;
 let currentPath = "/";
+// Set while the user types in the address bar, cleared on submit or blur.
+let addressEdited = false;
 // In-shell navigation history for the toolbar Back button. The iframe's own
 // session history is not usable here (navigations happen across nested frames
 // and service-worker scopes), so the shell tracks visited paths itself.
@@ -301,6 +303,15 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+// Show a path the site frame reported, unless the user is typing an address:
+// the toolbar unlocks before the landing page finishes loading, and that load
+// must not replace what the user typed.
+function showFramePath(path) {
+  if (!addressEdited) {
+    els.address.value = path;
+  }
 }
 
 function postToRemote(message) {
@@ -523,7 +534,7 @@ function bindShellChannel() {
           recordBackEntry(currentPath, nextPath);
         }
         currentPath = nextPath;
-        els.address.value = currentPath;
+        showFramePath(currentPath);
         saveState({ lastReadyAt: new Date().toISOString() });
         break;
       }
@@ -531,7 +542,7 @@ function bindShellChannel() {
         const nextPath = message.path || "/";
         recordBackEntry(currentPath, nextPath);
         currentPath = nextPath;
-        els.address.value = currentPath;
+        showFramePath(currentPath);
         saveState();
         break;
       }
@@ -949,11 +960,18 @@ els.copyLogs.addEventListener("click", () => {
 });
 els.refreshPhpInfoButton.addEventListener("click", requestPhpInfoCapture);
 
+els.address.addEventListener("input", () => {
+  addressEdited = true;
+});
+els.address.addEventListener("blur", () => {
+  addressEdited = false;
+});
 els.addressForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (uiLocked) {
     return;
   }
+  addressEdited = false;
   navigateWithinRuntime(els.address.value || "/");
 });
 

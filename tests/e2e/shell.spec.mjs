@@ -302,6 +302,38 @@ test("applies blueprint global settings", async ({ page }) => {
   await expect(perPage).toHaveValue("13");
 });
 
+test("keeps an address being typed when the site frame navigates", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await waitForRuntimeReady(page);
+  const remote = page.frameLocator("#site-frame").frameLocator("#remote-frame");
+  await expect(remote.locator("h1")).toHaveText(/dashboard/iu);
+
+  // A page finishing its load in the frame reports its path to the shell.
+  // That must not replace what the user is typing: the toolbar unlocks before
+  // the landing page has loaded, so typing can overlap that load.
+  await page.locator("#address-input").fill("/admin/setting");
+  await remote
+    .locator("body")
+    .evaluate(() =>
+      location.assign(location.href.replace(/\/admin$/u, "/admin/item")),
+    );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.keys(sessionStorage)
+          .filter((key) => key.endsWith(":state"))
+          .map((key) => JSON.parse(sessionStorage.getItem(key)).path),
+      ),
+    )
+    .toContain("/admin/item");
+  await expect(page.locator("#address-input")).toHaveValue("/admin/setting");
+
+  await page.locator("#address-input").press("Enter");
+  await expect(remote.locator("h1")).toHaveText(/Global settings/u);
+});
+
 test("opens the blueprint landing page after autologin", async ({ page }) => {
   const blueprint = { landingPage: "/admin/setting" };
   const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");

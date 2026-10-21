@@ -13,12 +13,51 @@ async function ready(page) {
   });
 }
 
+function heldLocks(page) {
+  return page.evaluate(async () =>
+    (await navigator.locks.query()).held.map((lock) => lock.name),
+  );
+}
+
+// URLs of the PHP workers serving `scope` in every open tab. A remote host
+// starts its worker only after it owns the scope, so more than one means a
+// POST on the scope's bridge would run twice.
+function phpWorkers(context, scope) {
+  return context
+    .pages()
+    .flatMap((page) => page.workers())
+    .map((worker) => worker.url())
+    .filter((href) => {
+      const url = new URL(href);
+      return (
+        url.pathname.endsWith("/php-worker.bundle.js") &&
+        url.searchParams.get("scope") === scope
+      );
+    });
+}
+
 async function postOnce(page, scope, oldId = null) {
   return page.frame({ url: /remote\.html/u }).evaluate(
     async ({ prefix, scope, oldId }) => {
-      const channel = new BroadcastChannel(`${prefix}-php:${scope}`);
+      const name = `${prefix}-php:${scope}`;
+      const channel = new BroadcastChannel(name);
+      // A new BroadcastChannel joins its channel asynchronously. Wait until a
+      // message posted after it was created reaches it, so the probe's request
+      // and reply cannot be broadcast before this channel listens.
+      const ping = new BroadcastChannel(name);
+      await new Promise((resolve) => {
+        channel.onmessage = ({ data }) => {
+          if (data?.kind === "ownership-probe-listening") resolve();
+        };
+        ping.postMessage({ kind: "ownership-probe-listening" });
+      });
+      ping.close();
       let id;
       const replies = [];
+      let replied;
+      const reply = new Promise((resolve) => {
+        replied = resolve;
+      });
       channel.onmessage = ({ data }) => {
         if (
           data.kind === "http-request" &&
@@ -36,8 +75,10 @@ async function postOnce(page, scope, oldId = null) {
               },
             });
         }
-        if (data.kind === "http-response" && data.id === id)
+        if (data.kind === "http-response" && data.id === id) {
           replies.push(data.id);
+          replied();
+        }
       };
       const source = new URL(document.querySelector("#remote-frame").src);
       const root = source.pathname.match(
@@ -47,14 +88,24 @@ async function postOnce(page, scope, oldId = null) {
         method: "POST",
         body: "probe=1",
       });
-      // Observe duplicate worker replies after the first response wins the race.
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      channel.close();
       const body = await response.text();
-      return { replies, id, body };
+      // The Service Worker answers from a bridge reply, which every channel
+      // receives. Wait for this channel's copy instead of a fixed delay; the
+      // bound only turns a missing reply into a readable failure.
+      await Promise.race([
+        reply,
+        new Promise((resolve) => setTimeout(resolve, 30_000)),
+      ]);
+      channel.close();
+      return { replies, id, body, status: response.status };
     },
     { prefix, scope, oldId },
   );
+}
+
+async function expectSingleReply(page, scope) {
+  const result = await postOnce(page, scope);
+  expect(result.replies, JSON.stringify(result)).toHaveLength(1);
 }
 
 for (const differentRuntime of [false, true]) {
@@ -97,8 +148,9 @@ for (const differentRuntime of [false, true]) {
         { timeout: 180_000 },
       )
       .toBe(true);
+    expect(phpWorkers(context, scope)).toHaveLength(1);
     const result = await postOnce(page, scope);
-    expect(result.replies).toHaveLength(1);
+    expect(result.replies, JSON.stringify(result)).toHaveLength(1);
     await expect(
       second.frameLocator("#site-frame").locator("#remote-status"),
     ).toContainText("already open");
@@ -116,10 +168,19 @@ for (const differentRuntime of [false, true]) {
       "Persistence journal flushed",
     );
     await page.close();
+    // Closing a tab releases its Web Lock asynchronously: reload only once the
+    // scope is free, or the reloaded tab is rejected as a second owner again.
+    await expect
+      .poll(() => heldLocks(second))
+      .not.toContain(`${prefix}-owner:${scope}`);
     await second.reload({ waitUntil: "commit" });
     await ready(second);
+    expect(await heldLocks(second)).toContain(`${prefix}-owner:${scope}`);
+    expect(phpWorkers(context, scope)).toHaveLength(1);
     const afterHandover = await postOnce(second, scope, result.id);
-    expect(afterHandover.replies).toHaveLength(1);
+    expect(afterHandover.replies, JSON.stringify(afterHandover)).toHaveLength(
+      1,
+    );
     expect(afterHandover.body).not.toBe("stale-reply");
   });
 }
@@ -135,8 +196,10 @@ test("distinct scopes remain independent across reload and Reset", async ({
   const second = await context.newPage();
   await second.goto(`/?scope=${other}`);
   await ready(second);
-  expect((await postOnce(page, scope)).replies).toHaveLength(1);
-  expect((await postOnce(second, other)).replies).toHaveLength(1);
+  expect(phpWorkers(context, scope)).toHaveLength(1);
+  expect(phpWorkers(context, other)).toHaveLength(1);
+  await expectSingleReply(page, scope);
+  await expectSingleReply(second, other);
   await second
     .locator("#site-frame")
     .evaluate((frame) =>
@@ -157,6 +220,8 @@ test("distinct scopes remain independent across reload and Reset", async ({
   await second.locator("#reset-button").click();
   await expect.poll(() => previous.isDetached()).toBe(true);
   await ready(second);
-  expect((await postOnce(second, other)).replies).toHaveLength(1);
-  expect((await postOnce(page, scope)).replies).toHaveLength(1);
+  // The old host's worker is terminated before the new owner starts its own.
+  await expect.poll(() => phpWorkers(context, other).length).toBe(1);
+  await expectSingleReply(second, other);
+  await expectSingleReply(page, scope);
 });
