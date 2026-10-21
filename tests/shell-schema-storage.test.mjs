@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { registerHooks } from "node:module";
 import { describe, it } from "node:test";
 import { SHARED_BLUEPRINT_SCHEMA_URL } from "../src/shared/blueprint.js";
 import {
@@ -93,6 +94,37 @@ describe("loadBlueprintSchemaValidator", () => {
     } finally {
       moduleControl.schema = "ok";
     }
+  });
+});
+
+describe("loadBlueprintSchemaValidator after a failure", () => {
+  it("retries a failed load instead of keeping the rejection", async () => {
+    const { loadBlueprintSchemaValidator } = await import(
+      "../src/shell/blueprint-schema-loader.js?loader-retry"
+    );
+    const requested = [];
+    const recorder = registerHooks({
+      resolve(specifier, context, nextResolve) {
+        if (specifier.includes("/dist/blueprint-schema.bundle.js")) {
+          requested.push(new URL(specifier));
+        }
+        return nextResolve(specifier, context);
+      },
+    });
+    moduleControl.schema = "missing";
+    try {
+      await assert.rejects(loadBlueprintSchemaValidator(), /not built/u);
+      moduleControl.schema = "ok";
+      const validator = await loadBlueprintSchemaValidator();
+      assert.equal(typeof validator.validateBlueprintSchema, "function");
+    } finally {
+      moduleControl.schema = "ok";
+      recorder.deregister();
+    }
+    // The retry asks for a new URL: browsers can keep a failed module fetch.
+    assert.equal(requested.length, 2);
+    assert.equal(requested[0].searchParams.has("retry"), false);
+    assert.equal(requested[1].searchParams.get("retry"), "1");
   });
 });
 
