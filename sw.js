@@ -338,10 +338,11 @@ function forwardToPhpWorker({ serializedRequest, runtimeId, scopeId }) {
 // Only the remote host page may reconfigure the worker. Omeka pages and any
 // HTML they render (uploaded media, module output) share this origin, so
 // without this check they could reroute every addon download through their
-// own proxy.
+// own proxy. The path must sit inside the app base: under a subpath, a page
+// at the origin root /remote.html belongs to another app of a shared origin.
 function isRemoteHostClient(source) {
   try {
-    return stripAppBasePath(new URL(source?.url).pathname) === "/remote.html";
+    return new URL(source?.url).pathname === withAppBasePath("/remote.html");
   } catch {
     return false;
   }
