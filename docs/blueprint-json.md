@@ -68,6 +68,42 @@ Other consumers of the format ignore this block.
 | `login` | Credentials used by autologin | Defaults to `install.admin`, else the first user |
 | `debug.enabled` | Enables development-style diagnostics | Helpful for install/debug sessions |
 | `phpConstants` | PHP constants defined before Omeka boots | Name → boolean / string / number; see [PHP constants](#php-constants) |
+| `itemSets`, `items` | Portable JSON-LD content | See [Portable JSON-LD content](#portable-json-ld-content) |
+
+## Portable JSON-LD content
+
+`x-playground.itemSets` and `x-playground.items` import item sets and items from portable JSON-LD files, the format [Omeka-S-Cli](https://github.com/GhentCDH/Omeka-S-Cli/pull/182) exports: Omeka's JSON-LD with an inline `@context`, one resource per file, where references name a record instead of an instance id. The entries take the shape of Omeka-S-Cli's `x-omeka-s-cli` ones. The shared format may adopt them ([omeka-s-blueprints#13](https://github.com/omeka-s-contrib/omeka-s-blueprints/issues/13)); until then they live here.
+
+```json
+{
+  "x-playground": {
+    "itemSets": [{ "source": "./content/item-sets/photographs.jsonld" }],
+    "items": [
+      {
+        "source": "./content/items/harbour.jsonld",
+        "sites": ["collections"],
+        "media": [{ "url": "./content/media/harbour.png", "title": "Photograph" }]
+      }
+    ]
+  }
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `source` | The JSON-LD file, relative to the blueprint that declares it |
+| `sites` | Items only: site slugs or titles that replace the file's `o:site` |
+| `media` | Items only: as `items[].media` (URL media) |
+
+They are created after the shared `itemSets` and `items`, in order, with Omeka-S-Cli's rules:
+
+- Properties are matched by namespace: a prefix of the file's `@context` maps to the one this installation uses for that namespace.
+- `o-ref:id` (`{"<term>": "<value>"}`) identifies the record, else its title. A record that already exists is left as it is.
+- `o-ref:ref` links to another record (`o:item_set`, or a value of type `resource:*`). A reference that matches no record, or several, only warns, and the value is skipped; refer to records declared earlier.
+- Classes by `{"o:term"}`, resource templates by `{"o:label"}`, sites by `{"o:slug"}`. An item with no site, or none that matches, goes to the default site.
+- A missing vocabulary, unknown property, class, template or data type skips the resource, with a warning that names the problem.
+
+The `o-ref` keys are recognized by their namespace, `https://omeka-s-contrib.github.io/omeka-s-ref/ns#`, under any prefix.
 
 ## Add-on sources
 
@@ -332,6 +368,7 @@ Relative paths resolve against the file that contains them (RFC 3986), not again
 | `$import` in an imported file | that imported file |
 | `files[].source`, `vocabularies[].source`, `resourceTemplates[].source` | the file that declares the entry |
 | `modules[].source`, `themes[].source` given as a path (a local ZIP) | the file that declares the entry |
+| `items[].media[].url`, `x-playground.itemSets[].source`, `x-playground.items[].source` and `.media[].url` | the file that declares the entry |
 
 How the blueprint arrives decides whether it has a URL:
 
@@ -340,7 +377,7 @@ How the blueprint arrives decides whether it has a URL:
 | `?blueprint-url=…`, `?blueprint=https://…`, the configured default blueprint | that URL |
 | `?blueprint=<base64>` (also what the editor's **Run** uses), `?blueprint-data=`, an uploaded file | none |
 
-Without a base URL, a relative `$import` stops the boot with an error (the editor and the upload already refuse it), because there is no file to resolve it against. Absolute references still work. For compatibility, relative `files`, `vocabularies` and `resourceTemplates` sources of such a blueprint keep resolving against the Playground page, as before. Media URLs (`items[].media[].url`) always resolve against the Playground page.
+Without a base URL, a relative `$import` stops the boot with an error (the editor and the upload already refuse it), because there is no file to resolve it against. Absolute references still work. For compatibility, relative `files`, `vocabularies` and `resourceTemplates` sources of such a blueprint keep resolving against the Playground page, as before. So do media URLs; a root-relative media path (`/…`) always does.
 
 ## Vocabularies
 
@@ -408,7 +445,7 @@ On every boot, after Omeka S is installed:
 3. `vocabularies`, then `resourceTemplates`, once every module is active (so their data types are registered) and before anything that could use their properties.
 4. `users` and their settings, then `sites` and their permissions.
 5. `settings`, last, so neither a module nor the sites (`default_site`) override them. This is Omeka-S-Cli's order.
-6. `itemSets` and `items`, only on the first boot of a scope.
+6. `itemSets` and `items`, then the [portable JSON-LD](#portable-json-ld-content) ones, only on the first boot of a scope.
 
 Steps 1 to 5 run on every boot and find what already exists, so a reload neither duplicates nor resets it. Content (step 6) is seeded once per scope, so deleted or edited demo items stay as the user left them. Reset Playground, `?clean=1` or another blueprint starts again from a clean installation.
 
@@ -467,7 +504,7 @@ What the Playground does with each top-level key of the shared format (`v0`):
 | `sites` | Supported | With `$import`, as Omeka-S-Cli does |
 | `itemSets`, `items` | Supported | Seeded once per scope; media of type `url` |
 | `$import` | Supported | Every list the schema allows, and `sites`; see [Imports](#imports-import) |
-| `x-playground` | Supported | Playground settings |
+| `x-playground` | Supported | Playground settings and [portable JSON-LD content](#portable-json-ld-content) |
 | Other `x-*` keys | Ignored | As the specification requires |
 | Schema validation | Supported | Schema and cross-references, strict when `$schema` is the shared schema |
 
@@ -535,7 +572,7 @@ Verify the addon `name`, the `source` definition, and whether the remote host is
 
 ### Media fails to load
 
-Confirm the URL resolves correctly from the deployed base path or local dev server. Relative sample paths are resolved against the current page URL.
+Confirm the URL resolves correctly from the deployed base path or local dev server. Relative media paths are resolved against the blueprint that declares them (against the page URL for an inline blueprint).
 
 ### A blueprint import appears to do nothing
 

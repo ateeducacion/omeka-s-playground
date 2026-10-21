@@ -853,7 +853,7 @@ export function normalizeBlueprint(input, config) {
   const activeSite =
     sites.find((site) => site.setAsDefault) || sites[0] || null;
 
-  return {
+  const normalized = {
     $schema:
       typeof blueprint.$schema === "string"
         ? blueprint.$schema
@@ -903,6 +903,7 @@ export function normalizeBlueprint(input, config) {
     settings: normalizeSettings(blueprint.settings),
     itemSets: Array.isArray(blueprint.itemSets)
       ? blueprint.itemSets
+          .filter((itemSet) => !itemSet?.source)
           .map((itemSet) => ({
             title: String(itemSet?.title || "").trim(),
             description:
@@ -914,6 +915,7 @@ export function normalizeBlueprint(input, config) {
       : [],
     items: Array.isArray(blueprint.items)
       ? blueprint.items
+          .filter((item) => !item?.source)
           .map((item) => ({
             title: String(item?.title || "").trim(),
             description:
@@ -930,23 +932,52 @@ export function normalizeBlueprint(input, config) {
                   .map((entry) => String(entry || "").trim())
                   .filter(Boolean)
               : [],
-            media: Array.isArray(item?.media)
-              ? item.media
-                  .map((media) => ({
-                    type: String(media?.type || "url")
-                      .trim()
-                      .toLowerCase(),
-                    url: absolutizeUrl(media?.url || media?.source || ""),
-                    title: typeof media?.title === "string" ? media.title : "",
-                    altText:
-                      typeof media?.altText === "string" ? media.altText : "",
-                  }))
-                  .filter((media) => media.url)
-              : [],
+            media: normalizeItemMedia(item?.media),
           }))
           .filter((item) => item.title)
       : [],
   };
+  // x-playground: portable JSON-LD files, after the shared entries. A
+  // normalized blueprint keeps them in itemSets / items, with their source.
+  for (const key of ["itemSets", "items"]) {
+    normalized[key].push(
+      ...normalizeContentSources([
+        ...(Array.isArray(blueprint[key]) ? blueprint[key] : []),
+        ...(Array.isArray(runtime[key]) ? runtime[key] : []),
+      ]),
+    );
+  }
+  return normalized;
+}
+
+// Portable JSON-LD entries (as Omeka-S-Cli's x-omeka-s-cli): a source, the
+// sites that replace the file's o:site, and media.
+function normalizeContentSources(entries) {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) => typeof entry?.source === "string" && entry.source.trim())
+    .map((entry) => ({
+      source: absolutizeUrl(entry.source),
+      title: typeof entry.title === "string" ? entry.title.trim() : "",
+      sites: Array.isArray(entry.sites)
+        ? entry.sites.map((site) => String(site || "").trim()).filter(Boolean)
+        : [],
+      media: normalizeItemMedia(entry.media),
+    }));
+}
+
+function normalizeItemMedia(list) {
+  return Array.isArray(list)
+    ? list
+        .map((media) => ({
+          type: String(media?.type || "url")
+            .trim()
+            .toLowerCase(),
+          url: absolutizeUrl(media?.url || media?.source || ""),
+          title: typeof media?.title === "string" ? media.title : "",
+          altText: typeof media?.altText === "string" ? media.altText : "",
+        }))
+        .filter((media) => media.url)
+    : [];
 }
 
 export function buildEffectivePlaygroundConfig(config, blueprint) {
@@ -1015,6 +1046,16 @@ export function exportBlueprintPayload(config, blueprint) {
   if (normalized.login.email !== admin.email) {
     runtime.login = normalized.login;
   }
+  for (const key of ["itemSets", "items"]) {
+    const sources = normalized[key].filter((entry) => entry.source);
+    if (sources.length) {
+      runtime[key] = sources.map(({ source, sites, media }) => ({
+        source,
+        ...(sites?.length ? { sites } : {}),
+        ...(media?.length ? { media } : {}),
+      }));
+    }
+  }
   const files = exportFiles(normalized);
 
   return {
@@ -1040,8 +1081,8 @@ export function exportBlueprintPayload(config, blueprint) {
       : {}),
     settings: normalized.settings,
     users: normalized.users,
-    itemSets: normalized.itemSets,
-    items: normalized.items,
+    itemSets: normalized.itemSets.filter((entry) => !entry.source),
+    items: normalized.items.filter((entry) => !entry.source),
     sites: normalized.sites,
     "x-playground": runtime,
   };

@@ -910,6 +910,10 @@ export async function materializeBlueprintSources({
       `resource template "${entry.label || entry.source}"`,
       entry,
     ]),
+    // portable JSON-LD of x-playground.itemSets / x-playground.items
+    ...[...(staged.itemSets || []), ...(staged.items || [])]
+      .filter((entry) => entry.source)
+      .map((entry) => [`content "${entry.title || entry.source}"`, entry]),
   ];
   for (const [what, entry] of entries) {
     const digest = await crypto.subtle.digest(

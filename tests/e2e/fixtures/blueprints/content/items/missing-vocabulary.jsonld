@@ -1,0 +1,10 @@
+{
+  "@context": {
+    "dcterms": "http://purl.org/dc/terms/",
+    "nope": "https://example.org/not-installed#"
+  },
+  "dcterms:title": [
+    { "type": "literal", "@value": "Needs a missing vocabulary" }
+  ],
+  "nope:thing": [{ "type": "literal", "@value": "x" }]
+}

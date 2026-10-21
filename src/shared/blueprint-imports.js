@@ -31,6 +31,9 @@ const ASSET_FIELDS = {
   files: "source",
   vocabularies: "source",
   resourceTemplates: "source",
+  // the portable JSON-LD files of x-playground.itemSets / x-playground.items
+  itemSets: "source",
+  items: "source",
 };
 const ADDON_KEYS = ["modules", "themes"];
 
@@ -93,6 +96,19 @@ export async function resolveBlueprintImports(document, options = {}) {
     if (Array.isArray(blueprint[key])) {
       blueprint[key] = await resolveList(blueprint[key], key, root, context);
     }
+  }
+  // x-playground content: JSON-LD sources and media, relative to the blueprint
+  const runtime = blueprint["x-playground"];
+  if (isPlainObject(runtime)) {
+    const content = { ...runtime };
+    for (const key of ["itemSets", "items"]) {
+      if (Array.isArray(runtime[key])) {
+        content[key] = runtime[key].map((entry) =>
+          resolveMediaUrls(resolveAssetField(entry, key, root), root),
+        );
+      }
+    }
+    blueprint["x-playground"] = content;
   }
   if (Array.isArray(blueprint.settings)) {
     blueprint.settings = await resolveSettingsList(
@@ -184,7 +200,12 @@ async function resolveList(list, key, documentUrl, context) {
   const resolved = [];
   for (const entry of list) {
     if (!isReference(entry)) {
-      resolved.push(resolveAssetField(entry, key, documentUrl));
+      resolved.push(
+        resolveMediaUrls(
+          resolveAssetField(entry, key, documentUrl),
+          documentUrl,
+        ),
+      );
       continue;
     }
     const { url, data } = await importDocument(
@@ -307,6 +328,33 @@ function resolveAssetField(entry, key, documentUrl) {
       `Blueprint ${key} ${field} in ${documentUrl}: ${error.message}`,
     );
   }
+}
+
+// Media URLs resolve against the declaring document, as in Omeka-S-Cli. An
+// absolute URL, or a root-relative path (relative to the Playground page, as
+// before), is left as it is.
+function resolveMediaUrls(entry, documentUrl) {
+  if (!documentUrl || !isPlainObject(entry) || !Array.isArray(entry.media)) {
+    return entry;
+  }
+  const media = entry.media.map((medium) => {
+    const field = medium?.url ? "url" : "source";
+    const value =
+      isPlainObject(medium) && typeof medium[field] === "string"
+        ? medium[field].trim()
+        : "";
+    if (!value || ABSOLUTE_PATH.test(value) || URI_SCHEME.test(value)) {
+      return medium;
+    }
+    try {
+      return { ...medium, [field]: resolveReference(value, documentUrl) };
+    } catch (error) {
+      throw new BlueprintImportError(
+        `Blueprint media url in ${documentUrl}: ${error.message}`,
+      );
+    }
+  });
+  return { ...entry, media };
 }
 
 // Whether an add-on source is a path (a local ZIP release) rather than a URL,
