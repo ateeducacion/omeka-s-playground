@@ -611,6 +611,28 @@ test("an app served under a subpath keeps its base path", async () => {
   );
 });
 
+test("under a subpath only the app's own remote.html may set the addon proxy", async () => {
+  await loadSw({ scope: `${ORIGIN}/omeka/` });
+  const configure = (url, addonProxyUrl) =>
+    env.listeners.message({
+      data: { kind: "configure-service-worker", addonProxyUrl },
+      source: { url },
+    });
+  const proxied = () =>
+    dispatchFetch(request("/omeka/__playground_proxy__?url=x")).response;
+  onNetwork(
+    (url) => url.startsWith("https://proxy.test/"),
+    () => new Response("proxied"),
+  );
+
+  // Another page of the shared origin (e.g. another GitHub Pages project).
+  configure(`${ORIGIN}/remote.html`, "https://evil.test/");
+  assert.equal((await proxied()).status, 502);
+
+  configure(`${ORIGIN}/omeka/remote.html?scope=s1`, "https://proxy.test/");
+  assert.equal(await (await proxied()).text(), "proxied");
+});
+
 test("a scope URL without a trailing slash is treated as the base path", async () => {
   await loadSw({ scope: `${ORIGIN}/app` });
   onNetwork(`${ORIGIN}/app`, () => new Response("shell"));
