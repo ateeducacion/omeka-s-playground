@@ -225,6 +225,22 @@ describe("php-worker", () => {
     assert.equal(bridgeOut.length, 0);
   });
 
+  it("does not cache a boot that failed before bootstrapOmeka()", async () => {
+    const stub = globalThis.__workerStub;
+    const createPhpRuntime = stub.createPhpRuntime;
+    stub.createPhpRuntime = () => {
+      stub.createPhpRuntime = createPhpRuntime;
+      throw new Error("runtime download failed");
+    };
+    const bootstrap = behavior.bootstrap;
+    behavior.bootstrap = async () => {
+      throw new Error("second boot ran");
+    };
+    assert.match((await send(get("/admin"))).text, /runtime download failed/);
+    assert.match((await send(get("/admin"))).text, /second boot ran/);
+    behavior.bootstrap = bootstrap;
+  });
+
   it("reports a bootstrap failure and boots again on the next request", async () => {
     behavior.bootstrap = async () => {
       throw new Error("install exploded");
@@ -289,7 +305,11 @@ describe("php-worker", () => {
     };
     const response = await send(get("/admin"));
     assert.equal(response.status, 500);
-    assert.match(response.text, /Runtime restart limit reached/);
+    assert.match(response.text, /<pre>Runtime crashed after only \d+ request/);
+    assert.doesNotMatch(response.text, /restart limit/);
+    // A declined POST must not claim the runtime is restarting either.
+    const post = await send({ ...get("/admin"), method: "POST", body: "x" });
+    assert.match(post.text, /<pre>Runtime crashed after only \d+ request/);
     assert.ok(
       shell.some((m) => /crash after only \d+ requests/.test(m.detail || "")),
     );
@@ -608,10 +628,13 @@ describe("php-worker", () => {
         if (php === crashed) throw fatal();
         return new Response("ok");
       };
-      await send(get("/admin"));
+      const response = await send(get("/admin"));
       limited = shell.find((m) =>
         /restart limit reached \(20\/20\)/.test(m.detail || ""),
       );
+      if (limited) {
+        assert.match(response.text, /<pre>Runtime restart limit reached\./);
+      }
     }
     assert.ok(limited);
   });
