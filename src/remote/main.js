@@ -46,7 +46,9 @@ function setOverlayVisible(isVisible) {
 
 function setRemoteProgress(detail, progress = null) {
   if (statusEl && detail) {
-    statusEl.textContent = detail;
+    // One line only: error details carry the stack after the message, and the
+    // stack belongs in the shell logs, not in the overlay.
+    statusEl.textContent = String(detail).split("\n", 1)[0];
   }
   if (progress != null) {
     const pct = Math.round(Math.min(1, Math.max(0, progress)) * 100);

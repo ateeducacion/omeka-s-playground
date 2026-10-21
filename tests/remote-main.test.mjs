@@ -443,11 +443,15 @@ test("reports a PHP worker startup failure", async () => {
     data: { kind: "worker-startup-error", detail: "no wasm" },
   });
   await waitFor(() => sentOn("s5").some((m) => m.kind === "error"), "error");
-  // emit() mirrors the error detail (message + stack) into the overlay.
-  assert.match(
-    window.document.querySelector("#remote-status").textContent,
-    /^no wasm\nError: no wasm/u,
-  );
+  // The overlay keeps the message; the stack only travels to the shell logs.
+  const status = window.document.querySelector("#remote-status");
+  const sent = FakeBroadcastChannel.sent.find((m) => m.data.kind === "error");
+  assert.match(sent.data.detail, /^no wasm\nError: no wasm\n {4}at /u);
+  assert.equal(status.textContent, "no wasm");
+  // A real BroadcastChannel also delivers the error to this page's own
+  // shell-channel listener; that must not bring the stack back either.
+  FakeBroadcastChannel.deliver(sent.name, sent.data);
+  assert.equal(status.textContent, "no wasm");
   FakeWorker.instances.length = 0;
 });
 
