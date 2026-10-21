@@ -101,13 +101,15 @@ function buildLoadingResponse(message, status = 503) {
   );
 }
 
+// Returns { restarted: true }, or { restarted: false, declined } where
+// `declined` is the user-facing reason the runtime was not restarted.
 function resetRuntime(reason) {
   if (reactiveRestartCount >= MAX_REACTIVE_RESTARTS) {
     postShell({
       kind: "error",
       detail: `[runtime] restart limit reached (${reactiveRestartCount}/${MAX_REACTIVE_RESTARTS}), not restarting. Reason: ${reason}`,
     });
-    return false;
+    return { restarted: false, declined: "Runtime restart limit reached." };
   }
 
   if (requestCount < MIN_REQUESTS_BEFORE_RESTART) {
@@ -115,7 +117,10 @@ function resetRuntime(reason) {
       kind: "error",
       detail: `[runtime] crash after only ${requestCount} requests (minimum ${MIN_REQUESTS_BEFORE_RESTART}), likely a fundamental bug — not restarting. Reason: ${reason}`,
     });
-    return false;
+    return {
+      restarted: false,
+      declined: `Runtime crashed after only ${requestCount} request(s); not restarting automatically. Manual reload required.`,
+    };
   }
 
   reactiveRestartCount += 1;
@@ -130,7 +135,7 @@ function resetRuntime(reason) {
     progress: 0.01,
   });
 
-  return true;
+  return { restarted: true };
 }
 
 async function getRuntimeState() {
@@ -138,7 +143,7 @@ async function getRuntimeState() {
     return runtimeStatePromise;
   }
 
-  runtimeStatePromise = (async () => {
+  const boot = (async () => {
     const config = await loadPlaygroundConfig();
     const parsedRuntime = parseRuntimeId(runtimeId);
     const resolvedSelection = resolveVersions({
@@ -236,22 +241,16 @@ async function getRuntimeState() {
       publishProgress("Bootstrapping Omeka", detail, progress);
     };
 
-    let bootstrapState;
-    try {
-      bootstrapState = await bootstrapOmeka({
-        config,
-        blueprint: activeBlueprint,
-        clean: forceCleanBoot,
-        corePrefetch,
-        omekaVersion,
-        php,
-        publish,
-        runtimeId,
-      });
-    } catch (error) {
-      runtimeStatePromise = null;
-      throw error;
-    }
+    const bootstrapState = await bootstrapOmeka({
+      config,
+      blueprint: activeBlueprint,
+      clean: forceCleanBoot,
+      corePrefetch,
+      omekaVersion,
+      php,
+      publish,
+      runtimeId,
+    });
 
     postShell({
       kind: "ready",
@@ -267,7 +266,14 @@ async function getRuntimeState() {
     return stateRef;
   })();
 
-  return runtimeStatePromise;
+  // Never cache a failed boot, whichever step failed: the next request retries.
+  runtimeStatePromise = boot;
+  boot.catch(() => {
+    if (runtimeStatePromise === boot) {
+      runtimeStatePromise = null;
+    }
+  });
+  return boot;
 }
 
 async function executePhpRequest(state, serializedRequest) {
@@ -386,7 +392,9 @@ function installBridgeListener() {
           });
         }
 
-        const didReset = resetRuntime(`fatal WASM error: ${error.message}`);
+        const { restarted: didReset, declined } = resetRuntime(
+          `fatal WASM error: ${error.message}`,
+        );
         const canReplay = isSafeToReplay(data.request);
 
         if (isRetry || !canReplay || !didReset) {
@@ -394,9 +402,9 @@ function installBridgeListener() {
           const status = didReset || isRetry ? 503 : 500;
           const message = isRetry
             ? `Runtime crashed again on retry. Manual reload required.\n\n${detail}`
-            : !canReplay
-              ? `Runtime restarting after crash. Non-idempotent request was not retried.\n\n${detail}`
-              : `Runtime restart limit reached.\n\n${detail}`;
+            : !didReset
+              ? `${declined}\n\n${detail}`
+              : `Runtime restarting after crash. Non-idempotent request was not retried.\n\n${detail}`;
           await respondError(data.id, message, status);
           await bootAfterUnreplayedCrash({
             didReset,
