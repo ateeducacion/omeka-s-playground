@@ -334,16 +334,6 @@ function navigateWithinRuntime(path) {
   void updateFrame();
 }
 
-// biome-ignore lint/correctness/noUnusedVariables: called via postToRemote from remote.html
-function refreshWithinRuntime() {
-  if (remoteFrameBooted && postToRemote({ kind: "refresh-site" })) {
-    appendLog(`Refreshing ${currentPath}`);
-    return;
-  }
-
-  void updateFrame();
-}
-
 function navigateHome() {
   navigateWithinRuntime("/");
 }
