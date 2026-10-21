@@ -1,7 +1,6 @@
 import { BUILD_VERSION } from "./src/generated/build-version.js";
 import {
   isHostStaticPath,
-  rewriteHtmlAttributeUrl as rewriteHtmlAttributeUrlPure,
   rewriteHtmlDocument as rewriteHtmlDocumentPure,
   shouldInterceptRequest,
 } from "./src/shared/html-url-rewrite.js";
@@ -272,16 +271,6 @@ function getScopedBasePath(scopeId, runtimeId) {
   return withAppBasePath(`/playground/${scopeId}/${runtimeId}`);
 }
 
-function rewriteHtmlAttributeUrl(rawValue, { origin, scopeId, runtimeId }) {
-  return rewriteHtmlAttributeUrlPure(rawValue, {
-    origin,
-    scopeId,
-    runtimeId,
-    appBasePath: getAppBasePath(),
-    scopedBasePath: getScopedBasePath(scopeId, runtimeId),
-  });
-}
-
 function rewriteHtmlDocument(html, scope) {
   return rewriteHtmlDocumentPure(html, {
     ...scope,
@@ -430,7 +419,7 @@ self.addEventListener("fetch", (event) => {
     }
 
     const strippedPath = stripAppBasePath(url.pathname);
-    if (strippedPath.split("?")[0] === INTERNAL_PROXY_PATH) {
+    if (strippedPath === INTERNAL_PROXY_PATH) {
       return handleInternalProxyRequest(event.request, url);
     }
 
@@ -447,11 +436,10 @@ self.addEventListener("fetch", (event) => {
 
     const scopedRequest = await resolveScopedRequest(event, url);
     if (!scopedRequest) {
-      const strippedPathname = strippedPath;
-      if (strippedPathname === "/jquery-3.7.1.min.js") {
+      if (strippedPath === "/jquery-3.7.1.min.js") {
         return fetch(new URL(withAppBasePath("/application/asset/vendor/jquery/jquery.min.js"), self.location.origin));
       }
-      if (strippedPathname === "/css" && url.searchParams.has("family")) {
+      if (strippedPath === "/css" && url.searchParams.has("family")) {
         return new Response("", {
           status: 200,
           headers: {
