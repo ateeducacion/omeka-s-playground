@@ -36,7 +36,7 @@ Then open <http://localhost:8080>.
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 24+
 - npm
 - Composer
 - Git

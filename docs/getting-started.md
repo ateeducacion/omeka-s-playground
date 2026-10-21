@@ -4,7 +4,7 @@
 
 You need the same core tools used by the main project:
 
-- Node.js 18+
+- Node.js 24+
 - npm
 - Composer
 - Git
