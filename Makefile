@@ -17,7 +17,7 @@ OMEKA_REF_BRANCH ?=
 #   make bundle OMEKA_VERSION=4.1.1
 #   make bundle OMEKA_VERSION=4.3.0-alpha OMEKA_REF=https://github.com/<org>/omeka-s.git OMEKA_REF_BRANCH=<branch>
 
-.PHONY: help up deps build-version prepare bundle bundle-all bundle-4.1.1 bundle-4.2.1 bundle-4.3.0-alpha serve clean reset test lint format
+.PHONY: help up deps build-version prepare bundle bundle-all bundle-4.1.1 bundle-4.2.1 bundle-4.3.0-alpha serve clean reset test coverage lint format
 
 help:
 	@printf '%s\n' \
@@ -33,6 +33,7 @@ help:
 		'  make serve               Start the local dev server' \
 		'  make up                  Run bundle-all + serve' \
 		'  make test                Run tests' \
+		'  make coverage            Run tests with lcov coverage' \
 		'  make lint                Check code with Biome' \
 		'  make format              Auto-fix code with Biome' \
 		'  make clean               Remove generated caches and bundle artifacts' \
@@ -89,6 +90,13 @@ clean:
 # (and the modules they import) expect it to exist.
 test: build-version
 	node --test tests/*.test.mjs
+
+coverage: build-version
+	mkdir -p coverage
+	node --test --experimental-test-coverage \
+		--test-reporter=spec --test-reporter-destination=stdout \
+		--test-reporter=lcov --test-reporter-destination=coverage/lcov.info \
+		tests/*.test.mjs
 
 test-e2e:
 	npm run test:e2e

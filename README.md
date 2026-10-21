@@ -1,5 +1,7 @@
 # Omeka S Playground
 
+[![Coverage](https://codecov.io/gh/ateeducacion/omeka-s-playground/graph/badge.svg)](https://codecov.io/gh/ateeducacion/omeka-s-playground)
+
 <p align="center">
   <img src=".github/screenshot.png" alt="Omeka S Playground" width="600">
 </p>
