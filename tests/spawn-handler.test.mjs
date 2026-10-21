@@ -3,10 +3,13 @@ import { describe, it } from "node:test";
 import {
   ALLOWED_SCRIPT_PATHS,
   buildSpawnProgram,
+  formatPhpVersionText,
   isAllowedPhpBinary,
   MAX_SPAWN_DEPTH,
   PHP_BIN_ALLOWLIST,
+  parsePhpOptions,
   parseSpawnCommand,
+  registerSpawnHandler,
   stripTrailingShellTokens,
 } from "../src/runtime/spawn-handler.js";
 
@@ -255,5 +258,101 @@ describe("buildSpawnProgram", () => {
 
     assert.equal(api.collected.exitCode, 1);
     assert.match(api.collected.stderr, /PHP execution error: boom/u);
+  });
+});
+
+describe("spawn command edge cases", () => {
+  const job = "/www/omeka/application/data/scripts/perform-job.php";
+
+  it("strips a lone trailing operator and attached redirections", () => {
+    assert.deepEqual(stripTrailingShellTokens([job, ">"]).args, [job]);
+    assert.deepEqual(
+      stripTrailingShellTokens([job, "2>/dev/null", ">>/tmp/log"]).args,
+      [job],
+    );
+  });
+
+  it("parses standalone PHP options and rejects an option without its value", () => {
+    assert.deepEqual(
+      parseSpawnCommand(["php", "-n", "--no-php-ini", job]).spec.phpOptions,
+      ["-n", "--no-php-ini"],
+    );
+    assert.deepEqual(parsePhpOptions(["-d", "memory_limit=1G", "-v"]), {
+      phpOptions: ["-d", "memory_limit=1G"],
+      remainingArgs: ["-v"],
+    });
+    assert.deepEqual(parseSpawnCommand(["php", "-d"]), {
+      error: "Missing value for PHP option: -d",
+      exitCode: 1,
+    });
+  });
+
+  it("rejects a bare php invocation and the omeka CLI without jobs:dispatch", () => {
+    assert.equal(parseSpawnCommand(["php"]).exitCode, 1);
+    assert.match(
+      parseSpawnCommand(["php", "/www/omeka/application/omeka", "cache:clear"])
+        .error,
+      /Unsupported PHP CLI command/,
+    );
+    assert.equal(
+      parseSpawnCommand([
+        "php",
+        "/www/omeka/application/omeka",
+        "jobs:dispatch",
+      ]).spec.kind,
+      "script",
+    );
+    assert.match(parseSpawnCommand([]).error, /<empty>/);
+  });
+
+  it("formats the version banner with an unknown fallback", () => {
+    assert.equal(formatPhpVersionText("8.3.1"), "PHP 8.3.1 (cli) (php-wasm)\n");
+    assert.equal(formatPhpVersionText(), "PHP unknown (cli) (php-wasm)\n");
+  });
+
+  it("reports a parse error to stderr with its exit code", async () => {
+    const program = buildSpawnProgram(() => assert.fail("must not execute"));
+    const api = createMockProcessApi();
+    await program(["php", "-z"], api);
+    assert.equal(api.collected.exitCode, 1);
+    assert.match(api.collected.stderr, /Missing value for PHP option: -z/);
+  });
+
+  it("refuses to nest spawns past the depth limit", async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    let started = 0;
+    const program = buildSpawnProgram(async () => {
+      started += 1;
+      await gate;
+      return { stdout: "ok", exitCode: 0 };
+    });
+    const apis = Array.from(
+      { length: MAX_SPAWN_DEPTH + 1 },
+      createMockProcessApi,
+    );
+    const runs = apis.map((api) => program(["php", job], api));
+    await runs.at(-1);
+    assert.equal(started, MAX_SPAWN_DEPTH);
+    assert.equal(apis.at(-1).collected.exitCode, 1);
+    assert.match(apis.at(-1).collected.stderr, /Spawn depth limit reached/);
+    release();
+    await Promise.all(runs);
+    assert.ok(apis.slice(0, -1).every((api) => api.collected.exitCode === 0));
+  });
+
+  it("registers the program as the PHP spawn handler", async () => {
+    let handler;
+    await registerSpawnHandler(
+      {
+        setSpawnHandler: async (value) => {
+          handler = value;
+        },
+      },
+      async () => ({ exitCode: 0 }),
+    );
+    assert.equal(typeof handler, "function");
   });
 });

@@ -770,3 +770,62 @@ describe("cross-references (Omeka-S-Cli 0.18)", () => {
     );
   });
 });
+
+describe("import resolution limits and errors", () => {
+  it("rejects a non-object document and empty references", async () => {
+    await assert.rejects(
+      resolveBlueprintImports(null),
+      /must be a JSON object/,
+    );
+    assert.throws(() => resolveReference("  "), /cannot be empty/);
+    assert.equal(withoutImportReferences("raw"), "raw");
+  });
+
+  it("stops nested imports at the maximum depth", async () => {
+    const documents = {};
+    for (let i = 0; i < 20; i += 1) {
+      documents[`https://example.org/repo/m${i}.json`] = [
+        { $import: `m${i + 1}.json` },
+      ];
+    }
+    const { fetchJson } = fakeFetch(documents);
+    await assert.rejects(
+      resolveBlueprintImports(
+        { modules: [{ $import: "m0.json" }] },
+        { baseUrl: ROOT, fetchJson },
+      ),
+      /exceeds the maximum nesting depth \(16\)/,
+    );
+  });
+
+  it("reports a relative source that resolves to an unsupported scheme", async () => {
+    await assert.rejects(
+      resolveBlueprintImports(
+        { files: [{ source: "mailto:someone@example.org", destination: "a" }] },
+        { baseUrl: ROOT },
+      ),
+      /Blueprint files source in https:\/\/example.org\/repo\/blueprint.json: .*unsupported scheme "mailto:"/,
+    );
+  });
+
+  it("turns GitLab blob pages into raw URLs", () => {
+    assert.equal(
+      resolveReference(
+        "https://gitlab.com/group/repo/-/blob/main/modules.json",
+      ),
+      "https://gitlab.com/group/repo/-/raw/main/modules.json",
+    );
+  });
+
+  it("names invalid JSON in fetched documents", async (t) => {
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => new Response("{nope");
+    t.after(() => {
+      globalThis.fetch = original;
+    });
+    await assert.rejects(
+      fetchJsonDocument("https://x.test/a.json"),
+      /not valid JSON/,
+    );
+  });
+});

@@ -268,3 +268,35 @@ describe("buildManifestFilename", () => {
     assert.equal(buildManifestFilename("9.9.9"), "latest.json");
   });
 });
+
+describe("version helpers: loose and unknown inputs", () => {
+  it("parses shortened numeric runtime tokens and rejects unknown ones", () => {
+    assert.deepEqual(parseRuntimeId("php83-omeka42"), {
+      phpVersion: "8.3",
+      omekaVersion: "4.2.1",
+    });
+    assert.equal(parseRuntimeId("php83-omeka99"), null);
+  });
+
+  it("falls back for unknown Omeka versions", () => {
+    assert.deepEqual(getCompatiblePhpVersions("9.9.9"), [DEFAULT_PHP_VERSION]);
+    assert.equal(buildRuntimeId("8.3", "9.9.9"), "php83-omeka999");
+    assert.equal(buildRuntimeLabel("8.3", "9.9.9"), "PHP 8.3 + Omeka S 9.9.9");
+    assert.equal(resolveRuntimeConfig({ runtimes: [] }, {}), null);
+    assert.equal(resolveRuntimeConfig(undefined, {}), null);
+  });
+
+  it("reads query params from strings, location-likes and nothing", () => {
+    assert.equal(parseQueryParams("https://x.test/?php=8.2").php, "8.2");
+    assert.equal(parseQueryParams({ search: "?phpVersion=8.4" }).php, "8.4");
+    assert.equal(parseQueryParams(undefined).php, null);
+    assert.equal(parseQueryParams(new URLSearchParams("php=8.1")).php, "8.1");
+  });
+
+  it("prefers omekaVersion over omeka and drops incompatible PHP", () => {
+    assert.deepEqual(
+      resolveVersions({ omekaVersion: "4.1", omeka: "4.2.1", php: "7.4" }),
+      { phpVersion: DEFAULT_PHP_VERSION, omekaVersion: "4.1.1" },
+    );
+  });
+});

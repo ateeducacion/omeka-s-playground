@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  decodeHtmlAttributeEntities,
   HOST_STATIC_PREFIXES,
   isHostStaticPath,
   rewriteHtmlAttributeUrl,
@@ -213,6 +214,49 @@ describe("shouldInterceptRequest", () => {
         ORIGIN,
       ),
       false,
+    );
+  });
+});
+
+describe("rewriteHtmlAttributeUrl edge cases", () => {
+  const scope = { origin: "https://host.test", scopeId: "s", runtimeId: "r" };
+
+  it("decodes decimal and named entities, leaving unknown names intact", () => {
+    assert.equal(
+      decodeHtmlAttributeEntities("&#47;a&colon;b&nbsp;"),
+      "/a:b&nbsp;",
+    );
+    assert.equal(
+      rewriteHtmlAttributeUrl("&#47;admin&amp;x=1", scope),
+      "/playground/s/r/admin&x=1",
+    );
+  });
+
+  it("returns empty values unchanged", () => {
+    assert.equal(rewriteHtmlAttributeUrl("", scope), "");
+  });
+
+  it("leaves a backslash URL that escapes to another origin untouched", () => {
+    assert.equal(
+      rewriteHtmlAttributeUrl("/\\evil.test/x", scope),
+      "/\\evil.test/x",
+    );
+  });
+
+  it("leaves the value untouched when the origin is unusable", () => {
+    assert.equal(
+      rewriteHtmlAttributeUrl("/admin", { ...scope, origin: "not a url" }),
+      "/admin",
+    );
+  });
+
+  it("maps the bare app base path to the scoped root", () => {
+    assert.equal(
+      rewriteHtmlAttributeUrl("/omeka-s-playground", {
+        ...scope,
+        appBasePath: "/omeka-s-playground",
+      }),
+      "/omeka-s-playground/playground/s/r/",
     );
   });
 });
