@@ -261,23 +261,44 @@ describe("shell boot", () => {
 });
 
 describe("shell runtime selection", () => {
-  it("restores the saved path; the blueprint's versions beat the saved runtime", async (t) => {
-    // Every resolved blueprint carries preferredVersions (the default one
-    // included), so they decide the runtime over the tab's saved runtimeId.
+  it("restores the saved path and runtime, e.g. a snapshot from Import", async (t) => {
+    // The state importPayload() saves for a snapshot of another runtime.
     const env = await boot(t, {
       session: {
         [STATE_KEY]: JSON.stringify({
           runtimeId: "php84-omeka411",
           path: "/admin/item",
+          importedAt: "2026-10-21T00:00:00.000Z",
         }),
         [`blueprint-source:${SCOPE}`]: "default",
       },
     });
-    assert.equal(env.frameUrl().searchParams.get("runtime"), DEFAULT_RUNTIME);
+    assert.equal(env.frameUrl().searchParams.get("runtime"), "php84-omeka411");
     assert.equal(env.frameUrl().searchParams.get("path"), "/admin/item");
     assert.equal(env.frameUrl().searchParams.has("clean"), false);
-    assert.equal(env.$("#info-omeka-version").value, "4.2.1");
-    assert.equal(env.$("#info-php-version").value, "8.3");
+    assert.equal(env.$("#info-omeka-version").value, "4.1.1");
+    assert.equal(env.$("#info-php-version").value, "8.4");
+  });
+
+  it("ignores a saved runtime that is not a known runtime", async (t) => {
+    const env = await boot(t, {
+      session: {
+        [STATE_KEY]: JSON.stringify({ runtimeId: "php84-omeka999" }),
+        [`blueprint-source:${SCOPE}`]: "default",
+      },
+    });
+    assert.equal(env.frameUrl().searchParams.get("runtime"), DEFAULT_RUNTIME);
+  });
+
+  it("lets explicit URL versions beat the saved runtime", async (t) => {
+    const env = await boot(t, {
+      query: "&php=8.2",
+      session: {
+        [STATE_KEY]: JSON.stringify({ runtimeId: "php84-omeka411" }),
+        [`blueprint-source:${SCOPE}`]: "default",
+      },
+    });
+    assert.equal(env.frameUrl().searchParams.get("runtime"), "php82-omeka411");
   });
 
   it("skips a saved login page when autologin is on", async (t) => {

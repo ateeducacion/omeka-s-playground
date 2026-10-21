@@ -22,6 +22,7 @@ import {
   getCompatiblePhpVersions,
   OMEKA_VERSIONS,
   parseQueryParams,
+  parseRuntimeId,
   resolveRuntimeSelection,
 } from "../shared/omeka-versions.js";
 import {
@@ -792,20 +793,24 @@ async function main() {
   const shouldBypassSavedLogin =
     config.autologin && previous?.path === "/login";
 
-  // Resolve the runtime selection from (explicit URL params) >
-  // (active blueprint preferred versions) > (saved session) >
-  // (config defaults). On a forced clean boot we ignore the saved session
-  // so the runtime always matches the resolved selection.
+  // Resolve the runtime selection from (explicit URL params) > (saved
+  // session) > (active blueprint preferred versions, which normalization
+  // fills from the config defaults). The saved runtime comes from this same
+  // blueprint source, so it only differs after a snapshot Import; a forced
+  // clean boot ignores it so the runtime matches the new blueprint.
   const urlParams = parseQueryParams(window.location.href);
+  const saved = shouldForceCleanBoot
+    ? null
+    : parseRuntimeId(previous?.runtimeId);
   const selection = resolveRuntimeSelection({
-    php: urlParams.php || activeBlueprint?.preferredVersions?.php || undefined,
+    php:
+      urlParams.php ||
+      saved?.phpVersion ||
+      activeBlueprint?.preferredVersions?.php,
     omeka:
-      urlParams.omeka || activeBlueprint?.preferredVersions?.omeka || undefined,
-    runtimeId: shouldForceCleanBoot
-      ? undefined
-      : previous?.runtimeId ||
-        config.runtimes?.find((r) => r.default)?.id ||
-        config.runtimes?.[0]?.id,
+      urlParams.omeka ||
+      saved?.omekaVersion ||
+      activeBlueprint?.preferredVersions?.omeka,
   });
   currentPhpVersion = selection.phpVersion;
   currentOmekaVersion = selection.omekaVersion;
