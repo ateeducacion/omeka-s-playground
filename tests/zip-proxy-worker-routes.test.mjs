@@ -164,6 +164,30 @@ describe("zip-proxy-worker ?repo= archive resolution", () => {
     const response = await get("?repo=o/r&release=latest&asset=x.zip");
     assert.match((await response.json()).error, /latest \(unknown tag\)/);
   });
+  it("forwards Range on release-asset downloads and passes the 206 through", async () => {
+    let range;
+    route({
+      "https://api.github.com/repos/o/r/releases/tags/v2": json({
+        assets: [
+          {
+            name: "a.zip",
+            browser_download_url:
+              "https://github.com/o/r/releases/download/v2/a.zip",
+          },
+        ],
+      }),
+      "https://github.com/o/r/releases/download/v2/a.zip": (init) => {
+        range = init.headers.get("Range");
+        return bytes(206, { "Content-Range": "bytes 0-2/10" });
+      },
+    });
+    const response = await get("?repo=o/r&release=v2&asset=a.zip", {
+      headers: { Range: "bytes=0-2" },
+    });
+    assert.equal(range, "bytes=0-2");
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get("Content-Range"), "bytes 0-2/10");
+  });
 });
 
 describe("zip-proxy-worker raw file and Atom routes", () => {
@@ -226,11 +250,11 @@ describe("zip-proxy-worker raw file and Atom routes", () => {
 describe("zip-proxy-worker redirect validation edge cases", () => {
   const start = "https://github.com/o/r/archive/refs/heads/b.zip";
 
-  it("returns a 3xx without Location as an upstream error", async () => {
+  it("passes a 3xx without Location through unchanged", async () => {
     route({ [start]: redirect(null) });
     const response = await get("?repo=o/r&branch=b");
-    assert.equal(response.status, 502);
-    assert.equal((await response.json()).status, 302);
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
   });
 
   it("blocks invalid and non-http redirect targets", async () => {
@@ -295,6 +319,19 @@ describe("zip-proxy-worker generic ?url= validation and headers", () => {
     const bin = await get("?url=https://gitlab.com/g/p/raw/file.bin");
     assert.match(seen.bin.get("Accept"), /^application\/octet-stream/);
     assert.equal(bin.headers.get("Content-Type"), "application/octet-stream");
+  });
+
+  it("passes an upstream 304 through for conditional requests", async () => {
+    route({
+      "https://gitlab.com/g/p/x.zip": () =>
+        new Response(null, { status: 304, headers: { ETag: '"e"' } }),
+    });
+    const response = await get("?url=https://gitlab.com/g/p/x.zip", {
+      headers: { "If-None-Match": '"e"' },
+    });
+    assert.equal(response.status, 304);
+    assert.equal(response.headers.get("ETag"), '"e"');
+    assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
   });
 
   it("serves Atom content types for a generic .atom path", async () => {
