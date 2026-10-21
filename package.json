@@ -21,10 +21,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
-    "@playwright/test": "^1.64.0",
+    "@playwright/test": "^1.64.1",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
-    "esbuild": "^0.28.2"
+    "c8": "10.1.3",
+    "esbuild": "^0.28.2",
+    "happy-dom": "21.0.3"
   },
   "overrides": {
     "@php-wasm/universal": "$@php-wasm/universal",

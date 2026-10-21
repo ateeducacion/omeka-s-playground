@@ -1708,7 +1708,9 @@ async function cacheBlueprintMediaFiles({ php, blueprint, publish }) {
 }
 
 function removeNodeIfPresent(FS, path) {
-  const about = FS.analyzePath(path);
+  // Inspect the node itself: following a final symlink would recurse into its
+  // target and delete it (e.g. /www/omeka/files -> /persist/mutable/files).
+  const about = FS.analyzePath(path, true);
   if (!about.exists) {
     return;
   }
@@ -1732,7 +1734,7 @@ async function linkMutableFilesDir(php) {
   const binary = await php.binary;
   const { FS } = binary;
   const targetPath = `${OMEKA_ROOT}/files`;
-  const about = FS.analyzePath(targetPath);
+  const about = FS.analyzePath(targetPath, true);
 
   if (about.exists) {
     const mode = about.object?.mode;
