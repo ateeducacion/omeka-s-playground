@@ -14,9 +14,14 @@ export const TEST_DSN = "https://key@o1.ingest.example.test/42";
 export const SENTRY_ENVELOPE_URL =
   "https://o1.ingest.example.test/api/42/envelope/";
 
-const INDEX_BODY = readFileSync(new URL("index.html", ROOT), "utf8")
-  .match(/<body[^>]*>([\s\S]*)<\/body>/u)[1]
-  .replace(/<script[\s\S]*?<\/script>/gu, "");
+// Parse the real index.html and drop its <script> elements: the tests import
+// the shell modules themselves.
+const indexDocument = new new Window().DOMParser().parseFromString(
+  readFileSync(new URL("index.html", ROOT), "utf8"),
+  "text/html",
+);
+for (const script of indexDocument.querySelectorAll("script")) script.remove();
+const INDEX_BODY = indexDocument.body.innerHTML;
 
 // The shell loads two modules by URL: the Ajv schema bundle from dist/ (built
 // by `npm run build-worker`) and CodeJar from the jsDelivr CDN. Tests map the

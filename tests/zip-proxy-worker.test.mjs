@@ -1369,7 +1369,9 @@ describe("zip-proxy-worker ?release=latest and &asset-pattern=", () => {
 
     assert.equal(response.status, 200);
     assert.ok(
-      calls.includes("https://api.github.com/repos/owner/repo/releases/latest"),
+      new Set(calls).has(
+        "https://api.github.com/repos/owner/repo/releases/latest",
+      ),
     );
     assert.ok(
       calls.includes(
