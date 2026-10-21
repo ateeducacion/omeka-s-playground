@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  createDecodedTarStream,
   extractTarStreamToPhp,
   StreamingTarParser,
   sanitizeTarPath,
@@ -272,5 +273,73 @@ describe("createUstarTar → readUstarTar round-trip", () => {
       assert.ok(got, `reader must return ${name}`);
       assert.deepEqual(Buffer.from(got.data), Buffer.from(data));
     }
+  });
+});
+
+describe("tar header edge cases", () => {
+  it("reads space-padded GNU-style octal sizes", () => {
+    const tar = rawTar([{ name: "a.txt", data: enc("hello") }]);
+    // Rewrite the size field as "     5 \0" (leading spaces, trailing space).
+    tar.write("          5 ", 124, 12, "ascii");
+    let sum = 0;
+    tar.write("        ", 148, 8, "ascii");
+    for (let i = 0; i < BLOCK; i += 1) sum += tar[i];
+    tar.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+    const { entries } = collect(tar);
+    assert.equal(new TextDecoder().decode(entries[0].data), "hello");
+  });
+});
+
+describe("createDecodedTarStream", () => {
+  const tar = () =>
+    Buffer.from(
+      createUstarTar(normalizeEntries({ "x/a.txt": enc("zstd body") })),
+    );
+  const read = async (stream) =>
+    new Uint8Array(await new Response(stream).arrayBuffer());
+
+  it("decodes gzip natively", async () => {
+    const { gzipSync } = await import("node:zlib");
+    const stream = await createDecodedTarStream(gzipSync(tar()), "gzip");
+    assert.deepEqual(await read(stream), new Uint8Array(tar()));
+  });
+
+  it("falls back to the bundled zstd decoder without a native one", async (t) => {
+    const { zstdCompressSync } = await import("node:zlib");
+    const original = globalThis.DecompressionStream;
+    globalThis.DecompressionStream = class {
+      constructor() {
+        throw new TypeError("unsupported format");
+      }
+    };
+    t.after(() => {
+      globalThis.DecompressionStream = original;
+    });
+    const stream = await createDecodedTarStream(
+      zstdCompressSync(tar()),
+      "zstd",
+    );
+    assert.deepEqual(await read(stream), new Uint8Array(tar()));
+
+    globalThis.DecompressionStream = undefined;
+    await assert.rejects(
+      createDecodedTarStream(new Uint8Array([1]), "br"),
+      /No streaming decoder available for codec "br"/,
+    );
+  });
+
+  it("reports progress every 1000 extracted files", async () => {
+    const files = {};
+    for (let i = 0; i < 1000; i += 1) files[`f/${i}.txt`] = enc("x");
+    const archive = Buffer.from(createUstarTar(normalizeEntries(files)));
+    const progress = [];
+    const stats = await extractTarStreamToPhp(
+      new Response(archive).body,
+      { _php: { mkdirTree() {}, writeFile() {} } },
+      "/www/omeka/",
+      { onProgress: (p) => progress.push(p) },
+    );
+    assert.equal(stats.fileCount, 1000);
+    assert.deepEqual(progress, [{ fileCount: 1000, bytes: 1000 }]);
   });
 });
