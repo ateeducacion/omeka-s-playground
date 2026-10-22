@@ -318,8 +318,9 @@ test("registers the SW, boots the PHP worker and loads the scoped frame", async 
   assert.equal(frameLocation.href, `${ORIGIN}/playground/s1/${RUNTIME}/s/site`);
   post({ kind: "navigate-site" });
   assert.equal(frame.src, `${ORIGIN}/playground/s1/${RUNTIME}/`);
+  // refresh-site is gone: a reload could resubmit a page rendered from a POST.
   post({ kind: "refresh-site" });
-  assert.equal(frameLocation.reloads, 1);
+  assert.equal(frameLocation.reloads, 0);
   post({ kind: "capture-phpinfo" });
   post({ kind: "flush-persistence" });
   post({ kind: "unknown" });
