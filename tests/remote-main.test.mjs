@@ -207,9 +207,9 @@ test("registers the SW, boots the PHP worker and loads the scoped frame", async 
   await waitFor(() => serviceWorker.registered.length === 1, "SW register");
   const swUrl = serviceWorker.registered[0].url;
   assert.match(swUrl.pathname, /\/sw\.bundle\.js$/u);
-  assert.equal(swUrl.searchParams.get("v"), BUILD_VERSION);
-  assert.equal(swUrl.searchParams.get("scope"), "s1");
-  assert.equal(swUrl.searchParams.get("runtime"), RUNTIME);
+  // Only the build may vary the script URL: a per-scope/runtime URL would
+  // install a new worker under every other open tab (issue #235).
+  assert.deepEqual([...swUrl.searchParams], [["v", BUILD_VERSION]]);
   assert.deepEqual(serviceWorker.registered[0].options, {
     scope: "./",
     updateViaCache: "none",
