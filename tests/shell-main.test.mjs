@@ -89,9 +89,8 @@ describe("shell boot", () => {
     assert.equal(env.registrations.length, 1);
     const sw = new URL(env.registrations[0].url);
     assert.equal(sw.pathname.endsWith("/sw.bundle.js"), true);
-    assert.equal(sw.searchParams.get("v"), BUILD_VERSION);
-    assert.equal(sw.searchParams.get("scope"), SCOPE);
-    assert.equal(sw.searchParams.get("runtime"), DEFAULT_RUNTIME);
+    // Only the build may vary the script URL (issue #235).
+    assert.deepEqual([...sw.searchParams], [["v", BUILD_VERSION]]);
     assert.deepEqual(env.registrations[0].opts, {
       scope: "./",
       updateViaCache: "none",

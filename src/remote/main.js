@@ -74,7 +74,7 @@ function emit(scopeId, message) {
   channel.close();
 }
 
-async function registerRuntimeServiceWorker(scopeId, runtimeId) {
+async function registerRuntimeServiceWorker() {
   // Checked before any property access: in iOS Safari private browsing (and
   // any insecure context) navigator.serviceWorker does not exist at all.
   if (!isServiceWorkerSupported()) {
@@ -86,9 +86,9 @@ async function registerRuntimeServiceWorker(scopeId, runtimeId) {
   }
 
   const swUrl = new URL(`../../${SERVICE_WORKER_SCRIPT}`, import.meta.url);
+  // Only the build may vary the URL: one registration serves every scope and
+  // runtime, so a per-tab URL would swap the worker under other tabs (#235).
   swUrl.searchParams.set("v", BUILD_VERSION);
-  swUrl.searchParams.set("scope", scopeId);
-  swUrl.searchParams.set("runtime", runtimeId);
 
   const registration = await registerClassicServiceWorker(swUrl);
 
@@ -268,7 +268,7 @@ async function bootstrapRemote() {
     progress: 0.08,
   });
 
-  await registerRuntimeServiceWorker(scopeId, runtime.id);
+  await registerRuntimeServiceWorker();
   await waitForServiceWorkerControl();
   setRemoteProgress("Service Worker ready and controlling this tab.", 0.12);
 
