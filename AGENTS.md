@@ -182,5 +182,4 @@ for test authoring. Do not install WordPress Blueprint skills: shared step names
 hide incompatible schemas; the shared Omeka S schema and this project's blueprint docs are authoritative.
 
 Maintainer preference: use `actions/checkout@v7` and
-`devantler-tech/actions/update-agent-skills@v13.3.3`; prefer the floating major
-`v13` when upstream provides it. Use `peter-evans/create-pull-request@v8` too. Keep all actions in the skill-update workflow on version tags, not SHAs.
+`erseco/update-agent-skills@v1`. Use `peter-evans/create-pull-request@v8` too. Keep all actions in the skill-update workflow on version tags, not SHAs.
