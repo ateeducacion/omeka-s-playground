@@ -155,6 +155,26 @@ describe("fetchBundleWithCache", () => {
     );
   });
 
+  it("refetches past the HTTP cache when the downloaded bytes mismatch", async (t) => {
+    const store = stubCaches(t);
+    // A deploy rebuilt the bundle at the same URL: the HTTP cache still holds
+    // the previous build while the manifest already advertises the new sha256.
+    const calls = stubFetch(t, async (_url, init) =>
+      init?.cache === "reload" ? new Response(BUNDLE) : new Response("stale"),
+    );
+    assert.deepEqual(await fetchBundleWithCache(manifest()), BUNDLE);
+    assert.equal(calls.length, 2, "one retry");
+    assert.equal(
+      calls[1].init?.cache,
+      "reload",
+      "retry bypasses the HTTP cache",
+    );
+    assert.equal(
+      await store.get(BUNDLE_URL).clone().text(),
+      "core-bundle-bytes",
+    );
+  });
+
   it("works without the Cache API and ignores cache write failures", async (t) => {
     stubCaches(t, { failPut: true });
     stubFetch(t, async () => new Response(BUNDLE));
