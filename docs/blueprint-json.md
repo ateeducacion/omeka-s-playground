@@ -72,7 +72,7 @@ Other consumers of the format ignore this block.
 
 ## Portable JSON-LD content
 
-`x-playground.itemSets` and `x-playground.items` import item sets and items from portable JSON-LD files, the format [Omeka-S-Cli](https://github.com/GhentCDH/Omeka-S-Cli/pull/182) exports: Omeka's JSON-LD with an inline `@context`, one resource per file, where references name a record instead of an instance id. The entries take the shape of Omeka-S-Cli's `x-omeka-s-cli` ones. The shared format may adopt them ([omeka-s-blueprints#13](https://github.com/omeka-s-contrib/omeka-s-blueprints/issues/13)); until then they live here.
+`x-playground.itemSets` and `x-playground.items` import item sets and items from portable JSON-LD files, the format Omeka-S-Cli's [`item:export`](https://ghentcdh.github.io/Omeka-S-Cli/commands/items/) writes: Omeka's JSON-LD with an inline `@context`, one resource per file, where references name a record instead of an instance id. The entries take the shape of Omeka-S-Cli's `x-omeka-s-cli` ones, with a `source`: title-only entries are ignored here, so write those as shared `itemSets` and `items`. The shared format may adopt them ([omeka-s-blueprints#13](https://github.com/omeka-s-contrib/omeka-s-blueprints/issues/13)); until then they live here.
 
 ```json
 {
@@ -511,7 +511,7 @@ What the Playground does with each top-level key of the shared format (`v0`):
 Since Omeka-S-Cli 0.18 the two read a blueprint the same way: JSONC, `$import` (in `sites` too), relative references and the rejection of absolute paths, duplicates merged into the first entry, vocabularies identified by namespace URI, local ZIP add-ons, and validation with cross-references. Differences that remain when one blueprint serves both:
 
 - Omeka-S-Cli reads local files and keeps relative paths inside the blueprint's directory (`--root`); the Playground only reads URLs, so a relative path can go anywhere on the same host.
-- Omeka-S-Cli does not create `itemSets` or `items`. The Docker image runs it with `--skip core`, so `install` comes from its environment variables there.
+- Omeka-S-Cli 0.18 does not create `itemSets` or `items`; the release after 0.18.2 does ([GhentCDH/Omeka-S-Cli#182](https://github.com/GhentCDH/Omeka-S-Cli/pull/182)). Its `x-omeka-s-cli` content entries also take other media ingesters (`upload`, `youtube`, `html`, …) and stop the deploy on a problem, where the Playground only takes `url` media and skips the resource with a warning. The Docker image runs it with `--skip core`, so `install` comes from its environment variables there.
 - Existing users: Omeka-S-Cli leaves them as they are; the Playground updates them on every boot (role, name, password), so autologin keeps working with the blueprint's credentials.
 - Without `setAsDefault`, the Playground makes the first site the default; Omeka-S-Cli sets no default site.
 - Omeka-S-Cli changes existing vocabularies, templates and sites, and site roles, with `--update`; the Playground never does.
