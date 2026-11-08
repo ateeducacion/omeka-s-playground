@@ -860,4 +860,24 @@ describe("materializeBlueprintSources", () => {
       /Blueprint vocabulary "dc": unable to download .*proxy\.test.*: 404\)/,
     );
   });
+
+  it("leaves a content source that cannot be downloaded to its onError", async (t) => {
+    router(t, { "https://example.test/set.jsonld": '{"@context":{}}' });
+    const staged = await materializeBlueprintSources({
+      php: fakePhp().php,
+      blueprint: {
+        itemSets: [{ source: "https://example.test/set.jsonld" }],
+        items: [{ source: "https://example.test/missing.jsonld" }],
+      },
+      publish: () => {},
+      config: {},
+    });
+
+    assert.match(
+      staged.itemSets[0].cachedPath,
+      /^\/persist\/addons\/sources\//,
+    );
+    assert.equal(staged.items[0].cachedPath, undefined);
+    assert.match(staged.items[0].fetchError, /404/);
+  });
 });

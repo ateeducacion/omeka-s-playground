@@ -1,0 +1,15 @@
+{
+  "@context": {
+    "dcterms": "http://purl.org/dc/terms/",
+    "o": "http://omeka.org/s/vocabs/o#",
+    "o-ref": "https://omeka-s-contrib.github.io/omeka-s-ref/ns#"
+  },
+  "@type": "o:Item",
+  "dcterms:title": [{ "type": "literal", "@value": "Dangling link" }],
+  "dcterms:relation": [
+    {
+      "type": "resource:item",
+      "o-ref:ref": { "dcterms:identifier": "no-such-item" }
+    }
+  ]
+}

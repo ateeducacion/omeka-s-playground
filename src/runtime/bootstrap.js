@@ -1028,8 +1028,27 @@ $debug(sprintf(
 // @context, where o-ref:id names the record's identity and o-ref:ref a linked
 // record, both {"<term>": "<value>"}; classes by o:term, templates by o:label,
 // sites by o:slug. The same rules as Omeka-S-Cli's PayloadBuilder: properties
-// are matched by namespace, a resource with a problem is skipped, an
-// unresolved reference only warns, an existing record is left as it is.
+// are matched by namespace and an existing record is left as it is. A problem,
+// an unresolved or ambiguous reference included, is an error for the entry.
+//
+// The onError of a content entry decides what an error does: "fail" (the
+// default) stops the boot, "skip" leaves the entry out with a warning.
+$contentError = function (array $spec, string $message) use (&$warnings) {
+  if (($spec['onError'] ?? 'fail') === 'skip') {
+    $warnings[] = 'Skipped ' . $message;
+    return;
+  }
+  throw new RuntimeException('Blueprint ' . $message . ' Set "onError": "skip" on the entry to boot without it.');
+};
+// An item created in this boot whose media failed is removed again, so that
+// the item and its media are created together, or not at all.
+$deleteResource = function (string $resource, int $id) use ($apiManager, $debug, $describeThrowable) {
+  try {
+    $apiManager->delete($resource, $id);
+  } catch (Throwable $e) {
+    $debug(sprintf('Unable to remove %s #%s: %s', $resource, $id, $describeThrowable($e)));
+  }
+};
 $oRefNamespace = 'https://omeka-s-contrib.github.io/omeka-s-ref/ns#';
 $dataTypeManager = $serviceManager->get('Omeka\\\\DataTypeManager');
 $vocabularyBy = function (string $field, string $value) use ($searchOne) {
@@ -1053,12 +1072,14 @@ $findByValue = function (string $resource, string $term, string $value) use ($ap
 };
 $importPortable = function (string $resource, array $spec) use (
   $apiManager, $searchOne, $vocabularyBy, $hasProperty, $findByValue, $dataTypeManager,
-  $oRefNamespace, $siteRepo, &$siteIdsByRef, &$defaultSiteId, &$warnings, $debug, $describeThrowable
+  $oRefNamespace, $siteRepo, &$siteIdsByRef, &$defaultSiteId, &$warnings, $debug, $describeThrowable, $contentError
 ) {
   $source = (string) $spec['source'];
   $document = is_readable($spec['cachedPath'] ?? '') ? json_decode((string) file_get_contents($spec['cachedPath']), true) : null;
   if (!is_array($document)) {
-    $warnings[] = sprintf('Skipped content "%s": it is not a JSON-LD object.', $source);
+    $contentError($spec, sprintf('content "%s": %s', $source, isset($spec['fetchError'])
+      ? sprintf('unable to download it (%s).', $spec['fetchError'])
+      : 'it is not a JSON-LD object.'));
     return null;
   }
   $context = array_filter(is_array($document['@context'] ?? null) ? $document['@context'] : [], 'is_string');
@@ -1082,9 +1103,9 @@ $importPortable = function (string $resource, array $spec) use (
     }
     return $vocabulary->prefix() . ':' . $local;
   };
-  $resolveRef = function ($ref, string $target, string $what) use ($mapTerm, $findByValue, &$notes) {
+  $resolveRef = function ($ref, string $target, string $what) use ($mapTerm, $findByValue, &$problems) {
     if (!is_array($ref) || count($ref) !== 1 || !is_string(array_key_first($ref)) || !is_scalar(reset($ref))) {
-      $notes[] = sprintf('%s has an invalid reference', $what);
+      $problems[] = sprintf('%s has an invalid reference', $what);
       return null;
     }
     $term = (string) array_key_first($ref);
@@ -1094,7 +1115,7 @@ $importPortable = function (string $resource, array $spec) use (
     if (count($ids) === 1) {
       return (int) reset($ids);
     }
-    $notes[] = sprintf('%s to %s = "%s" %s; the value is skipped', $what, $term, $value, $ids ? 'is ambiguous' : 'was not found');
+    $problems[] = sprintf('%s to %s = "%s" %s', $what, $term, $value, $ids ? 'is ambiguous' : 'was not found');
     return null;
   };
   $isValueList = function ($values) use ($refKey) {
@@ -1248,7 +1269,7 @@ $importPortable = function (string $resource, array $spec) use (
     $warnings[] = sprintf('Content %s: %s.', $label, $note);
   }
   if ($problems) {
-    $warnings[] = sprintf('Skipped content %s: %s.', $label, implode('; ', array_unique($problems)));
+    $contentError($spec, sprintf('content %s: %s.', $label, implode('; ', array_unique($problems))));
     return null;
   }
 
@@ -1269,14 +1290,16 @@ $importPortable = function (string $resource, array $spec) use (
   try {
     $id = $apiManager->create($resource, $payload)->getContent()->id();
   } catch (Throwable $e) {
-    $warnings[] = sprintf('Unable to provision content %s: %s', $label, $describeThrowable($e));
+    $contentError($spec, sprintf('content %s: %s', $label, $describeThrowable($e)));
     return null;
   }
   $debug(sprintf('Created content %s (#%s) from "%s".', $label, $id, $source));
   return ['id' => $id, 'title' => $title, 'label' => $label, 'created' => true];
 };
 
-$attachMedia = function (int $itemId, string $itemTitle, array $mediaSpecs) use ($apiManager, $findExistingMediaBySource, $literalValues, $titlePropertyId, &$warnings, $debug, $describeThrowable) {
+// The media that could not be attached, as error messages.
+$attachMedia = function (int $itemId, string $itemTitle, array $mediaSpecs) use ($apiManager, $findExistingMediaBySource, $literalValues, $titlePropertyId, $debug, $describeThrowable) {
+  $errors = [];
   foreach ($mediaSpecs as $mediaSpec) {
     if (($mediaSpec['type'] ?? 'url') !== 'url' || empty($mediaSpec['url'])) {
       continue;
@@ -1317,9 +1340,10 @@ $attachMedia = function (int $itemId, string $itemTitle, array $mediaSpecs) use 
       }
       $debug(sprintf('Created media for item "%s" (#%s) from "%s" (#%s).', $itemTitle, $itemId, $mediaSource, $mediaResponse->getContent()->id()));
     } catch (Throwable $e) {
-      $warnings[] = sprintf('Unable to attach media "%s" to item "%s": %s', $mediaSource, $itemTitle, $describeThrowable($e));
+      $errors[] = sprintf('media "%s": %s', $mediaSource, $describeThrowable($e));
     }
   }
+  return $errors;
 };
 
 $itemSetIdsByTitle = [];
@@ -1362,7 +1386,7 @@ foreach (($blueprint['itemSets'] ?? []) as $itemSetSpec) {
       $debug(sprintf('Created item set "%s" (#%s).', $itemSetSpec['title'], $response->getContent()->id()));
     }
   } catch (Throwable $e) {
-    $warnings[] = sprintf('Unable to provision item set "%s": %s', $itemSetSpec['title'], $e->getMessage());
+    $contentError($itemSetSpec, sprintf('item set "%s": %s', $itemSetSpec['title'], $describeThrowable($e)));
   }
 }
 
@@ -1370,7 +1394,11 @@ foreach (($blueprint['items'] ?? []) as $itemSpec) {
   if (!empty($itemSpec['source'])) {
     $imported = $importPortable('items', $itemSpec);
     if ($imported && $imported['created']) {
-      $attachMedia($imported['id'], $imported['title'] ?? $itemSpec['source'], $itemSpec['media'] ?? []);
+      $mediaErrors = $attachMedia($imported['id'], $imported['title'] ?? $itemSpec['source'], $itemSpec['media'] ?? []);
+      if ($mediaErrors) {
+        $deleteResource('items', $imported['id']);
+        $contentError($itemSpec, sprintf('content %s: %s.', $imported['label'], implode('; ', $mediaErrors)));
+      }
     }
     continue;
   }
@@ -1399,10 +1427,17 @@ foreach (($blueprint['items'] ?? []) as $itemSpec) {
   }
 
   $itemSetIds = [];
+  $missingItemSets = [];
   foreach (($itemSpec['itemSets'] ?? []) as $itemSetTitle) {
     if (isset($itemSetIdsByTitle[$itemSetTitle])) {
       $itemSetIds[] = ['o:id' => $itemSetIdsByTitle[$itemSetTitle]];
+    } else {
+      $missingItemSets[] = '"' . $itemSetTitle . '"';
     }
+  }
+  if ($missingItemSets) {
+    $contentError($itemSpec, sprintf('item "%s": item set %s was not created.', $itemSpec['title'], implode(', ', $missingItemSets)));
+    continue;
   }
   if ($itemSetIds) {
     $payload['o:item_set'] = $itemSetIds;
@@ -1423,7 +1458,6 @@ foreach (($blueprint['items'] ?? []) as $itemSpec) {
   }
 
   try {
-    $itemId = null;
     if ($existing) {
       $apiManager->update('items', $existing->id(), $payload);
       $itemId = $existing->id();
@@ -1433,14 +1467,18 @@ foreach (($blueprint['items'] ?? []) as $itemSpec) {
       $itemId = $response->getContent()->id();
       $debug(sprintf('Created item "%s" (#%s).', $itemSpec['title'], $itemId));
     }
-
-    if (!$itemId) {
-      continue;
-    }
-
-    $attachMedia($itemId, $itemSpec['title'], $itemSpec['media'] ?? []);
   } catch (Throwable $e) {
-    $warnings[] = sprintf('Unable to provision item "%s": %s', $itemSpec['title'], $describeThrowable($e));
+    $contentError($itemSpec, sprintf('item "%s": %s', $itemSpec['title'], $describeThrowable($e)));
+    continue;
+  }
+
+  $mediaErrors = $attachMedia($itemId, $itemSpec['title'], $itemSpec['media'] ?? []);
+  if ($mediaErrors) {
+    // an item that already existed stays; one created now goes with its media
+    if (!$existing) {
+      $deleteResource('items', $itemId);
+    }
+    $contentError($itemSpec, sprintf('item "%s": %s.', $itemSpec['title'], implode('; ', $mediaErrors)));
   }
 }
 } elseif ($shouldSeedContent && (($blueprint['itemSets'] ?? []) || ($blueprint['items'] ?? []))) {

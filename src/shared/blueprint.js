@@ -695,6 +695,7 @@ export function buildDefaultBlueprint(config) {
         title: "Playground Collection",
         description:
           "Default collection created from the Omeka S Playground blueprint.",
+        onError: "skip",
       },
     ],
     items: [
@@ -711,6 +712,7 @@ export function buildDefaultBlueprint(config) {
             title: "Playground sample image",
           },
         ],
+        onError: "skip",
       },
     ],
     "x-playground": {
@@ -901,68 +903,79 @@ export function normalizeBlueprint(input, config) {
     vocabularies: normalizeVocabularies(blueprint.vocabularies),
     resourceTemplates: normalizeResourceTemplates(blueprint.resourceTemplates),
     settings: normalizeSettings(blueprint.settings),
-    itemSets: Array.isArray(blueprint.itemSets)
-      ? blueprint.itemSets
-          .filter((itemSet) => !itemSet?.source)
-          .map((itemSet) => ({
-            title: String(itemSet?.title || "").trim(),
-            description:
-              typeof itemSet?.description === "string"
-                ? itemSet.description
-                : "",
-          }))
-          .filter((itemSet) => itemSet.title)
-      : [],
-    items: Array.isArray(blueprint.items)
-      ? blueprint.items
-          .filter((item) => !item?.source)
-          .map((item) => ({
-            title: String(item?.title || "").trim(),
-            description:
-              typeof item?.description === "string" ? item.description : "",
-            creator: typeof item?.creator === "string" ? item.creator : "",
-            itemSets: Array.isArray(item?.itemSets)
-              ? item.itemSets
-                  .map((entry) => String(entry || "").trim())
-                  .filter(Boolean)
-              : [],
-            sites: Array.isArray(item?.sites)
-              ? item.sites
-                  // slugs or titles, matched when the item is created
-                  .map((entry) => String(entry || "").trim())
-                  .filter(Boolean)
-              : [],
-            media: normalizeItemMedia(item?.media),
-          }))
-          .filter((item) => item.title)
-      : [],
+    // Simple entries and portable JSON-LD sources, in list order; then the
+    // x-playground sources (the earlier Playground notation).
+    itemSets: [
+      ...(Array.isArray(blueprint.itemSets) ? blueprint.itemSets : []).map(
+        (itemSet) =>
+          itemSet?.source
+            ? normalizeContentSource(itemSet)
+            : {
+                title: String(itemSet?.title || "").trim(),
+                description:
+                  typeof itemSet?.description === "string"
+                    ? itemSet.description
+                    : "",
+                onError: normalizeOnError(itemSet),
+              },
+      ),
+      ...normalizeContentSources(runtime.itemSets),
+    ].filter((itemSet) => itemSet && (itemSet.source || itemSet.title)),
+    items: [
+      ...(Array.isArray(blueprint.items) ? blueprint.items : []).map((item) =>
+        item?.source
+          ? normalizeContentSource(item)
+          : {
+              title: String(item?.title || "").trim(),
+              description:
+                typeof item?.description === "string" ? item.description : "",
+              creator: typeof item?.creator === "string" ? item.creator : "",
+              itemSets: Array.isArray(item?.itemSets)
+                ? item.itemSets
+                    .map((entry) => String(entry || "").trim())
+                    .filter(Boolean)
+                : [],
+              sites: Array.isArray(item?.sites)
+                ? item.sites
+                    // slugs or titles, matched when the item is created
+                    .map((entry) => String(entry || "").trim())
+                    .filter(Boolean)
+                : [],
+              media: normalizeItemMedia(item?.media),
+              onError: normalizeOnError(item),
+            },
+      ),
+      ...normalizeContentSources(runtime.items),
+    ].filter((item) => item && (item.source || item.title)),
   };
-  // x-playground: portable JSON-LD files, after the shared entries. A
-  // normalized blueprint keeps them in itemSets / items, with their source.
-  for (const key of ["itemSets", "items"]) {
-    normalized[key].push(
-      ...normalizeContentSources([
-        ...(Array.isArray(blueprint[key]) ? blueprint[key] : []),
-        ...(Array.isArray(runtime[key]) ? runtime[key] : []),
-      ]),
-    );
-  }
   return normalized;
 }
 
 // Portable JSON-LD entries (as Omeka-S-Cli's x-omeka-s-cli): a source, the
 // sites that replace the file's o:site, and media.
 function normalizeContentSources(entries) {
-  return (Array.isArray(entries) ? entries : [])
-    .filter((entry) => typeof entry?.source === "string" && entry.source.trim())
-    .map((entry) => ({
-      source: absolutizeUrl(entry.source),
-      title: typeof entry.title === "string" ? entry.title.trim() : "",
-      sites: Array.isArray(entry.sites)
-        ? entry.sites.map((site) => String(site || "").trim()).filter(Boolean)
-        : [],
-      media: normalizeItemMedia(entry.media),
-    }));
+  return (Array.isArray(entries) ? entries : []).map(normalizeContentSource);
+}
+
+function normalizeContentSource(entry) {
+  if (typeof entry?.source !== "string" || !entry.source.trim()) {
+    return null;
+  }
+  return {
+    source: absolutizeUrl(entry.source),
+    title: typeof entry.title === "string" ? entry.title.trim() : "",
+    sites: Array.isArray(entry.sites)
+      ? entry.sites.map((site) => String(site || "").trim()).filter(Boolean)
+      : [],
+    media: normalizeItemMedia(entry.media),
+    onError: normalizeOnError(entry),
+  };
+}
+
+// What to do when a content entry cannot be applied: "fail" (the default)
+// stops the boot, "skip" leaves the entry out with a warning.
+function normalizeOnError(entry) {
+  return entry?.onError === "skip" ? "skip" : "fail";
 }
 
 function normalizeItemMedia(list) {
@@ -1046,16 +1059,6 @@ export function exportBlueprintPayload(config, blueprint) {
   if (normalized.login.email !== admin.email) {
     runtime.login = normalized.login;
   }
-  for (const key of ["itemSets", "items"]) {
-    const sources = normalized[key].filter((entry) => entry.source);
-    if (sources.length) {
-      runtime[key] = sources.map(({ source, sites, media }) => ({
-        source,
-        ...(sites?.length ? { sites } : {}),
-        ...(media?.length ? { media } : {}),
-      }));
-    }
-  }
   const files = exportFiles(normalized);
 
   return {
@@ -1081,11 +1084,25 @@ export function exportBlueprintPayload(config, blueprint) {
       : {}),
     settings: normalized.settings,
     users: normalized.users,
-    itemSets: normalized.itemSets.filter((entry) => !entry.source),
-    items: normalized.items.filter((entry) => !entry.source),
+    itemSets: normalized.itemSets.map(exportContentEntry),
+    items: normalized.items.map(exportContentEntry),
     sites: normalized.sites,
     "x-playground": runtime,
   };
+}
+
+// A content entry as the shared format writes it: "fail" is the default, and a
+// source entry has no description, creator or item sets of its own.
+function exportContentEntry({ onError, ...entry }) {
+  const exported = entry.source
+    ? {
+        source: entry.source,
+        ...(entry.title ? { title: entry.title } : {}),
+        ...(entry.sites?.length ? { sites: entry.sites } : {}),
+        ...(entry.media?.length ? { media: entry.media } : {}),
+      }
+    : entry;
+  return onError === "skip" ? { ...exported, onError } : exported;
 }
 
 export function saveActiveBlueprint(scopeId, blueprint) {
