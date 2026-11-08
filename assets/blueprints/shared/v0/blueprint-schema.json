@@ -296,7 +296,8 @@
             "required": ["title"],
             "properties": {
                 "title": { "type": "string" },
-                "description": { "type": "string" }
+                "description": { "type": "string" },
+                "onError": { "$ref": "#/$defs/onError" }
             }
         },
         "itemSetList": {
@@ -304,8 +305,48 @@
             "items": {
                 "oneOf": [
                     { "$ref": "#/$defs/itemSet" },
+                    { "$ref": "#/$defs/itemSetSource" },
                     { "$ref": "#/$defs/reference" }
                 ]
+            }
+        },
+
+        "onError": {
+            "type": "string",
+            "enum": ["fail", "skip"],
+            "default": "fail",
+            "description": "What a consumer does when this entry cannot be applied: fail stops the deploy, skip leaves the entry out and reports a warning."
+        },
+        "contentSource": {
+            "type": "string",
+            "minLength": 1,
+            "format": "uri-reference",
+            "description": "Path or URL to a portable JSON-LD file: one resource, with an inline @context, that names the records it refers to with o-ref terms (https://omeka-s-contrib.github.io/omeka-s-ref/ns) instead of instance ids. A relative path resolves against the file that declares the entry."
+        },
+        "itemSetSource": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source"],
+            "properties": {
+                "source": { "$ref": "#/$defs/contentSource" },
+                "title": { "type": "string", "description": "The title in the file. Only used in messages, and so that items can name this item set by title." },
+                "onError": { "$ref": "#/$defs/onError" }
+            }
+        },
+        "itemSource": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source"],
+            "properties": {
+                "source": { "$ref": "#/$defs/contentSource" },
+                "title": { "type": "string", "description": "The title in the file. Only used in messages." },
+                "sites": {
+                    "type": "array",
+                    "description": "Slugs (or titles) of the sites this item is assigned to. Replaces the file's o:site.",
+                    "items": { "type": "string" }
+                },
+                "media": { "type": "array", "items": { "$ref": "#/$defs/media" } },
+                "onError": { "$ref": "#/$defs/onError" }
             }
         },
 
@@ -334,7 +375,8 @@
                     "description": "Slugs (or titles) of the sites this item is assigned to. Defaults to the default site.",
                     "items": { "type": "string" }
                 },
-                "media": { "type": "array", "items": { "$ref": "#/$defs/media" } }
+                "media": { "type": "array", "items": { "$ref": "#/$defs/media" } },
+                "onError": { "$ref": "#/$defs/onError" }
             }
         },
         "itemList": {
@@ -342,6 +384,7 @@
             "items": {
                 "oneOf": [
                     { "$ref": "#/$defs/item" },
+                    { "$ref": "#/$defs/itemSource" },
                     { "$ref": "#/$defs/reference" }
                 ]
             }
@@ -367,6 +410,11 @@
                 "theme": { "$ref": "#/$defs/themeId" },
                 "isPublic": { "type": "boolean" },
                 "setAsDefault": { "type": "boolean" },
+                "assignNewItems": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Add items created later without an explicit site to this site, as the Omeka S admin form does by default. Consumers set it when they create the site."
+                },
                 "permissions": {
                     "type": "array",
                     "description": "Per-site user permissions, by user email.",

@@ -917,6 +917,7 @@ export async function materializeBlueprintSources({
       .map((entry) => [`content "${entry.title || entry.source}"`, entry]),
   ];
   for (const [what, entry] of entries) {
+    const isContent = what.startsWith("content ");
     const digest = await crypto.subtle.digest(
       "SHA-256",
       new TextEncoder().encode(entry.source),
@@ -941,6 +942,11 @@ export async function materializeBlueprintSources({
           }
           bytes = await fetchBytes(proxied);
         } catch (error) {
+          // Content entries leave it to their onError, in the install script.
+          if (isContent) {
+            entry.fetchError = error.message;
+            continue;
+          }
           throw new Error(
             `Blueprint ${what}: unable to download ${entry.source} (${error.message}).`,
           );

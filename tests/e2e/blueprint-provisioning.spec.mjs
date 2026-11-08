@@ -350,7 +350,7 @@ test("imports portable JSON-LD item sets and items (Omeka-S-Cli's format)", asyn
   await expect(harbour).toContainText("Collections");
   await expect(harbour).toContainText("Photograph");
 
-  // an o-ref:ref link to an earlier item; the unresolved one only warns
+  // an o-ref:ref link to an earlier item
   await open(page, "/admin/item");
   await remote
     .getByRole("link", { name: "Study for the harbour", exact: true })
@@ -358,18 +358,24 @@ test("imports portable JSON-LD item sets and items (Omeka-S-Cli's format)", asyn
   await expect(
     remote.getByRole("link", { name: "Harbour at dawn" }),
   ).not.toHaveCount(0);
-  await expect(log).toContainText(
-    'link "dcterms:relation" to dcterms:identifier = "no-such-item" was not found',
-  );
 
-  // a resource with a problem is skipped, with the reason
+  // entries with onError "skip" are left out, with the reason: an unresolved
+  // link, a missing vocabulary and a media file that cannot be fetched
+  await expect(log).toContainText(
+    'Skipped content item "Dangling link": link "dcterms:relation" to dcterms:identifier = "no-such-item" was not found.',
+  );
   await expect(log).toContainText(
     'Skipped content item "Needs a missing vocabulary": "nope:thing": vocabulary https://example.org/not-installed# is not installed.',
   );
+  await expect(log).toContainText('Skipped item "Broken media": media');
   await open(page, "/admin/item");
-  await expect(remote.locator("body")).not.toContainText(
+  for (const title of [
+    "Dangling link",
     "Needs a missing vocabulary",
-  );
+    "Broken media",
+  ]) {
+    await expect(remote.locator("body")).not.toContainText(title);
+  }
 
   // Reload: the content is not seeded again.
   await page.waitForTimeout(2500);
@@ -380,4 +386,29 @@ test("imports portable JSON-LD item sets and items (Omeka-S-Cli's format)", asyn
     remote.getByRole("link", { name: "Harbour at dawn", exact: true }),
   ).toHaveCount(1);
   await expect(page.locator("#log-panel")).not.toContainText("Created content");
+});
+
+test("stops on a content entry that fails, unless it says skip", async ({
+  page,
+  baseURL,
+}) => {
+  const blueprint = {
+    items: [
+      {
+        source: new URL(
+          `${FIXTURES}/content/items/missing-vocabulary.jsonld`,
+          baseURL,
+        ).href,
+      },
+    ],
+  };
+  const payload = Buffer.from(JSON.stringify(blueprint)).toString("base64url");
+  await page.goto(`/?blueprint=${payload}`);
+  await expect(page.locator("#log-panel")).toContainText(
+    'Blueprint content item "Needs a missing vocabulary": "nope:thing": vocabulary https://example.org/not-installed# is not installed.',
+    { timeout: 180_000 },
+  );
+  await expect(page.locator("#log-panel")).toContainText(
+    'Set "onError": "skip" on the entry to boot without it.',
+  );
 });

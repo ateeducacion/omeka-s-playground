@@ -33,7 +33,8 @@
   "itemSets": [
     {
       "title": "Playground Collection",
-      "description": "Default collection created from the browser blueprint."
+      "description": "Default collection created from the browser blueprint.",
+      "onError": "skip"
     }
   ],
   "items": [
@@ -50,7 +51,8 @@
           "url": "../samples/garden-of-earthly-delights.png",
           "title": "The Garden of Earthly Delights"
         }
-      ]
+      ],
+      "onError": "skip"
     },
     {
       "title": "Thomas Carlyle Oil Painting 1868",
@@ -65,7 +67,8 @@
           "url": "../samples/thomas-carlyle-oil-painting-1868.jpg",
           "title": "Thomas Carlyle Oil Painting 1868"
         }
-      ]
+      ],
+      "onError": "skip"
     },
     {
       "title": "Beethoven Sample Audio",
@@ -80,7 +83,8 @@
           "url": "../samples/beethoven-public-domain.ogg",
           "title": "Public domain Beethoven recording"
         }
-      ]
+      ],
+      "onError": "skip"
     }
   ],
   "sites": [

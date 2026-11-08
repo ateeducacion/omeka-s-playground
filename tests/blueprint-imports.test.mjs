@@ -837,24 +837,74 @@ describe("item content", () => {
           altText: "",
         },
       ],
+      onError: "fail",
     });
 
     // the normalized blueprint (handed to the worker) normalizes to itself
     assert.deepEqual(normalizeBlueprint(result, config).items, result.items);
-    // and exports back to x-playground, outside the shared lists
+    // and exports to the shared lists, as the shared format now writes them
     const exported = exportBlueprintPayload(config, result);
     assert.deepEqual(
-      exported.items.map((item) => item.title),
-      ["Market square"],
+      exported.items.map((item) => item.title || item.source),
+      [
+        "Market square",
+        "https://example.org/repo/content/items/harbour.jsonld",
+      ],
     );
-    assert.deepEqual(exported["x-playground"].items, [
-      {
-        source: "https://example.org/repo/content/items/harbour.jsonld",
-        sites: ["collections"],
-        media: result.items[1].media,
-      },
-    ]);
+    assert.deepEqual(exported.items[1], {
+      source: "https://example.org/repo/content/items/harbour.jsonld",
+      sites: ["collections"],
+      media: result.items[1].media,
+    });
+    assert.equal(exported["x-playground"].items, undefined);
     assert.equal(schema.validateBlueprintSchema(exported).length, 0);
+  });
+
+  it("reads portable JSON-LD sources from the shared lists, in list order", async () => {
+    const result = await load(
+      shared({
+        itemSets: [
+          { source: "./content/sets/photographs.jsonld", title: "Photographs" },
+          { title: "Postcards", onError: "skip" },
+        ],
+        items: [
+          { source: "./content/items/harbour.jsonld", onError: "skip" },
+          { title: "Street", itemSets: ["Photographs"] },
+        ],
+      }),
+    );
+    assert.deepEqual(
+      result.itemSets.map((entry) => [entry.title, entry.onError]),
+      [
+        ["Photographs", "fail"],
+        ["Postcards", "skip"],
+      ],
+    );
+    assert.equal(
+      result.itemSets[0].source,
+      "https://example.org/repo/content/sets/photographs.jsonld",
+    );
+    assert.deepEqual(
+      result.items.map((entry) => [entry.source || entry.title, entry.onError]),
+      [
+        ["https://example.org/repo/content/items/harbour.jsonld", "skip"],
+        ["Street", "fail"],
+      ],
+    );
+
+    // onError survives an export, and only when it is not the default
+    const exported = exportBlueprintPayload(config, result);
+    assert.equal(exported.items[0].onError, "skip");
+    assert.equal("onError" in exported.items[1], false);
+    assert.equal(exported.itemSets[1].onError, "skip");
+    assert.equal(schema.validateBlueprintSchema(exported).length, 0);
+  });
+
+  it("rejects an unknown onError value under the shared schema", async () => {
+    await assert.rejects(
+      load(shared({ items: [{ title: "Street", onError: "ignore" }] })),
+      /onError|must be equal to one of the allowed values|must match exactly one schema/,
+    );
   });
 });
 

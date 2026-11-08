@@ -51,8 +51,8 @@ The most important top-level properties are:
 | `files` | Files placed in the Omeka S installation | See [Files](#files) |
 | `vocabularies` | RDF vocabularies to import | See [Vocabularies](#vocabularies) |
 | `resourceTemplates` | Resource-template exports to import | See [Resource templates](#resource-templates) |
-| `itemSets` | Collections created before items | Referenced by item titles later |
-| `items` | Sample resources and media | Media currently uses URL sources; `items[].sites` assigns sites by slug |
+| `itemSets` | Collections created before items | Referenced by item titles later; an entry can also be a [portable JSON-LD](#portable-json-ld-content) `source`; see [Content errors](#content-errors-onerror) |
+| `items` | Sample resources and media | Media currently uses URL sources; `items[].sites` assigns sites by slug; an entry can also be a [portable JSON-LD](#portable-json-ld-content) `source`; see [Content errors](#content-errors-onerror) |
 | `sites` | One or more public sites with per-site permissions | One is the default |
 | `x-playground` | Browser runtime settings | `landingPage`, `login`, `debug`, `phpConstants`; see [Playground settings](#playground-settings-x-playground) |
 
@@ -68,42 +68,63 @@ Other consumers of the format ignore this block.
 | `login` | Credentials used by autologin | Defaults to `install.admin`, else the first user |
 | `debug.enabled` | Enables development-style diagnostics | Helpful for install/debug sessions |
 | `phpConstants` | PHP constants defined before Omeka boots | Name → boolean / string / number; see [PHP constants](#php-constants) |
-| `itemSets`, `items` | Portable JSON-LD content | See [Portable JSON-LD content](#portable-json-ld-content) |
+| `itemSets`, `items` | Portable JSON-LD content, the earlier notation | Still read, after the shared lists; write `source` entries in the shared `itemSets` and `items` instead |
 
 ## Portable JSON-LD content
 
-`x-playground.itemSets` and `x-playground.items` import item sets and items from portable JSON-LD files, the format Omeka-S-Cli's [`item:export`](https://ghentcdh.github.io/Omeka-S-Cli/commands/items/) writes: Omeka's JSON-LD with an inline `@context`, one resource per file, where references name a record instead of an instance id. The entries take the shape of Omeka-S-Cli's `x-omeka-s-cli` ones, with a `source`: title-only entries are ignored here, so write those as shared `itemSets` and `items`. The shared format may adopt them ([omeka-s-blueprints#13](https://github.com/omeka-s-contrib/omeka-s-blueprints/issues/13)); until then they live here.
+An entry of `itemSets` or `items` can point to a portable JSON-LD file with `source`, the format Omeka-S-Cli's [`item:export`](https://ghentcdh.github.io/Omeka-S-Cli/commands/items/) writes: Omeka's JSON-LD with an inline `@context`, one resource per file, where references name a record instead of an instance id. This is the shared format's source entry ([omeka-s-blueprints#14](https://github.com/omeka-s-contrib/omeka-s-blueprints/pull/14)), the one Omeka-S-Cli used to read from `x-omeka-s-cli`.
 
 ```json
 {
-  "x-playground": {
-    "itemSets": [{ "source": "./content/item-sets/photographs.jsonld" }],
-    "items": [
-      {
-        "source": "./content/items/harbour.jsonld",
-        "sites": ["collections"],
-        "media": [{ "url": "./content/media/harbour.png", "title": "Photograph" }]
-      }
-    ]
-  }
+  "itemSets": [{ "source": "./content/item-sets/photographs.jsonld" }],
+  "items": [
+    {
+      "source": "./content/items/harbour.jsonld",
+      "sites": ["collections"],
+      "media": [{ "url": "./content/media/harbour.png", "title": "Photograph" }],
+      "onError": "skip"
+    }
+  ]
 }
 ```
 
 | Field | Notes |
 | --- | --- |
-| `source` | The JSON-LD file, relative to the blueprint that declares it |
+| `source` | The JSON-LD file, relative to the file that declares it |
+| `title` | The title in the file; only used in messages, and so that a simple item can name a source item set |
 | `sites` | Items only: site slugs or titles that replace the file's `o:site` |
 | `media` | Items only: as `items[].media` (URL media) |
+| `onError` | See [Content errors](#content-errors-onerror) |
 
-They are created after the shared `itemSets` and `items`, in order, with Omeka-S-Cli's rules:
+Simple and source entries are created in list order, item sets before items, with Omeka-S-Cli's rules:
 
 - Properties are matched by namespace: a prefix of the file's `@context` maps to the one this installation uses for that namespace.
 - `o-ref:id` (`{"<term>": "<value>"}`) identifies the record, else its title. A record that already exists is left as it is.
-- `o-ref:ref` links to another record (`o:item_set`, or a value of type `resource:*`). A reference that matches no record, or several, only warns, and the value is skipped; refer to records declared earlier.
+- `o-ref:ref` links to another record (`o:item_set`, or a value of type `resource:*`). Refer to records declared earlier or already in the installation.
 - Classes by `{"o:term"}`, resource templates by `{"o:label"}`, sites by `{"o:slug"}`. An item with no site, or none that matches, goes to the default site.
-- A missing vocabulary, unknown property, class, template or data type skips the resource, with a warning that names the problem.
 
 The `o-ref` keys are recognized by their namespace, `https://omeka-s-contrib.github.io/omeka-s-ref/ns#`, under any prefix.
+
+`x-playground.itemSets` and `x-playground.items`, the earlier notation for these entries, are still read, after the shared lists. Title-only `x-omeka-s-cli` entries have no `x-playground` form: write them as simple `itemSets` and `items`.
+
+## Content errors (`onError`)
+
+Every `itemSets` and `items` entry, simple or with a `source`, takes `onError`:
+
+| Value | What happens when the entry cannot be applied |
+| --- | --- |
+| `fail` (default) | The boot stops, with the reason in the log |
+| `skip` | The entry is left out, with a warning that names the reason |
+
+These are errors for an entry:
+
+- a JSON-LD file that cannot be downloaded or is not a JSON-LD object;
+- a missing vocabulary, or an unknown property, class, template or data type;
+- an `o-ref:ref` that matches no record, or more than one;
+- an item set in a simple item's `itemSets` that was not created (a skipped one included);
+- a media file that cannot be fetched or that Omeka S rejects. An item created in that boot is removed again, so the item and its media are created together or not at all.
+
+A record that already exists is not an error. After a boot that stopped, content is not marked as seeded, so the next boot tries again, and entries created before the error are found and left as they are. The default blueprint marks its sample content `"skip"`, so a sample image that cannot be fetched does not stop the boot.
 
 ## Add-on sources
 
@@ -368,7 +389,7 @@ Relative paths resolve against the file that contains them (RFC 3986), not again
 | `$import` in an imported file | that imported file |
 | `files[].source`, `vocabularies[].source`, `resourceTemplates[].source` | the file that declares the entry |
 | `modules[].source`, `themes[].source` given as a path (a local ZIP) | the file that declares the entry |
-| `items[].media[].url`, `x-playground.itemSets[].source`, `x-playground.items[].source` and `.media[].url` | the file that declares the entry |
+| `itemSets[].source`, `items[].source`, `items[].media[].url`, and the same fields under `x-playground` | the file that declares the entry |
 
 How the blueprint arrives decides whether it has a URL:
 
@@ -445,7 +466,7 @@ On every boot, after Omeka S is installed:
 3. `vocabularies`, then `resourceTemplates`, once every module is active (so their data types are registered) and before anything that could use their properties.
 4. `users` and their settings, then `sites` and their permissions.
 5. `settings`, last, so neither a module nor the sites (`default_site`) override them. This is Omeka-S-Cli's order.
-6. `itemSets` and `items`, then the [portable JSON-LD](#portable-json-ld-content) ones, only on the first boot of a scope.
+6. `itemSets`, then `items`, each in list order (the `x-playground` ones last), only on the first boot of a scope that gets through it.
 
 Steps 1 to 5 run on every boot and find what already exists, so a reload neither duplicates nor resets it. Content (step 6) is seeded once per scope, so deleted or edited demo items stay as the user left them. Reset Playground, `?clean=1` or another blueprint starts again from a clean installation.
 
@@ -501,8 +522,8 @@ What the Playground does with each top-level key of the shared format (`v0`):
 | `resourceTemplates` | Supported | All fields; see [Resource templates](#resource-templates) |
 | `settings` | Supported | Map or list, with imports |
 | `users` | Supported | Role `author` and display name = email by default, as in Omeka-S-Cli; a user without `password` gets the configured password |
-| `sites` | Supported | With `$import`, as Omeka-S-Cli does |
-| `itemSets`, `items` | Supported | Seeded once per scope; media of type `url` |
+| `sites` | Supported | With `$import`, as Omeka-S-Cli does; `assignNewItems` is ignored |
+| `itemSets`, `items` | Supported | Seeded once per scope; [portable JSON-LD](#portable-json-ld-content) `source` entries; [`onError`](#content-errors-onerror); media of type `url` |
 | `$import` | Supported | Every list the schema allows, and `sites`; see [Imports](#imports-import) |
 | `x-playground` | Supported | Playground settings and [portable JSON-LD content](#portable-json-ld-content) |
 | Other `x-*` keys | Ignored | As the specification requires |
@@ -511,7 +532,7 @@ What the Playground does with each top-level key of the shared format (`v0`):
 Since Omeka-S-Cli 0.18 the two read a blueprint the same way: JSONC, `$import` (in `sites` too), relative references and the rejection of absolute paths, duplicates merged into the first entry, vocabularies identified by namespace URI, local ZIP add-ons, and validation with cross-references. Differences that remain when one blueprint serves both:
 
 - Omeka-S-Cli reads local files and keeps relative paths inside the blueprint's directory (`--root`); the Playground only reads URLs, so a relative path can go anywhere on the same host.
-- Omeka-S-Cli 0.18 does not create `itemSets` or `items`; the release after 0.18.2 does ([GhentCDH/Omeka-S-Cli#182](https://github.com/GhentCDH/Omeka-S-Cli/pull/182)). Its `x-omeka-s-cli` content entries also take other media ingesters (`upload`, `youtube`, `html`, …) and stop the deploy on a problem, where the Playground only takes `url` media and skips the resource with a warning. The Docker image runs it with `--skip core`, so `install` comes from its environment variables there.
+- Omeka-S-Cli 0.18 does not create `itemSets` or `items`; the release after 0.18.2 does ([GhentCDH/Omeka-S-Cli#182](https://github.com/GhentCDH/Omeka-S-Cli/pull/182)). Its `x-omeka-s-cli` content entries also take other media ingesters (`upload`, `youtube`, `html`, …), where the Playground only takes `url` media. The Docker image runs it with `--skip core`, so `install` comes from its environment variables there.
 - Existing users: Omeka-S-Cli leaves them as they are; the Playground updates them on every boot (role, name, password), so autologin keeps working with the blueprint's credentials.
 - Without `setAsDefault`, the Playground makes the first site the default; Omeka-S-Cli sets no default site.
 - Omeka-S-Cli changes existing vocabularies, templates and sites, and site roles, with `--update`; the Playground never does.
