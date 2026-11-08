@@ -9,8 +9,10 @@ async function ready(page) {
 }
 
 function registrationState(page) {
+  // The shell can be ready while the worker is still activating; ready resolves
+  // once the registration has an active worker.
   return page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration();
+    const registration = await navigator.serviceWorker.ready;
     return {
       active: registration?.active?.scriptURL ?? null,
       waiting: registration?.waiting?.scriptURL ?? null,
