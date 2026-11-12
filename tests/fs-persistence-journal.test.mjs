@@ -77,6 +77,9 @@ function createRawPhp() {
     rmdir() {},
     rename() {},
     isFile: () => true,
+    // @php-wasm/fs-journal >= 3.1.62 resolves the path before journaling unlink.
+    lookupPath: (path) => ({ path, node: { mode: 0o100644 } }),
+    isLink: () => false,
     stat: (path) => ({ size: files.get(path)?.byteLength ?? 0 }),
   };
   return {
