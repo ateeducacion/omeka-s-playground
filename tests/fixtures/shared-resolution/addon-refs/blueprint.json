@@ -1,0 +1,9 @@
+{
+    "$schema": "../../../assets/schema/blueprint-schema.json",
+    "modules": [
+        { "name": "A", "source": "gh:o/a#v2", "version": "v1" },
+        { "name": "B", "source": "https://github.com/o/b", "version": "v1" },
+        { "name": "C", "source": "https://github.com/o/c.git#main" },
+        { "name": "D", "source": "https://github.com/o/d/" }
+    ]
+}

@@ -26,6 +26,11 @@
     }
   },
   "files": {
-    "includes": ["src/**", "tests/**", "scripts/**"]
+    "includes": [
+      "src/**",
+      "tests/**",
+      "scripts/**",
+      "!tests/fixtures/shared-resolution"
+    ]
   }
 }

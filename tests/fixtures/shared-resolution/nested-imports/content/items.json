@@ -1,0 +1,6 @@
+[
+    {
+        "source": "./items/a.jsonld",
+        "media": [{ "url": "./media/a.png" }]
+    }
+]

@@ -1,0 +1,4 @@
+[
+    { "name": "M", "source": "./zips/M.zip" },
+    { "$import": "./more/modules.json" }
+]

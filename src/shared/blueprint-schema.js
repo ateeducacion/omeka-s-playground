@@ -1,6 +1,6 @@
 // Validation against the shared Omeka S blueprint schema (floating v0). The
-// schema is a local copy of the published one (see scripts/sync-blueprint-schema.mjs),
-// so booting never fetches it. The browser loads this module through the
+// schema is a local copy of the published one (assets/blueprints/shared/v0), so
+// booting never fetches it. The browser loads this module through the
 // dist/blueprint-schema.bundle.js bundle built by scripts/esbuild.worker.mjs.
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";

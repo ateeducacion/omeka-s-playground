@@ -1,0 +1,12 @@
+{
+    "$schema": "../../../assets/schema/blueprint-schema.json",
+    "modules": [
+        { "$import": "./lists/modules.json" }
+    ],
+    "items": [
+        { "$import": "./content/items.json" }
+    ],
+    "itemSets": [
+        { "$import": "./content/item-sets.json" }
+    ]
+}

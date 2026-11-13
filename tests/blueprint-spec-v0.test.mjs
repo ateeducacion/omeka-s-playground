@@ -55,6 +55,7 @@ describe("add-on source string", () => {
   it("rejects source forms the Playground cannot fetch", () => {
     for (const source of [
       "git@github.com:owner/repo.git",
+      "git@github.com:owner/repo",
       "https://gitlab.com/group/repo.git",
       "composer:vendor/package",
     ]) {
