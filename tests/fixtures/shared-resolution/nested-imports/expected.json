@@ -1,0 +1,7 @@
+[
+    { "in": "lists/modules.json", "pointer": "/0/source", "resolved": { "path": "lists/zips/M.zip" } },
+    { "in": "lists/more/modules.json", "pointer": "/0/source", "resolved": { "path": "lists/zips/N.zip" } },
+    { "in": "content/items.json", "pointer": "/0/source", "resolved": { "path": "content/items/a.jsonld" } },
+    { "in": "content/items.json", "pointer": "/0/media/0/url", "resolved": { "path": "content/media/a.png" } },
+    { "in": "content/item-sets.json", "pointer": "/0/source", "resolved": { "path": "content/item-sets/s.jsonld" } }
+]

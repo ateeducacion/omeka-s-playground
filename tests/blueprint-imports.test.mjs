@@ -166,6 +166,40 @@ describe("$import", () => {
     );
   });
 
+  it("reads gh:owner/repo#ref:path as an add-on shorthand, not as a file", () => {
+    assert.throws(
+      () => resolveReference("gh:o/r#v1:a.json", null),
+      /unsupported scheme/u,
+    );
+    assert.throws(
+      () => resolveReference("gl:group/r#v1:a.json", null),
+      /unsupported scheme/u,
+    );
+  });
+
+  it("converts repository file references without a blueprint URL", async () => {
+    const result = await resolveBlueprintImports({
+      files: [{ source: "gh:o/r@v1:a.php", destination: "config/a.php" }],
+      items: [
+        {
+          title: "Repo media",
+          media: [{ url: "gh:o/r@v1:img.png" }, { url: "gl:g/r:b.png" }],
+        },
+      ],
+    });
+    assert.equal(
+      result.files[0].source,
+      "https://raw.githubusercontent.com/o/r/v1/a.php",
+    );
+    assert.deepEqual(
+      result.items[0].media.map((media) => media.url),
+      [
+        "https://raw.githubusercontent.com/o/r/v1/img.png",
+        "https://gitlab.com/g/r/-/raw/HEAD/b.png",
+      ],
+    );
+  });
+
   it("rejects a relative import when the blueprint has no URL", async () => {
     await assert.rejects(
       loadBlueprintDocument({ modules: [{ $import: "./m.json" }] }, config, {

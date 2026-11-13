@@ -1,0 +1,9 @@
+{
+    "$schema": "../../../assets/schema/blueprint-schema.json",
+    "modules": [
+        { "$import": "./lists/modules.json" }
+    ],
+    "files": [
+        { "source": "../outside.php", "destination": "config/outside.php" }
+    ]
+}

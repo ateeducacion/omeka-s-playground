@@ -350,7 +350,11 @@ function normalizeAddonSourceString(input, version) {
     };
   }
 
-  if (/\.git$/u.test(location) || /^[a-z][a-z0-9+.-]*:(?!\/\/)/iu.test(text)) {
+  if (
+    /\.git$/u.test(location) ||
+    location.startsWith("git@") ||
+    /^[a-z][a-z0-9+.-]*:(?!\/\/)/iu.test(text)
+  ) {
     throw new Error(
       `Blueprint add-on source "${text}" is not supported by the Playground: use a ZIP URL, a GitHub repository URL or gh:owner/repo.`,
     );

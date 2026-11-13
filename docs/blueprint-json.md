@@ -374,6 +374,8 @@ Any entry of `modules`, `themes`, `files`, `vocabularies`, `resourceTemplates`, 
   (`Circular $import: a.json -> b.json -> a.json`); importing the same file twice from different places is fine. Nesting is limited to 16 levels.
 - The reference is an `http(s)` URL, a path relative to the file that contains it, or a GitHub/GitLab file reference as Omeka-S-Cli accepts them:
   `gh:owner/repo[@ref]:path`, `gl:group/repo[@ref]:path`, or a `github.com/…/blob/…` or `…/-/blob/…` page URL (turned into the raw file URL).
+  The same forms work in the `source` of `files`, `vocabularies`, `resourceTemplates`, `itemSets` and `items`, and in media `url`s, whether or not the blueprint has a URL.
+  A file in a repository takes its ref with `@ref`: `gh:owner/repo#ref:path` is not a file reference and is rejected.
 - Absolute paths (`/…`, `\\…`, `C:\…`) and `file:` URLs are rejected, as in Omeka-S-Cli, in `$import` and in the `source` of `files`, `vocabularies`, `resourceTemplates` and add-on entries, whether or not the blueprint has a URL. Other schemes (`data:`, …) are rejected too.
 - Imported files are fetched by the browser, like `?blueprint-url=` itself, so their host must allow CORS (GitHub raw files do).
 - A failed download, a file that is not JSON, or a file that is not a list or an object stops the boot with the file's URL. When the blueprint declares the shared `$schema`, every imported file is also validated against the schema of its list.
@@ -398,7 +400,7 @@ How the blueprint arrives decides whether it has a URL:
 | `?blueprint-url=…`, `?blueprint=https://…`, the configured default blueprint | that URL |
 | `?blueprint=<base64>` (also what the editor's **Run** uses), `?blueprint-data=`, an uploaded file | none |
 
-Without a base URL, a relative `$import` stops the boot with an error (the editor and the upload already refuse it), because there is no file to resolve it against. Absolute references still work. For compatibility, relative `files`, `vocabularies` and `resourceTemplates` sources of such a blueprint keep resolving against the Playground page, as before. So do media URLs; a root-relative media path (`/…`) always does.
+Without a base URL, a relative `$import` stops the boot with an error (the editor and the upload already refuse it), because there is no file to resolve it against. Absolute references still work. For compatibility, relative `files`, `vocabularies` and `resourceTemplates` sources of such a blueprint keep resolving against the Playground page, as before. So do media URLs; a root-relative media path (`/…`) always does. That path is a Playground extension: the shared format rejects it, so a blueprint that declares the shared `$schema` should not use it.
 
 ## Vocabularies
 

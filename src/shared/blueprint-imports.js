@@ -318,7 +318,8 @@ function resolveAssetField(entry, key, documentUrl) {
       `Blueprint ${key} ${field}${documentUrl ? ` in ${documentUrl}` : ""}: "${value.trim()}" is an absolute path or a file: URL; use a path relative to the blueprint or a URL.`,
     );
   }
-  if (!documentUrl) {
+  // A gh:/gl: or "blob" file reference needs no base URL.
+  if (!documentUrl && !toRawUrl(value.trim())) {
     return entry;
   }
   try {
@@ -330,11 +331,12 @@ function resolveAssetField(entry, key, documentUrl) {
   }
 }
 
-// Media URLs resolve against the declaring document, as in Omeka-S-Cli. An
-// absolute URL, or a root-relative path (relative to the Playground page, as
-// before), is left as it is.
+// Media URLs resolve against the declaring document, as in Omeka-S-Cli, and
+// gh:/gl:/"blob" file references become raw URLs. Another absolute URL, or a
+// root-relative path (relative to the Playground page, as before), is left as
+// it is.
 function resolveMediaUrls(entry, documentUrl) {
-  if (!documentUrl || !isPlainObject(entry) || !Array.isArray(entry.media)) {
+  if (!isPlainObject(entry) || !Array.isArray(entry.media)) {
     return entry;
   }
   const media = entry.media.map((medium) => {
@@ -343,7 +345,16 @@ function resolveMediaUrls(entry, documentUrl) {
       isPlainObject(medium) && typeof medium[field] === "string"
         ? medium[field].trim()
         : "";
-    if (!value || ABSOLUTE_PATH.test(value) || URI_SCHEME.test(value)) {
+    const raw = value ? toRawUrl(value) : null;
+    if (raw) {
+      return { ...medium, [field]: raw };
+    }
+    if (
+      !documentUrl ||
+      !value ||
+      ABSOLUTE_PATH.test(value) ||
+      URI_SCHEME.test(value)
+    ) {
       return medium;
     }
     return { ...medium, [field]: resolveReference(value, documentUrl) };
@@ -368,9 +379,11 @@ function stripHash(url) {
 }
 
 const GITHUB_BLOB = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/u;
-const GITHUB_SHORT = /^gh:([^/@:]+)\/([^/@:]+)(?:@([^:]+))?:(.+)$/u;
+// A file in a repository takes its ref with @ref; a # in the repository part
+// is a gh:owner/repo#ref add-on shorthand, not a file.
+const GITHUB_SHORT = /^gh:([^/@:#]+)\/([^/@:#]+)(?:@([^:]+))?:(.+)$/u;
 const GITLAB_BLOB = /^(https?:\/\/[^/]+\/.+)\/-\/blob\/(.+)$/u;
-const GITLAB_SHORT = /^gl:([^@:]+)(?:@([^:]+))?:(.+)$/u;
+const GITLAB_SHORT = /^gl:([^@:#]+)(?:@([^:]+))?:(.+)$/u;
 
 function toRawUrl(reference) {
   const page = reference.replace(/#.*$/u, "");

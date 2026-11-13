@@ -1,0 +1,4 @@
+[
+    { "in": "blueprint.json", "pointer": "/files/0/source", "resolved": { "error": "outside-root" } },
+    { "in": "lists/modules.json", "pointer": "/0/source", "resolved": { "error": "outside-root" } }
+]

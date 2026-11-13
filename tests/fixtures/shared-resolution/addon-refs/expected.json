@@ -1,0 +1,6 @@
+[
+    { "in": "blueprint.json", "pointer": "/modules/0/source", "resolved": { "repository": "github.com/o/a", "ref": "v2" } },
+    { "in": "blueprint.json", "pointer": "/modules/1/source", "resolved": { "repository": "github.com/o/b", "ref": "v1" } },
+    { "in": "blueprint.json", "pointer": "/modules/2/source", "resolved": { "repository": "github.com/o/c", "ref": "main" } },
+    { "in": "blueprint.json", "pointer": "/modules/3/source", "resolved": { "repository": "github.com/o/d", "ref": null } }
+]
