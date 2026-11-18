@@ -24,6 +24,22 @@ function caseFiles(dir) {
   });
 }
 
+const segments = (pointer) =>
+  pointer
+    .split("/")
+    .slice(1)
+    .map((part) => part.replace(/~1/gu, "/").replace(/~0/gu, "~"));
+
+function getPointer(document, pointer) {
+  return segments(pointer).reduce((value, part) => value[part], document);
+}
+
+function setPointer(document, pointer, value) {
+  const parts = segments(pointer);
+  const last = parts.pop();
+  parts.reduce((node, part) => node[part], document)[last] = value;
+}
+
 function strings(value) {
   if (typeof value === "string") {
     return [value];
@@ -54,12 +70,35 @@ describe("shared resolution fixtures", () => {
           baseUrl: `${base}blueprint.json`,
           fetchJson: async (url) => documents[url],
         });
-      // A case with an error expectation stops at its first error.
-      if (expected.some(({ resolved: want }) => want.error)) {
-        assert.ok(
-          expected.every(({ resolved: want }) => want.error === "outside-root"),
+      // Each error on its own: the other erroneous values become harmless.
+      const errors = expected.filter(({ resolved: want }) => want.error);
+      for (const { in: file, pointer, resolved: want } of errors) {
+        assert.equal(want.error, "outside-root");
+        const own = structuredClone(documents);
+        for (const other of errors.filter(
+          (e) => e.pointer !== pointer || e.in !== file,
+        )) {
+          setPointer(
+            own[new URL(other.in, base).href],
+            other.pointer,
+            "./ok.zip",
+          );
+        }
+        const value = getPointer(own[new URL(file, base).href], pointer);
+        await assert.rejects(
+          () =>
+            resolveBlueprintImports(own[`${base}blueprint.json`], {
+              baseUrl: `${base}blueprint.json`,
+              fetchJson: async (url) => own[url],
+            }),
+          (error) =>
+            error.message.includes(
+              `"${value}" is outside the blueprint folder`,
+            ),
+          `${file}${pointer}`,
         );
-        await assert.rejects(resolve, /outside the blueprint folder/u);
+      }
+      if (errors.length) {
         return;
       }
       const blueprint = await resolve();

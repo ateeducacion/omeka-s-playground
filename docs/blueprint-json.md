@@ -384,8 +384,10 @@ Any entry of `modules`, `themes`, `files`, `vocabularies`, `resourceTemplates`, 
 ### Relative paths
 
 Relative paths resolve against the file that contains them (RFC 3986), not against the root blueprint.
-They must stay inside the blueprint's folder, as the shared format requires: `../` may go back up to it, not beyond, or the boot stops.
-A file imported by an absolute URL (or a `gh:`/`gl:` reference) is its own root, so its relative paths stay inside its own folder.
+They must stay inside a root folder, as the shared format requires: `../` may go back up to it, not beyond, or the boot stops.
+The root is the folder of the blueprint URL. A file imported by an absolute URL (or a `gh:`/`gl:` reference) is its own root, and so is every file it imports by a relative path.
+A blueprint without a URL has no root to check (see below).
+A `gh:`/`gl:` reference or a `…/blob/…` URL cannot leave its repository: a `.` or `..` segment in it stops the boot.
 
 | Where | Relative to |
 | --- | --- |
@@ -535,7 +537,7 @@ What the Playground does with each top-level key of the shared format (`v0`):
 
 Since Omeka-S-Cli 0.18 the two read a blueprint the same way: JSONC, `$import` (in `sites` too), relative references and the rejection of absolute paths, duplicates merged into the first entry, vocabularies identified by namespace URI, local ZIP add-ons, and validation with cross-references. Differences that remain when one blueprint serves both:
 
-- Omeka-S-Cli reads local files and can widen the root with `--root`; the Playground only reads URLs and always uses the blueprint's folder.
+- Omeka-S-Cli reads local files and can widen the root with `--root`; the Playground only reads URLs and cannot widen it (see [Relative paths](#relative-paths) for the root of imported files and of blueprints without a URL).
 - Omeka-S-Cli 0.18 does not create `itemSets` or `items`; the release after 0.18.2 does ([GhentCDH/Omeka-S-Cli#182](https://github.com/GhentCDH/Omeka-S-Cli/pull/182)). Its `x-omeka-s-cli` content entries also take other media ingesters (`upload`, `youtube`, `html`, …), where the Playground only takes `url` media. The Docker image runs it with `--skip core`, so `install` comes from its environment variables there.
 - Existing users: Omeka-S-Cli leaves them as they are; the Playground updates them on every boot (role, name, password), so autologin keeps working with the blueprint's credentials.
 - Without `setAsDefault`, the Playground makes the first site the default; Omeka-S-Cli sets no default site.

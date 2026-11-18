@@ -8,7 +8,10 @@
   "vocabularies": [{ "$import": "./partials/vocabularies.json" }],
   "resourceTemplates": [
     { "$import": "./partials/resource-templates.json" },
-    { "source": "./partials/templates/book.json", "label": "Test Book (relabelled)" }
+    {
+      "source": "./partials/templates/book.json",
+      "label": "Test Book (relabelled)"
+    }
   ],
   "settings": [{ "$import": "./partials/settings.json" }],
   "x-playground": { "landingPage": "/admin/vocabulary" }

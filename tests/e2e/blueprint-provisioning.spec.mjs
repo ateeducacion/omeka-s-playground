@@ -91,10 +91,7 @@ test("boots an inline blueprint that combines a module, imports, a vocabulary an
     modules: [
       {
         name: "InsertIgnoreProbe",
-        source: new URL(
-          "/tests/e2e/fixtures/blueprints/InsertIgnoreProbe.zip",
-          baseURL,
-        ).href,
+        source: fixture("InsertIgnoreProbe.zip"),
       },
     ],
     vocabularies: [{ $import: fixture("partials/vocabularies.json") }],
@@ -129,8 +126,10 @@ test("stops on a resource template whose dependencies are missing", async ({
   const blueprint = {
     resourceTemplates: [
       {
-        source: new URL(`${FIXTURES}/partials/templates/needs-missing.json`, baseURL)
-          .href,
+        source: new URL(
+          `${FIXTURES}/partials/templates/needs-missing.json`,
+          baseURL,
+        ).href,
       },
     ],
   };

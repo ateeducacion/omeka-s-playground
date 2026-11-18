@@ -247,6 +247,82 @@ describe("$import", () => {
     }
   });
 
+  it("does not let a repository reference leave its repository", () => {
+    for (const reference of [
+      "gh:trusted/..@attacker:evil/main/evil.php",
+      "gl:trusted/../attacker/repo:f",
+      "gh:o/r:../../x/y/main/evil.php",
+      "gh:o/r@v1:a/%2E%2E/b.json",
+      "https://github.com/o/r/blob/main/../../x/y/blob/main/a.json",
+    ]) {
+      assert.throws(
+        () => resolveReference(reference, null),
+        /would leave its repository/u,
+        reference,
+      );
+    }
+  });
+
+  it("gives a file the same root whatever the import order", async () => {
+    const { fetchJson } = fakeFetch({
+      "https://example.org/repo/sub/q.json": [
+        { name: "Q", source: "../x.zip" },
+      ],
+      "https://example.org/repo/sub/p.json": [{ $import: "./q.json" }],
+    });
+    const viaRoot = { $import: "./sub/q.json" };
+    // p is imported by URL, so it and q (relative to p) have the root sub/
+    const viaUrl = { $import: "https://example.org/repo/sub/p.json" };
+    for (const modules of [
+      [viaRoot, viaUrl],
+      [viaUrl, viaRoot],
+    ]) {
+      await assert.rejects(
+        () =>
+          resolveBlueprintImports({ modules }, { baseUrl: ROOT, fetchJson }),
+        /"\.\.\/x\.zip" is outside the blueprint folder https:\/\/example\.org\/repo\/sub\//u,
+      );
+    }
+  });
+
+  it("does not let .. past the host root escape a blueprint at the root", async () => {
+    await assert.rejects(
+      () =>
+        resolveBlueprintImports(
+          { files: [{ source: "../../x.php", destination: "config/x.php" }] },
+          { baseUrl: "https://example.org/blueprint.json" },
+        ),
+      /outside the blueprint folder https:\/\/example\.org\//u,
+    );
+  });
+
+  it("checks x-playground content and names the media that leaves the root", async () => {
+    await assert.rejects(
+      () =>
+        resolveBlueprintImports(
+          {
+            "x-playground": {
+              items: [{ source: "./a.jsonld", media: [{ url: "../m.png" }] }],
+            },
+          },
+          { baseUrl: ROOT },
+        ),
+      /^BlueprintImportError: Blueprint items media url in https:\/\/example\.org\/repo\/blueprint\.json: "\.\.\/m\.png" is outside/u,
+    );
+  });
+
+  it("reports a non-string $import outside the shared schema as an import error", async () => {
+    const { fetchJson } = fakeFetch({});
+    await assert.rejects(
+      () =>
+        resolveBlueprintImports(
+          { modules: [{ $import: 5 }] },
+          { baseUrl: ROOT, fetchJson },
+        ),
+      { name: "BlueprintImportError" },
+    );
+  });
+
   it("rejects a relative import when the blueprint has no URL", async () => {
     await assert.rejects(
       loadBlueprintDocument({ modules: [{ $import: "./m.json" }] }, config, {

@@ -332,7 +332,7 @@ function normalizeAddonSourceString(input, version) {
   const [location, hashRef = ""] = text.split("#", 2);
   const ref = hashRef || version || "HEAD";
   const shortRepo = /^gh:([\w.-]+)\/([\w.-]+)$/u.exec(location);
-  if (shortRepo) {
+  if (shortRepo && !isDotSegment(shortRepo[1]) && !isDotSegment(shortRepo[2])) {
     return {
       type: "url",
       url: githubArchiveUrl(shortRepo[1], shortRepo[2], ref),
@@ -343,7 +343,11 @@ function normalizeAddonSourceString(input, version) {
     /^https:\/\/(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/u.exec(
       location,
     );
-  if (githubRepo) {
+  if (
+    githubRepo &&
+    !isDotSegment(githubRepo[1]) &&
+    !isDotSegment(githubRepo[2])
+  ) {
     return {
       type: "url",
       url: githubArchiveUrl(githubRepo[1], githubRepo[2], ref),
@@ -361,6 +365,11 @@ function normalizeAddonSourceString(input, version) {
   }
 
   return { type: "url", url: absolutizeUrl(text) };
+}
+
+// "." or ".." as an owner or repository would point at another repository.
+function isDotSegment(name) {
+  return name === "." || name === "..";
 }
 
 function normalizeAddonSource(input, version = "") {
