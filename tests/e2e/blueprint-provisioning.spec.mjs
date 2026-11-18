@@ -91,8 +91,7 @@ test("boots an inline blueprint that combines a module, imports, a vocabulary an
     modules: [
       {
         name: "InsertIgnoreProbe",
-        source: new URL("/tests/e2e/fixtures/InsertIgnoreProbe.zip", baseURL)
-          .href,
+        source: fixture("InsertIgnoreProbe.zip"),
       },
     ],
     vocabularies: [{ $import: fixture("partials/vocabularies.json") }],
@@ -127,8 +126,10 @@ test("stops on a resource template whose dependencies are missing", async ({
   const blueprint = {
     resourceTemplates: [
       {
-        source: new URL(`${FIXTURES}/templates/needs-missing.json`, baseURL)
-          .href,
+        source: new URL(
+          `${FIXTURES}/partials/templates/needs-missing.json`,
+          baseURL,
+        ).href,
       },
     ],
   };
@@ -183,7 +184,7 @@ test("stops on invalid vocabulary and resource template sources", async ({
         vocabularies: [
           {
             ...vocabulary,
-            source: fixture("templates/book.json"),
+            source: fixture("partials/templates/book.json"),
             format: "turtle",
           },
         ],
@@ -197,7 +198,7 @@ test("stops on invalid vocabulary and resource template sources", async ({
           {
             ...vocabulary,
             namespaceUri: "https://example.org/other#",
-            source: fixture("vocabularies/playground-test.ttl"),
+            source: fixture("partials/vocabularies/playground-test.ttl"),
           },
         ],
       },
@@ -214,7 +215,7 @@ test("stops on invalid vocabulary and resource template sources", async ({
     [
       {
         resourceTemplates: [
-          { source: fixture("vocabularies/playground-test.ttl") },
+          { source: fixture("partials/vocabularies/playground-test.ttl") },
         ],
       },
       "is not a valid resource template export",

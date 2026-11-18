@@ -35,8 +35,10 @@ test(`installs a module from a blueprint on PHP ${PHP_VERSION}`, async ({
       {
         name: "InsertIgnoreProbe",
         state: "activate",
-        source: new URL("/tests/e2e/fixtures/InsertIgnoreProbe.zip", baseURL)
-          .href,
+        source: new URL(
+          "/tests/e2e/fixtures/blueprints/InsertIgnoreProbe.zip",
+          baseURL,
+        ).href,
       },
     ],
     "x-playground": { landingPage: "/admin/module" },

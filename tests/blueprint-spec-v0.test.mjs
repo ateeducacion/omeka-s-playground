@@ -56,6 +56,7 @@ describe("add-on source string", () => {
     for (const source of [
       "git@github.com:owner/repo.git",
       "git@github.com:owner/repo",
+      "gh:owner/..",
       "https://gitlab.com/group/repo.git",
       "composer:vendor/package",
     ]) {

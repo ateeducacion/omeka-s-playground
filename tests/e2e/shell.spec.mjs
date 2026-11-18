@@ -387,8 +387,10 @@ test("installs a module that runs INSERT IGNORE", async ({ page, baseURL }) => {
       {
         name: "InsertIgnoreProbe",
         state: "activate",
-        source: new URL("/tests/e2e/fixtures/InsertIgnoreProbe.zip", baseURL)
-          .href,
+        source: new URL(
+          "/tests/e2e/fixtures/blueprints/InsertIgnoreProbe.zip",
+          baseURL,
+        ).href,
       },
     ],
     "x-playground": { landingPage: "/admin/module" },

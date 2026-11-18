@@ -48,7 +48,7 @@
       "media": [
         {
           "type": "url",
-          "url": "../samples/garden-of-earthly-delights.png",
+          "url": "./samples/garden-of-earthly-delights.png",
           "title": "The Garden of Earthly Delights"
         }
       ],
@@ -64,7 +64,7 @@
       "media": [
         {
           "type": "url",
-          "url": "../samples/thomas-carlyle-oil-painting-1868.jpg",
+          "url": "./samples/thomas-carlyle-oil-painting-1868.jpg",
           "title": "Thomas Carlyle Oil Painting 1868"
         }
       ],
@@ -80,7 +80,7 @@
       "media": [
         {
           "type": "url",
-          "url": "../samples/beethoven-public-domain.ogg",
+          "url": "./samples/beethoven-public-domain.ogg",
           "title": "Public domain Beethoven recording"
         }
       ],

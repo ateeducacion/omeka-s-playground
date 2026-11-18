@@ -132,7 +132,7 @@ A record that already exists is not an error. After a boot that stopped, content
 
 - a ZIP URL, used as is (it already pins a release, so it wins over `version`);
 - a local ZIP release: a path relative to the file that declares the entry (see [Relative paths](#relative-paths)), as in Omeka-S-Cli;
-- a GitHub repository, as `gh:owner/repo` or `https://github.com/owner/repo(.git)`: the archive of the `#ref` in the source, else of `version` (a tag or branch), else of the default branch;
+- a GitHub repository, as `gh:owner/repo` or `https://github.com/owner/repo(.git)` (also `www.github.com`, which the shared schema reads as a plain URL): the archive of the `#ref` in the source, else of `version` (a tag or branch), else of the default branch;
 - nothing: the add-on shipped with the core is used (e.g. the `default` theme); otherwise the name is looked up in the omeka.org catalog (`s_module.json` / `s_theme.json`), at `version` or the latest release.
 
 Other git hosts, `git@` URLs and other schemes are rejected. A release resolved from the catalog is cached, so later boots do not fetch the catalog again; change `version` to move to another release.
@@ -383,7 +383,11 @@ Any entry of `modules`, `themes`, `files`, `vocabularies`, `resourceTemplates`, 
 
 ### Relative paths
 
-Relative paths resolve against the file that contains them (RFC 3986), not against the root blueprint:
+Relative paths resolve against the file that contains them (RFC 3986), not against the root blueprint.
+They must stay inside a root folder, as the shared format requires: `../` may go back up to it, not beyond, or the boot stops.
+The root is the folder of the blueprint URL. A file imported by an absolute URL (or a `gh:`/`gl:` reference) is its own root, and so is every file it imports by a relative path.
+A blueprint without a URL has no root to check (see below).
+A `gh:`/`gl:` reference or a `…/blob/…` URL cannot leave its repository: a `.` or `..` segment in it stops the boot.
 
 | Where | Relative to |
 | --- | --- |
@@ -533,7 +537,7 @@ What the Playground does with each top-level key of the shared format (`v0`):
 
 Since Omeka-S-Cli 0.18 the two read a blueprint the same way: JSONC, `$import` (in `sites` too), relative references and the rejection of absolute paths, duplicates merged into the first entry, vocabularies identified by namespace URI, local ZIP add-ons, and validation with cross-references. Differences that remain when one blueprint serves both:
 
-- Omeka-S-Cli reads local files and keeps relative paths inside the blueprint's directory (`--root`); the Playground only reads URLs, so a relative path can go anywhere on the same host.
+- Omeka-S-Cli reads local files and can widen the root with `--root`; the Playground only reads URLs and cannot widen it (see [Relative paths](#relative-paths) for the root of imported files and of blueprints without a URL).
 - Omeka-S-Cli 0.18 does not create `itemSets` or `items`; the release after 0.18.2 does ([GhentCDH/Omeka-S-Cli#182](https://github.com/GhentCDH/Omeka-S-Cli/pull/182)). Its `x-omeka-s-cli` content entries also take other media ingesters (`upload`, `youtube`, `html`, …), where the Playground only takes `url` media. The Docker image runs it with `--skip core`, so `install` comes from its environment variables there.
 - Existing users: Omeka-S-Cli leaves them as they are; the Playground updates them on every boot (role, name, password), so autologin keeps working with the blueprint's credentials.
 - Without `setAsDefault`, the Playground makes the first site the default; Omeka-S-Cli sets no default site.
