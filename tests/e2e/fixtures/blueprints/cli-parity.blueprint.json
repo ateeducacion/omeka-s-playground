@@ -11,7 +11,7 @@
   "modules": [
     {
       "name": "InsertIgnoreProbe",
-      "source": "../InsertIgnoreProbe.zip",
+      "source": "./InsertIgnoreProbe.zip",
       "state": "install"
     },
     { "name": "InsertIgnoreProbe", "state": "activate" }

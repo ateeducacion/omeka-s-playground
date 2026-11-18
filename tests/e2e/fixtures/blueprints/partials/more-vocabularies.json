@@ -2,5 +2,5 @@
   "prefix": "dcterms",
   "namespaceUri": "http://purl.org/dc/terms/",
   "label": "Dublin Core",
-  "source": "../vocabularies/playground-test.ttl"
+  "source": "./vocabularies/playground-test.ttl"
 }

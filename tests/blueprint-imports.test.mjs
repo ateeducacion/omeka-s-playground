@@ -200,6 +200,53 @@ describe("$import", () => {
     );
   });
 
+  it("keeps relative paths inside the blueprint folder", async () => {
+    const { fetchJson } = fakeFetch({
+      "https://example.org/repo/lists/modules.json": [
+        { name: "Up", source: "../zips/Up.zip" },
+      ],
+      "https://example.org/repo/lists/escape.json": [
+        { name: "Out", source: "../../Out.zip" },
+      ],
+      "https://cdn.example.org/shared/files.json": [
+        { source: "./a.php", destination: "config/a.php" },
+      ],
+      "https://cdn.example.org/shared/escape.json": [
+        { source: "../b.php", destination: "config/b.php" },
+      ],
+    });
+    const resolve = (document) =>
+      resolveBlueprintImports(document, { baseUrl: ROOT, fetchJson });
+
+    const result = await resolve({
+      modules: [{ $import: "./lists/modules.json" }],
+      files: [{ $import: "https://cdn.example.org/shared/files.json" }],
+    });
+    assert.equal(
+      result.modules[0].source,
+      "https://example.org/repo/zips/Up.zip",
+    );
+    // a file imported by URL is its own root
+    assert.equal(
+      result.files[0].source,
+      "https://cdn.example.org/shared/a.php",
+    );
+
+    for (const document of [
+      { files: [{ source: "../a.php", destination: "config/a.php" }] },
+      { items: [{ title: "Up", media: [{ url: "../m.png" }] }] },
+      { modules: [{ $import: "../lists.json" }] },
+      { modules: [{ $import: "./lists/escape.json" }] },
+      { files: [{ $import: "https://cdn.example.org/shared/escape.json" }] },
+    ]) {
+      await assert.rejects(
+        () => resolve(document),
+        /outside the blueprint folder/u,
+        JSON.stringify(document),
+      );
+    }
+  });
+
   it("rejects a relative import when the blueprint has no URL", async () => {
     await assert.rejects(
       loadBlueprintDocument({ modules: [{ $import: "./m.json" }] }, config, {

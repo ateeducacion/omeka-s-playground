@@ -89,6 +89,8 @@ export async function resolveBlueprintImports(document, options = {}) {
     validateImported,
     strictReferences,
     chain: root ? [root] : [],
+    // document URL -> the folder its relative paths must stay in
+    roots: new Map(root ? [[root, folderOf(root)]] : []),
   };
   const blueprint = { ...document };
 
@@ -104,7 +106,11 @@ export async function resolveBlueprintImports(document, options = {}) {
     for (const key of ["itemSets", "items"]) {
       if (Array.isArray(runtime[key])) {
         content[key] = runtime[key].map((entry) =>
-          resolveMediaUrls(resolveAssetField(entry, key, root), root),
+          resolveMediaUrls(
+            resolveAssetField(entry, key, root, context.roots.get(root)),
+            root,
+            context.roots.get(root),
+          ),
         );
       }
     }
@@ -125,7 +131,7 @@ export async function resolveBlueprintImports(document, options = {}) {
  * references (gh:owner/repo[@ref]:path, gl:group/repo[@ref]:path, "blob" page
  * URLs) become their raw download URLs, as in Omeka-S-Cli.
  */
-export function resolveReference(reference, baseUrl) {
+export function resolveReference(reference, baseUrl, rootFolder = null) {
   const text = String(reference ?? "").trim();
   if (!text) {
     throw new BlueprintImportError("An $import reference cannot be empty.");
@@ -154,7 +160,22 @@ export function resolveReference(reference, baseUrl) {
     );
   }
   url.hash = "";
+  if (
+    rootFolder &&
+    !raw &&
+    !URI_SCHEME.test(text) &&
+    !url.href.startsWith(rootFolder)
+  ) {
+    throw new BlueprintImportError(
+      `"${text}" is outside the blueprint folder ${rootFolder}; keep relative paths inside it or use a URL.`,
+    );
+  }
   return url.toString();
+}
+
+// The root of a blueprint loaded from a URL is its folder (shared format).
+function folderOf(documentUrl) {
+  return new URL("./", toRawUrl(documentUrl) || documentUrl).href;
 }
 
 // The shared schema's reference is { "$import": "<non-empty string>" } and
@@ -202,8 +223,14 @@ async function resolveList(list, key, documentUrl, context) {
     if (!isReference(entry)) {
       resolved.push(
         resolveMediaUrls(
-          resolveAssetField(entry, key, documentUrl),
+          resolveAssetField(
+            entry,
+            key,
+            documentUrl,
+            context.roots.get(documentUrl),
+          ),
           documentUrl,
+          context.roots.get(documentUrl),
         ),
       );
       continue;
@@ -261,10 +288,24 @@ async function importDocument(entry, key, documentUrl, context) {
   }
   let url;
   try {
-    url = resolveReference(entry.$import, documentUrl);
+    url = resolveReference(
+      entry.$import,
+      documentUrl,
+      context.roots.get(documentUrl),
+    );
   } catch (error) {
     throw new BlueprintImportError(
       `Blueprint ${key} $import${where}: ${error.message}`,
+    );
+  }
+  // A file reached by a relative path shares the root of the file that
+  // imports it; one imported by URL (or gh:/gl:) is its own root.
+  if (!context.roots.has(url)) {
+    const reference = entry.$import.trim();
+    const relative = !toRawUrl(reference) && !URI_SCHEME.test(reference);
+    context.roots.set(
+      url,
+      (relative && context.roots.get(documentUrl)) || folderOf(url),
     );
   }
   if (context.chain.includes(url)) {
@@ -303,7 +344,7 @@ async function importDocument(entry, key, documentUrl, context) {
   return { url, data };
 }
 
-function resolveAssetField(entry, key, documentUrl) {
+function resolveAssetField(entry, key, documentUrl, rootFolder = null) {
   const field = ASSET_FIELDS[key];
   const value = isPlainObject(entry) ? entry[field] : undefined;
   if (!field || typeof value !== "string" || !value.trim()) {
@@ -323,7 +364,10 @@ function resolveAssetField(entry, key, documentUrl) {
     return entry;
   }
   try {
-    return { ...entry, [field]: resolveReference(value, documentUrl) };
+    return {
+      ...entry,
+      [field]: resolveReference(value, documentUrl, rootFolder),
+    };
   } catch (error) {
     throw new BlueprintImportError(
       `Blueprint ${key} ${field} in ${documentUrl}: ${error.message}`,
@@ -335,7 +379,7 @@ function resolveAssetField(entry, key, documentUrl) {
 // gh:/gl:/"blob" file references become raw URLs. Another absolute URL, or a
 // root-relative path (relative to the Playground page, as before), is left as
 // it is.
-function resolveMediaUrls(entry, documentUrl) {
+function resolveMediaUrls(entry, documentUrl, rootFolder = null) {
   if (!isPlainObject(entry) || !Array.isArray(entry.media)) {
     return entry;
   }
@@ -357,7 +401,10 @@ function resolveMediaUrls(entry, documentUrl) {
     ) {
       return medium;
     }
-    return { ...medium, [field]: resolveReference(value, documentUrl) };
+    return {
+      ...medium,
+      [field]: resolveReference(value, documentUrl, rootFolder),
+    };
   });
   return { ...entry, media };
 }

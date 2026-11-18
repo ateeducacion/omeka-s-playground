@@ -17,10 +17,6 @@ const config = {
   admin: { username: "admin", email: "admin@example.com", password: "pw" },
 };
 
-// The Playground does not check the blueprint root yet: what the root is for a
-// blueprint served over HTTP is open in omeka-s-contrib/omeka-s-blueprints#18.
-const PENDING = new Set(["escape-root"]);
-
 function caseFiles(dir) {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
@@ -41,7 +37,7 @@ describe("shared resolution fixtures", () => {
   for (const name of readdirSync(DIR).filter((entry) =>
     statSync(join(DIR, entry)).isDirectory(),
   )) {
-    it(name, { skip: PENDING.has(name) }, async () => {
+    it(name, async () => {
       const dir = join(DIR, name);
       const base = `https://example.test/${name}/`;
       const documents = Object.fromEntries(
@@ -53,13 +49,20 @@ describe("shared resolution fixtures", () => {
           ]),
       );
       const expected = documents[`${base}expected.json`];
-      const blueprint = await resolveBlueprintImports(
-        documents[`${base}blueprint.json`],
-        {
+      const resolve = () =>
+        resolveBlueprintImports(documents[`${base}blueprint.json`], {
           baseUrl: `${base}blueprint.json`,
           fetchJson: async (url) => documents[url],
-        },
-      );
+        });
+      // A case with an error expectation stops at its first error.
+      if (expected.some(({ resolved: want }) => want.error)) {
+        assert.ok(
+          expected.every(({ resolved: want }) => want.error === "outside-root"),
+        );
+        await assert.rejects(resolve, /outside the blueprint folder/u);
+        return;
+      }
+      const blueprint = await resolve();
       const resolved = strings(blueprint);
       const addonUrls = normalizeBlueprint(blueprint, config).modules.map(
         (module) => module.source?.url,
