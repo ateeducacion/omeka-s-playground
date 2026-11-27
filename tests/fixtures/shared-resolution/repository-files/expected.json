@@ -1,0 +1,4 @@
+[
+    { "in": "blueprint.json", "pointer": "/files/0/source", "resolved": { "repository": "github.com/o/r", "ref": "v1", "path": "docs/a.php" } },
+    { "in": "blueprint.json", "pointer": "/files/1/source", "resolved": { "repository": "gitlab.com/g/sub/r", "ref": null, "path": "config/a.php" } }
+]

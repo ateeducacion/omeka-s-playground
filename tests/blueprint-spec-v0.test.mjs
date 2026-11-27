@@ -56,11 +56,25 @@ describe("add-on source string", () => {
     for (const source of [
       "git@github.com:owner/repo.git",
       "git@github.com:owner/repo",
-      "gh:owner/..",
       "https://gitlab.com/group/repo.git",
       "composer:vendor/package",
     ]) {
       assert.throws(() => moduleSource(source), /not supported/u, source);
+    }
+  });
+
+  it("rejects a GitHub source that would leave its repository", () => {
+    for (const source of [
+      "gh:owner/..",
+      "gh:owner/repo#../other",
+      "https://github.com/owner/..",
+      "https://github.com/owner/%2e%2e/other/repo.git",
+    ]) {
+      assert.throws(
+        () => moduleSource(source),
+        /would leave its repository/u,
+        source,
+      );
     }
   });
 

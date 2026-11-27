@@ -1,0 +1,8 @@
+{
+    "$schema": "../../../assets/schema/blueprint-schema.json",
+    "files": [
+        { "source": "./a%2Fb.pdf", "destination": "config/e0.pdf" },
+        { "source": "./a%5Cb.pdf", "destination": "config/e1.pdf" },
+        { "source": "./c%2fd.pdf", "destination": "config/e2.pdf" }
+    ]
+}

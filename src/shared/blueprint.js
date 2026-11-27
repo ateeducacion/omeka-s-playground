@@ -331,8 +331,22 @@ function normalizeAddonSourceString(input, version) {
 
   const [location, hashRef = ""] = text.split("#", 2);
   const ref = hashRef || version || "HEAD";
+  // A "." or ".." segment (also percent-encoded) in a GitHub repository, as
+  // written, would point at another repository (shared format).
+  const repositoryPath =
+    /^(?:gh:|https?:\/\/(?:www\.)?github\.com\/)(.*)$/iu.exec(location)?.[1];
+  if (
+    repositoryPath !== undefined &&
+    `${repositoryPath}/${hashRef}`
+      .split("/")
+      .some((segment) => /^(?:\.|%2e){1,2}$/iu.test(segment))
+  ) {
+    throw new Error(
+      `Blueprint add-on source "${text}" has a "." or ".." segment, which would leave its repository.`,
+    );
+  }
   const shortRepo = /^gh:([\w.-]+)\/([\w.-]+)$/u.exec(location);
-  if (shortRepo && !isDotSegment(shortRepo[1]) && !isDotSegment(shortRepo[2])) {
+  if (shortRepo) {
     return {
       type: "url",
       url: githubArchiveUrl(shortRepo[1], shortRepo[2], ref),
@@ -343,11 +357,7 @@ function normalizeAddonSourceString(input, version) {
     /^https:\/\/(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/u.exec(
       location,
     );
-  if (
-    githubRepo &&
-    !isDotSegment(githubRepo[1]) &&
-    !isDotSegment(githubRepo[2])
-  ) {
+  if (githubRepo) {
     return {
       type: "url",
       url: githubArchiveUrl(githubRepo[1], githubRepo[2], ref),
@@ -365,11 +375,6 @@ function normalizeAddonSourceString(input, version) {
   }
 
   return { type: "url", url: absolutizeUrl(text) };
-}
-
-// "." or ".." as an owner or repository would point at another repository.
-function isDotSegment(name) {
-  return name === "." || name === "..";
 }
 
 function normalizeAddonSource(input, version = "") {
