@@ -1,0 +1,3 @@
+[
+    { "source": "./config/a.php", "destination": "config/a.php" }
+]

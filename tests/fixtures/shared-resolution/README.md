@@ -16,9 +16,13 @@ and `pointer` a JSON pointer to a string in it. `resolved` is one of:
 - `{ "repository": "<host>/<path>", "ref": "<ref>" | null }`: a git repository;
 - `{ "repository": "<host>/<path>", "ref": "<ref>" | null, "path": "<path in repo>" }`: a file in a git repository;
 - `{ "error": "outside-root" }`: a relative path leaves the root;
-- `{ "error": "outside-repository" }`: a git source has a `..` segment, also percent-encoded, in its
-  owner, group, repository, ref or path, as written;
+- `{ "error": "outside-repository" }`: a repository source (a git source or an `https://` repository
+  URL) has a `..` segment, also percent-encoded, in its owner, group, repository, ref or path, as
+  written;
 - `{ "error": "encoded-separator" }`: a segment of a relative path decodes to `/` or `\`.
 
-A case holds only results or only errors, so a harness can stop at the first error. A consumer that
-does not support a form (a GitLab or `git@` repository, for example) skips the entries that use it.
+A case holds only results or only errors. A consumer tests every entry of `expected.json` on its
+own: it resolves each source separately, or loads the case once per error entry with the other
+erroneous values replaced. A test that loads a whole case stops at the first error and never tries
+the others. A consumer that does not support a form (a GitLab or `git@` repository, for example)
+skips the entries that use it.
