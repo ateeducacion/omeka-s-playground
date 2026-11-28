@@ -1,0 +1,16 @@
+{
+    "$schema": "../../../assets/schema/blueprint-schema.json",
+    "modules": [
+        { "name": "A", "source": "gh:o/.." },
+        { "name": "B", "source": "https://github.com/o/%2e%2e/other/r.git" },
+        { "name": "C", "source": "https://github.com/o/.." }
+    ],
+    "files": [
+        { "source": "gh:trusted/..@attacker:evil/main/evil.php", "destination": "config/f0.php" },
+        { "source": "gl:trusted/../attacker/repo:f", "destination": "config/f1.php" },
+        { "source": "gh:o/r:../../x/y/main/evil.php", "destination": "config/f2.php" },
+        { "source": "gh:o/r@v1:a/%2E%2E/b.json", "destination": "config/f3.php" },
+        { "source": "gh:o/r@%2e%2e/%2e%2e/attacker/evil/main:evil.php", "destination": "config/f4.php" },
+        { "source": "gh:../r:f", "destination": "config/f5.php" }
+    ]
+}

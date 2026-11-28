@@ -1,4 +1,6 @@
 [
     { "in": "blueprint.json", "pointer": "/files/0/source", "resolved": { "path": "config/a.php" } },
-    { "in": "blueprint.json", "pointer": "/files/1/source", "resolved": { "path": "config/b.php" } }
+    { "in": "blueprint.json", "pointer": "/files/1/source", "resolved": { "path": "config/b.php" } },
+    { "in": "blueprint.json", "pointer": "/files/2/source", "resolved": { "path": "My File.pdf" } },
+    { "in": "blueprint.json", "pointer": "/files/3/source", "resolved": { "path": "My File.pdf" } }
 ]

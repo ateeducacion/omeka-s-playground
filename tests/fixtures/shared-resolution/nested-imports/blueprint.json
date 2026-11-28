@@ -3,6 +3,9 @@
     "modules": [
         { "$import": "./lists/modules.json" }
     ],
+    "files": [
+        { "$import": "./lists/files.json" }
+    ],
     "items": [
         { "$import": "./content/items.json" }
     ],

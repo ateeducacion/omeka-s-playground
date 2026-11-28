@@ -10,6 +10,21 @@ import { resolveBlueprintImports } from "../src/shared/blueprint-imports.js";
 // served from https://example.test/<case>/ and resolved as a blueprint URL.
 
 const DIR = new URL("./fixtures/shared-resolution/", import.meta.url).pathname;
+// What each shared error looks like in the Playground's messages.
+const ERRORS = {
+  "outside-root": "is outside the blueprint folder",
+  "outside-repository": "which would leave its repository",
+  "encoded-separator": 'has an encoded "/" or "\\"',
+};
+// A file in a repository, as the raw URL the Playground downloads.
+function rawUrl({ repository, ref, path }) {
+  const [host, ...rest] = repository.split("/");
+  const at = ref || "HEAD";
+  if (host === "github.com") {
+    return `https://raw.githubusercontent.com/${rest.join("/")}/${at}/${path}`;
+  }
+  return `https://${repository}/-/raw/${at}/${path}`;
+}
 const config = {
   siteTitle: "Test",
   locale: "en_US",
@@ -73,7 +88,7 @@ describe("shared resolution fixtures", () => {
       // Each error on its own: the other erroneous values become harmless.
       const errors = expected.filter(({ resolved: want }) => want.error);
       for (const { in: file, pointer, resolved: want } of errors) {
-        assert.equal(want.error, "outside-root");
+        assert.ok(ERRORS[want.error], `unknown error ${want.error}`);
         const own = structuredClone(documents);
         for (const other of errors.filter(
           (e) => e.pointer !== pointer || e.in !== file,
@@ -85,32 +100,47 @@ describe("shared resolution fixtures", () => {
           );
         }
         const value = getPointer(own[new URL(file, base).href], pointer);
+        // Imports are resolved first; add-on sources are checked when normalized.
         await assert.rejects(
-          () =>
-            resolveBlueprintImports(own[`${base}blueprint.json`], {
-              baseUrl: `${base}blueprint.json`,
-              fetchJson: async (url) => own[url],
-            }),
-          (error) =>
-            error.message.includes(
-              `"${value}" is outside the blueprint folder`,
+          async () =>
+            normalizeBlueprint(
+              await resolveBlueprintImports(own[`${base}blueprint.json`], {
+                baseUrl: `${base}blueprint.json`,
+                fetchJson: async (url) => own[url],
+              }),
+              config,
             ),
+          (error) =>
+            error.message.includes(`"${value}"`) &&
+            error.message.includes(ERRORS[want.error]),
           `${file}${pointer}`,
         );
       }
       if (errors.length) {
         return;
       }
+      // The Playground downloads GitHub repositories only; it skips the other
+      // hosts, as the shared fixtures allow for a form a consumer does not support.
+      const unsupported = ({ resolved: want }) =>
+        want.repository &&
+        !want.path &&
+        !want.repository.startsWith("github.com/");
+      for (const { in: file, pointer } of expected.filter(unsupported)) {
+        setPointer(documents[new URL(file, base).href], pointer, "./ok.zip");
+      }
       const blueprint = await resolve();
-      const resolved = strings(blueprint);
-      const addonUrls = normalizeBlueprint(blueprint, config).modules.map(
-        (module) => module.source?.url,
-      );
+      const normalized = normalizeBlueprint(blueprint, config);
+      const resolved = [...strings(blueprint), ...strings(normalized)];
+      const addonUrls = normalized.modules.map((module) => module.source?.url);
       for (const { in: file, pointer, resolved: want } of expected) {
         const where = `${file}${pointer}`;
-        if (want.path || want.url) {
+        if (!want.repository && (want.path || want.url)) {
           const url = want.url || new URL(want.path, base).href;
           assert.ok(resolved.includes(url), `${where}: ${url}`);
+        } else if (want.repository && want.path) {
+          const url = rawUrl(want);
+          assert.ok(resolved.includes(url), `${where}: ${url}`);
+        } else if (unsupported({ resolved: want })) {
         } else if (want.repository) {
           const [, owner, repo] = want.repository.split("/");
           const url = `https://github.com/${owner}/${repo}/archive/${want.ref || "HEAD"}.zip`;

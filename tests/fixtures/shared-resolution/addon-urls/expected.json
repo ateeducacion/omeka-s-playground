@@ -1,0 +1,6 @@
+[
+    { "in": "blueprint.json", "pointer": "/modules/0/source", "resolved": { "url": "https://github.com/o/e/releases/download/v1.0/E-1.0.zip" } },
+    { "in": "blueprint.json", "pointer": "/modules/1/source", "resolved": { "url": "https://example.org/zips/F.zip" } },
+    { "in": "blueprint.json", "pointer": "/modules/2/source", "resolved": { "repository": "gitlab.com/g/sub/g", "ref": "v2" } },
+    { "in": "blueprint.json", "pointer": "/modules/3/source", "resolved": { "repository": "gitlab.com/g/h", "ref": null } }
+]

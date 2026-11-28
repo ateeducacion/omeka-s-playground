@@ -1,0 +1,9 @@
+{
+    "$schema": "../../../assets/schema/blueprint-schema.json",
+    "modules": [
+        { "name": "E", "source": "https://github.com/o/e/releases/download/v1.0/E-1.0.zip" },
+        { "name": "F", "source": "https://example.org/zips/F.zip", "version": "2.0" },
+        { "name": "G", "source": "https://gitlab.com/g/sub/g.git#v2" },
+        { "name": "H", "source": "git@gitlab.com:g/h.git" }
+    ]
+}

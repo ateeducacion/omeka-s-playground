@@ -1,0 +1,11 @@
+[
+    { "in": "blueprint.json", "pointer": "/files/0/source", "resolved": { "error": "outside-repository" } },
+    { "in": "blueprint.json", "pointer": "/files/1/source", "resolved": { "error": "outside-repository" } },
+    { "in": "blueprint.json", "pointer": "/files/2/source", "resolved": { "error": "outside-repository" } },
+    { "in": "blueprint.json", "pointer": "/files/3/source", "resolved": { "error": "outside-repository" } },
+    { "in": "blueprint.json", "pointer": "/files/4/source", "resolved": { "error": "outside-repository" } },
+    { "in": "blueprint.json", "pointer": "/files/5/source", "resolved": { "error": "outside-repository" } },
+    { "in": "blueprint.json", "pointer": "/modules/0/source", "resolved": { "error": "outside-repository" } },
+    { "in": "blueprint.json", "pointer": "/modules/1/source", "resolved": { "error": "outside-repository" } },
+    { "in": "blueprint.json", "pointer": "/modules/2/source", "resolved": { "error": "outside-repository" } }
+]

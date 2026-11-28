@@ -156,6 +156,17 @@ function resolveTarget(reference, baseUrl, rootFolder) {
     );
   }
   const raw = toRawUrl(text);
+  // A relative path is a URL reference: a segment that decodes to / or \
+  // would read differently from disk and from a URL (shared format).
+  if (
+    !raw &&
+    !URI_SCHEME.test(text) &&
+    /%(?:2f|5c)/iu.test(text.split(/[?#]/u)[0])
+  ) {
+    throw new BlueprintImportError(
+      `"${text}" has an encoded "/" or "\\" (%2F or %5C) in a segment; write the separator itself.`,
+    );
+  }
   let url;
   try {
     url = raw

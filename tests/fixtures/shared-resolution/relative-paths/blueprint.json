@@ -2,6 +2,8 @@
     "$schema": "../../../assets/schema/blueprint-schema.json",
     "files": [
         { "source": "./config/a.php", "destination": "config/a.php" },
-        { "source": "config/b.php", "destination": "config/b.php" }
+        { "source": "config/b.php", "destination": "config/b.php" },
+        { "source": "./My File.pdf", "destination": "files/c.pdf" },
+        { "source": "./My%20File.pdf", "destination": "files/d.pdf" }
     ]
 }

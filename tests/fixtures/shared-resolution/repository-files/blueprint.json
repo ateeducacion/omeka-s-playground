@@ -1,0 +1,7 @@
+{
+    "$schema": "../../../assets/schema/blueprint-schema.json",
+    "files": [
+        { "source": "gh:o/r@v1:docs/a.php", "destination": "config/f0.php" },
+        { "source": "gl:g/sub/r:config/a.php", "destination": "config/f1.php" }
+    ]
+}
